@@ -75,10 +75,11 @@
         </div>
         <div id="screener-explainer" class="screener-explainer"></div>
         <div id="screener-summary" class="detail-summary"></div>
-        <div>
-          <h3>Screening Criteria</h3>
-          <div id="screener-criteria" class="chip-row"></div>
-        </div>
+          <div>
+            <h3>Screening Criteria</h3>
+            <div id="screener-criteria" class="chip-row"></div>
+            <div id="screener-criteria-detail" class="criteria-detail"></div>
+          </div>
         <div>
           <div class="section-head">
             <div>
@@ -116,26 +117,27 @@
           <div id="sector-cards" class="stack-grid"></div>
         </aside>
 
-        <section class="panel panel-wide">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Leaderboard</p>
-              <h2>Company Fundamentals</h2>
+          <section class="panel panel-wide">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Leaderboard</p>
+                <h2>Company Fundamentals</h2>
+                <p id="leaderboard-explainer" class="subtle"></p>
+              </div>
             </div>
-          </div>
-          <div class="table-wrap">
-            <table class="leaderboard-table">
-              <thead>
-                <tr>
-                  <th>Ticker</th>
-                  <th>Sector</th>
-                  <th>Screen</th>
-                  <th>Composite</th>
-                  <th>Confidence</th>
-                  <th>Rating</th>
-                  <th>Delta 30d</th>
-                </tr>
-              </thead>
+            <div class="table-wrap">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr>
+                    <th title="Ticker, company name, and whether the row is SEC live or still a bootstrap placeholder.">Ticker</th>
+                    <th title="GICS-style sector bucket used for sector-relative ranking.">Sector</th>
+                    <th title="Stage-one screener outcome before the full ranking model. Provisional means bootstrap-backed rather than SEC-live.">Screen</th>
+                    <th title="Overall multi-factor fundamental score after quality, growth, valuation, balance-sheet, efficiency, stability, and sector ranking are blended.">Composite</th>
+                    <th title="Confidence in the current fundamental read based on data quality, freshness, peer comparability, and anomalies. This is not upside potential.">Confidence</th>
+                    <th title="Qualitative interpretation of the composite profile, such as balanced, fundamentally strong, weak, or deteriorating.">Rating</th>
+                    <th title="Change in composite score versus 30 days ago. Positive means the fundamental profile improved; negative means it weakened.">Delta 30d</th>
+                  </tr>
+                </thead>
               <tbody id="leaderboard-body"></tbody>
             </table>
           </div>

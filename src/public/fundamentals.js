@@ -14,7 +14,8 @@ const state = {
   screenerSaveState: "",
   refreshState: "",
   selectedFactField: "revenue",
-  selectedFactPeriod: "quarterly"
+  selectedFactPeriod: "quarterly",
+  selectedCriteriaKey: null
 };
 
 const elements = {
@@ -29,12 +30,14 @@ const elements = {
   screenerExplainer: document.querySelector("#screener-explainer"),
   screenerSummary: document.querySelector("#screener-summary"),
   screenerCriteria: document.querySelector("#screener-criteria"),
+  screenerCriteriaDetail: document.querySelector("#screener-criteria-detail"),
   screenerSettings: document.querySelector("#screener-settings"),
   screenerCandidates: document.querySelector("#screener-candidates"),
   screenerWatchlist: document.querySelector("#screener-watchlist"),
   screenerStageChips: document.querySelector("#screener-stage-chips"),
   sectorFilterChips: document.querySelector("#sector-filter-chips"),
   sectorCards: document.querySelector("#sector-cards"),
+  leaderboardExplainer: document.querySelector("#leaderboard-explainer"),
   leaderboardBody: document.querySelector("#leaderboard-body"),
   changesFeed: document.querySelector("#changes-feed"),
   detailTitle: document.querySelector("#detail-title"),
@@ -178,6 +181,32 @@ function sourceLabel(value) {
 function screenStageLabel(initialScreen = {}) {
   const base = titleCase(initialScreen.stage || "unknown");
   return initialScreen.provisional ? `${base} (Provisional)` : base;
+}
+
+function criteriaTooltip(item = {}) {
+  return [item.summary, item.rule, item.why].filter(Boolean).join(" ");
+}
+
+function renderCriteriaDetail(criteria = [], selectedKey = null) {
+  const active = criteria.find((item) => item.key === selectedKey) || criteria[0];
+  if (!active) {
+    elements.screenerCriteriaDetail.innerHTML = "";
+    return;
+  }
+
+  elements.screenerCriteriaDetail.innerHTML = `
+    <article class="criteria-card">
+      <div class="criteria-card-head">
+        <strong>${active.label}</strong>
+        <span class="chip">${active.key}</span>
+      </div>
+      <p>${active.summary || "This rule is part of the stage-one gate."}</p>
+      <div class="criteria-meta">
+        <span><strong>Pass rule:</strong> ${active.rule || "Not specified."}</span>
+        <span><strong>Why it matters:</strong> ${active.why || "Helps reduce false positives in the first-pass screen."}</span>
+      </div>
+    </article>
+  `;
 }
 
 async function getJson(url) {
@@ -324,11 +353,29 @@ function renderScreener() {
 
   elements.screenerCriteria.innerHTML = (screener.criteria || []).length
     ? screener.criteria
-        .map(
-          (item) => `<span class="chip" title="${item.rule || item.key || ""}">${item.label}: ${item.rule || item.key || ""}</span>`
-        )
-        .join("")
+          .map(
+            (item) =>
+              `<button type="button" class="chip-button ${state.selectedCriteriaKey === item.key || (!state.selectedCriteriaKey && screener.criteria[0]?.key === item.key) ? "active" : ""}" data-criteria-key="${item.key}" title="${criteriaTooltip(item)}">${item.label}</button>`
+          )
+          .join("")
     : `<span class="subtle">No screening criteria loaded yet.</span>`;
+
+  renderCriteriaDetail(screener.criteria || [], state.selectedCriteriaKey);
+
+  for (const button of elements.screenerCriteria.querySelectorAll("[data-criteria-key]")) {
+    button.addEventListener("click", () => {
+      state.selectedCriteriaKey = button.dataset.criteriaKey;
+      renderScreener();
+    });
+    button.addEventListener("mouseenter", () => {
+      state.selectedCriteriaKey = button.dataset.criteriaKey;
+      renderCriteriaDetail(screener.criteria || [], state.selectedCriteriaKey);
+    });
+    button.addEventListener("focus", () => {
+      state.selectedCriteriaKey = button.dataset.criteriaKey;
+      renderCriteriaDetail(screener.criteria || [], state.selectedCriteriaKey);
+    });
+  }
 
   const screenerFields = state.screenerConfig?.fields || [];
   const screenerValues = state.screenerConfig?.settings || {};
@@ -511,6 +558,8 @@ function renderSectors() {
 
 function renderLeaderboard() {
   const rows = state.dashboard?.leaderboard || [];
+  elements.leaderboardExplainer.textContent =
+    "This table is the full ranking model after the stage-one screener. Screen shows the first-pass gate result. Composite is the blended overall score. Confidence measures data trust, not upside. Rating is the qualitative interpretation. Delta 30d shows how the composite changed over the last month.";
   elements.leaderboardBody.innerHTML = rows.length
     ? rows
         .map(

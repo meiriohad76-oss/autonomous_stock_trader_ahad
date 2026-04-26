@@ -164,35 +164,53 @@ function screenerSettingsFromConfig(config = {}) {
 
 function buildScreenerCriteria(settings) {
   return [
-    { key: "scale", label: "Large-cap scale", rule: "Market-cap bucket must be large_cap or mega_cap." },
+    {
+      key: "scale",
+      label: "Large-cap scale",
+      summary: "The name must already be trading at meaningful institutional scale.",
+      why: "This keeps the first-pass screen focused on names with deeper liquidity and broader institutional sponsorship.",
+      rule: "Market-cap bucket must be large_cap or mega_cap."
+    },
     {
       key: "filing_quality",
       label: "High filing quality",
+      summary: "The filing data needs to be recent, complete, and internally reliable.",
+      why: "A strong fundamental call is less trustworthy if the latest filing snapshot is stale or incomplete.",
       rule: `Reporting >= ${round(settings.minReportingConfidence, 2)}, freshness >= ${round(settings.minDataFreshness, 2)}, missing fields <= ${settings.maxMissingFields}.`
     },
     {
       key: "growth",
       label: "Growth clears baseline",
+      summary: "At least one core growth signal should already be above the baseline hurdle.",
+      why: "The screener wants evidence that the business is still expanding rather than merely looking optically cheap.",
       rule: `Revenue growth >= ${round(settings.minRevenueGrowth * 100, 1)}% OR EPS growth >= ${round(settings.minEpsGrowth * 100, 1)}%.`
     },
     {
       key: "profitability",
       label: "Profitability clears baseline",
+      summary: "The company needs either healthy operating leverage or strong gross economics.",
+      why: "A business can grow quickly and still be low quality if margins are too thin or deteriorating.",
       rule: `Operating margin >= ${round(settings.minOperatingMargin * 100, 1)}% OR gross margin >= ${round(settings.minGrossMargin * 100, 1)}%.`
     },
     {
       key: "balance_sheet",
       label: "Balance sheet is healthy",
+      summary: "Near-term liquidity or leverage must stay inside acceptable bounds.",
+      why: "Even attractive growth stories can fail a first-pass screen if the balance sheet creates financing risk.",
       rule: `Current ratio >= ${round(settings.minCurrentRatio, 2)} OR net debt / EBITDA <= ${round(settings.maxNetDebtToEbitda, 2)}.`
     },
     {
       key: "cash_efficiency",
       label: "Cash conversion is acceptable",
+      summary: "Reported earnings or growth should translate into real cash generation.",
+      why: "This helps filter out names where accounting strength is not yet showing up in free cash flow.",
       rule: `FCF conversion >= ${round(settings.minFcfConversion, 2)} OR FCF margin >= ${round(settings.minFcfMargin * 100, 1)}%.`
     },
     {
       key: "valuation_sanity",
       label: "Valuation is still tradable",
+      summary: "The valuation cannot already be so stretched that the setup becomes hard to underwrite.",
+      why: "The screen is trying to keep names investable, not just fundamentally interesting at any price.",
       rule: `P/E <= ${round(settings.maxPeTtm, 1)} OR PEG <= ${round(settings.maxPeg, 2)} OR FCF yield >= ${round(settings.minFcfYield * 100, 1)}%.`
     }
   ];

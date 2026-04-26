@@ -278,6 +278,10 @@ h1 {
   margin: 12px 0 16px;
 }
 
+.criteria-detail {
+  margin: 0 0 18px;
+}
+
 .chip,
 .chip-button,
 .badge {
@@ -303,6 +307,32 @@ h1 {
 .chip-button.active {
   background: var(--ink);
   color: white;
+}
+
+.criteria-card {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 18px;
+  padding: 16px 18px;
+}
+
+.criteria-card p {
+  margin: 8px 0 14px;
+  color: var(--ink);
+}
+
+.criteria-card-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.criteria-meta {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .badge.strong,
