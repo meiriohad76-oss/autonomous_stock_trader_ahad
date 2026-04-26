@@ -162,7 +162,7 @@ function screenerSettingsFromConfig(config = {}) {
   };
 }
 
-function buildScreenerCriteria(settings) {
+function buildScreenerCriteria(settings = screenerSettingsFromConfig()) {
   return [
     {
       key: "scale",
@@ -214,6 +214,53 @@ function buildScreenerCriteria(settings) {
       rule: `P/E <= ${round(settings.maxPeTtm, 1)} OR PEG <= ${round(settings.maxPeg, 2)} OR FCF yield >= ${round(settings.minFcfYield * 100, 1)}%.`
     }
   ];
+}
+
+function buildScreenerView(leaderboard, baseScreener = {}, screenerSettings = screenerSettingsFromConfig()) {
+  const eligible = leaderboard.filter((item) => item.initial_screen?.stage === "eligible");
+  const watch = leaderboard.filter((item) => item.initial_screen?.stage === "watch");
+  const rejected = leaderboard.filter((item) => item.initial_screen?.stage === "reject");
+  const bootstrapPlaceholders = leaderboard.filter((item) => item.data_source === "bootstrap_placeholder");
+  const liveSecBacked = leaderboard.filter((item) => item.data_source === "live_sec_filing");
+
+  return {
+    criteria: baseScreener.criteria || buildScreenerCriteria(screenerSettings),
+    explanation:
+      baseScreener.explanation || {
+        headline: "Stage one is a first-pass gate, not the final ranking model.",
+        eligible: "Eligible names pass most checks, avoid hard failures, and are backed by live SEC filing data.",
+        watch: "Watch names either miss several checks or are still waiting for live SEC refresh to replace bootstrap placeholders.",
+        reject: "Rejected names fail too many checks or trip a hard failure."
+      },
+    tracked_count: leaderboard.length,
+    eligible_count: eligible.length,
+    watch_count: watch.length,
+    rejected_count: rejected.length,
+    live_sec_backed_count: liveSecBacked.length,
+    bootstrap_placeholder_count: bootstrapPlaceholders.length,
+    pass_rate: leaderboard.length ? round(eligible.length / leaderboard.length, 3) : 0,
+    candidates: eligible.map((item) => ({
+      ticker: item.ticker,
+      company_name: item.company_name,
+      sector: item.sector,
+      data_source: item.data_source,
+      screen_score: item.initial_screen.score,
+      passed_count: item.initial_screen.passed_count,
+      total_checks: item.initial_screen.total_checks,
+      composite_fundamental_score: item.composite_fundamental_score,
+      final_confidence: item.final_confidence
+    })),
+    watchlist: watch.map((item) => ({
+      ticker: item.ticker,
+      company_name: item.company_name,
+      sector: item.sector,
+      data_source: item.data_source,
+      screen_score: item.initial_screen.score,
+      passed_count: item.initial_screen.passed_count,
+      total_checks: item.initial_screen.total_checks,
+      failed_checks: item.initial_screen.failed_checks
+    }))
+  };
 }
 
 function isFiniteNumber(value) {
@@ -816,53 +863,11 @@ function buildChangeEvent(companyScore, index, totalCompanies) {
 }
 
 function buildInitialScreener(leaderboard, screenerSettings) {
-  const eligible = leaderboard.filter((item) => item.initial_screen?.stage === "eligible");
-  const watch = leaderboard.filter((item) => item.initial_screen?.stage === "watch");
-  const rejected = leaderboard.filter((item) => item.initial_screen?.stage === "reject");
-  const bootstrapPlaceholders = leaderboard.filter((item) => item.data_source === "bootstrap_placeholder");
-  const liveSecBacked = leaderboard.filter((item) => item.data_source === "live_sec_filing");
-
-  return {
-    criteria: buildScreenerCriteria(screenerSettings),
-    explanation: {
-      headline: "Stage one is a first-pass gate, not the final ranking model.",
-      eligible: "Eligible names pass most checks, avoid hard failures, and are backed by live SEC filing data.",
-      watch: "Watch names either miss several checks or are still waiting for live SEC refresh to replace bootstrap placeholders.",
-      reject: "Rejected names fail too many checks or trip a hard failure."
-    },
-    tracked_count: leaderboard.length,
-    eligible_count: eligible.length,
-    watch_count: watch.length,
-    rejected_count: rejected.length,
-    live_sec_backed_count: liveSecBacked.length,
-    bootstrap_placeholder_count: bootstrapPlaceholders.length,
-    pass_rate: leaderboard.length ? round(eligible.length / leaderboard.length, 3) : 0,
-    candidates: eligible.slice(0, 5).map((item) => ({
-      ticker: item.ticker,
-      company_name: item.company_name,
-      sector: item.sector,
-      data_source: item.data_source,
-      screen_score: item.initial_screen.score,
-      passed_count: item.initial_screen.passed_count,
-      total_checks: item.initial_screen.total_checks,
-      composite_fundamental_score: item.composite_fundamental_score,
-      final_confidence: item.final_confidence
-    })),
-    watchlist: watch.slice(0, 5).map((item) => ({
-      ticker: item.ticker,
-      company_name: item.company_name,
-      sector: item.sector,
-      data_source: item.data_source,
-      screen_score: item.initial_screen.score,
-      passed_count: item.initial_screen.passed_count,
-      total_checks: item.initial_screen.total_checks,
-      failed_checks: item.initial_screen.failed_checks
-    }))
-  };
+  return buildScreenerView(leaderboard, {}, screenerSettings);
 }
 
-export function buildInitialScreenerSnapshot(leaderboard = []) {
-  return buildInitialScreener(leaderboard);
+export function buildInitialScreenerSnapshot(leaderboard = [], screenerSettings = screenerSettingsFromConfig()) {
+  return buildInitialScreener(leaderboard, screenerSettings);
 }
 
 function buildSnapshot(sample, companies, screenerSettings) {
@@ -932,13 +937,44 @@ function filteredSnapshot(snapshot, filters = {}) {
     return true;
   });
 
+  const visibleTickers = new Set(leaderboard.map((item) => item.ticker));
+  const sectors = snapshot.sectors
+    .filter((item) => {
+      if (sector && item.sector !== sector) {
+        return false;
+      }
+      return leaderboard.some((row) => row.sector === item.sector);
+    })
+    .map((item) => buildSectorDetail(item, leaderboard))
+    .sort((a, b) => b.sector_attractiveness_score - a.sector_attractiveness_score)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+
+  const changes = snapshot.changes
+    .filter((item) => visibleTickers.has(item.ticker))
+    .slice(0, 12);
+
+  const completeness = leaderboard.length
+    ? leaderboard.map((item) => clamp(1 - Number(item.quality_flags?.missing_fields_count || 0) * 0.05, 0.7, 1))
+    : [];
+
+  const summary = {
+    coverage_count: leaderboard.length,
+    sectors_covered: sectors.length,
+    new_filings_today: leaderboard.filter((item) => item.filing_date === String(snapshot.asOf || "").slice(0, 10)).length,
+    average_confidence: round(average(leaderboard.map((item) => item.final_confidence)), 3),
+    average_composite_score: round(average(leaderboard.map((item) => item.composite_fundamental_score)), 3),
+    data_completeness: round(average(completeness), 3)
+  };
+
+  const screener = buildScreenerView(leaderboard, snapshot.screener);
+
   return {
     as_of: snapshot.asOf,
-    summary: snapshot.summary,
-    screener: snapshot.screener,
+    summary,
+    screener,
     leaderboard,
-    sectors: sector ? snapshot.sectors.filter((item) => item.sector === sector) : snapshot.sectors,
-    changes: snapshot.changes.filter((item) => (sector ? item.sector === sector : true)).slice(0, 12)
+    sectors,
+    changes
   };
 }
 

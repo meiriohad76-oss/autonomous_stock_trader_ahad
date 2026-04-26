@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FUNDAMENTALS.AI | Review Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    >
+    <link rel="stylesheet" href="/fundamentals-v2.css">
+  </head>
+  <body>
+    <div class="alt-shell">
+      <header class="alt-topbar">
+        <div>
+          <p class="eyebrow">Fundamentals Review Workspace</p>
+          <h1>Screen, Rank, Explain</h1>
+          <p class="subhead">A more operational view of the same fundamentals engine. Use this version to understand what passed, why it passed, and which names deserve follow-up.</p>
+        </div>
+        <div class="alt-actions">
+          <a class="ghost-link" href="/fundamentals.html">Classic View</a>
+          <a class="ghost-link" href="/">Sentiment Dashboard</a>
+          <button id="refresh-button" class="primary-button" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section id="summary-grid" class="summary-grid"></section>
+
+      <section class="toolbar">
+        <label class="field">
+          <span>Search</span>
+          <input id="ticker-search" type="search" placeholder="Search ticker or company">
+        </label>
+        <label class="field">
+          <span>Min Confidence</span>
+          <input id="confidence-filter" type="range" min="0" max="100" step="5" value="0">
+          <small id="confidence-value">0%</small>
+        </label>
+        <label class="field">
+          <span>Sector</span>
+          <select id="sector-filter"></select>
+        </label>
+        <label class="toggle-field">
+          <span>Only changed</span>
+          <input id="changed-only" type="checkbox">
+        </label>
+      </section>
+
+      <main class="workspace-grid">
+        <aside class="panel left-rail">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Stage Filter</p>
+              <h2>Screen Flow</h2>
+            </div>
+          </div>
+          <div id="stage-tabs" class="tab-row"></div>
+          <div id="screener-note" class="note-card"></div>
+          <div class="panel-head nested-head">
+            <div>
+              <p class="eyebrow">Rules</p>
+              <h3>Criteria</h3>
+            </div>
+          </div>
+          <div id="criteria-list" class="criteria-stack"></div>
+        </aside>
+
+        <section class="panel main-rail">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Results</p>
+              <h2>Screened Universe</h2>
+              <p id="results-caption" class="subtle"></p>
+            </div>
+          </div>
+          <div class="leaderboard-shell">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Screen</th>
+                  <th>Composite</th>
+                  <th>Confidence</th>
+                  <th>Sector</th>
+                  <th>Why It Matters</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboard-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="panel right-rail">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Selected Name</p>
+              <h2 id="detail-title">Select a company</h2>
+              <p id="detail-subtitle" class="subtle">Screen status, factor score, and explanation.</p>
+            </div>
+          </div>
+          <div id="detail-summary" class="detail-grid"></div>
+          <div id="detail-notes" class="notes-list"></div>
+          <div class="panel-head nested-head">
+            <div>
+              <p class="eyebrow">Recent Changes</p>
+              <h3>What Changed</h3>
+            </div>
+          </div>
+          <div id="changes-feed" class="changes-list"></div>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="/fundamentals-v2.js"></script>
+  </body>
+</html>
