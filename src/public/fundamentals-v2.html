@@ -18,11 +18,12 @@
         <div>
           <p class="eyebrow">Fundamentals Review Workspace</p>
           <h1>Screen, Rank, Explain</h1>
-          <p class="subhead">A more operational view of the same fundamentals engine. Use this version to understand what passed, why it passed, and which names deserve follow-up.</p>
+          <p class="subhead">This workspace keeps the full tracked universe stable while you filter locally, inspect the stage-one gate, and understand why each name is passing, watching, or failing.</p>
         </div>
         <div class="alt-actions">
           <a class="ghost-link" href="/fundamentals.html">Classic View</a>
           <a class="ghost-link" href="/">Sentiment Dashboard</a>
+          <button id="clear-filters" class="ghost-button" type="button">Clear Filters</button>
           <button id="refresh-button" class="primary-button" type="button">Refresh</button>
         </div>
       </header>
@@ -49,6 +50,8 @@
         </label>
       </section>
 
+      <div id="active-filters" class="active-filters"></div>
+
       <main class="workspace-grid">
         <aside class="panel left-rail">
           <div class="panel-head">
@@ -59,6 +62,8 @@
           </div>
           <div id="stage-tabs" class="tab-row"></div>
           <div id="screener-note" class="note-card"></div>
+          <div id="screener-summary" class="mini-summary-grid"></div>
+
           <div class="panel-head nested-head">
             <div>
               <p class="eyebrow">Rules</p>
@@ -66,6 +71,15 @@
             </div>
           </div>
           <div id="criteria-list" class="criteria-stack"></div>
+          <div id="criteria-detail" class="criteria-detail"></div>
+
+          <div class="panel-head nested-head">
+            <div>
+              <p class="eyebrow">Controls</p>
+              <h3>Screener Settings</h3>
+            </div>
+          </div>
+          <div id="settings-list" class="settings-list"></div>
         </aside>
 
         <section class="panel main-rail">
@@ -98,11 +112,12 @@
             <div>
               <p class="eyebrow">Selected Name</p>
               <h2 id="detail-title">Select a company</h2>
-              <p id="detail-subtitle" class="subtle">Screen status, factor score, and explanation.</p>
+              <p id="detail-subtitle" class="subtle">Screen status, factor score, and the reason it is in the current view.</p>
             </div>
           </div>
           <div id="detail-summary" class="detail-grid"></div>
           <div id="detail-notes" class="notes-list"></div>
+
           <div class="panel-head nested-head">
             <div>
               <p class="eyebrow">Recent Changes</p>
