@@ -232,6 +232,93 @@ paths:
       responses:
         "200":
           description: Event list.
+  /api/macro-regime:
+    get:
+      summary: Current macro regime snapshot derived from market and sector sentiment states.
+      responses:
+        "200":
+          description: Macro regime snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  regime:
+                    type: string
+                    enum: [risk_on, risk_off, neutral, mixed]
+                  confidence:
+                    type: number
+                  bias:
+                    type: string
+                    enum: [bullish, bearish, neutral]
+                  breadth:
+                    type: object
+                  market_sentiment_1h:
+                    type: number
+                  market_sentiment_1d:
+                    type: number
+                  momentum_delta:
+                    type: number
+                  signals_used:
+                    type: array
+                    items:
+                      type: string
+                  explanation:
+                    type: string
+        "204":
+          description: Macro regime not yet computed (server just started).
+  /api/trade-setups:
+    get:
+      summary: Trade setup decisions combining sentiment, money flow, fundamentals, and macro regime.
+      parameters:
+        - in: query
+          name: action
+          schema:
+            type: string
+            enum: [long, short, watch, no_trade]
+        - in: query
+          name: minConviction
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+        - in: query
+          name: provisional
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Trade setup list with macro regime context.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of:
+                    type: string
+                    format: date-time
+                  macro_regime:
+                    type: object
+                  count:
+                    type: integer
+                  setups:
+                    type: array
+                    items:
+                      type: object
+  /api/trade-setups/ticker/{ticker}:
+    get:
+      summary: Trade setup detail for a single ticker.
+      parameters:
+        - in: path
+          name: ticker
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Single trade setup object.
+        "404":
+          description: No setup found for this ticker.
   /api/replay:
     post:
       summary: Replay the local sample event set into the live pipeline.

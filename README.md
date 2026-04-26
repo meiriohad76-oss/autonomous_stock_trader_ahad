@@ -64,6 +64,8 @@ See [docs/raspberry-pi-cloudflare.md](./docs/raspberry-pi-cloudflare.md) for a P
 - Storage can use SQLite today and PostgreSQL when you are ready to switch.
 - The app includes live Google News, SEC Form 4, SEC 13F, market-data, market-flow, and fundamentals collectors.
 - Smart-money analysis now includes insider, institutional, and tape/block-flow views plus flow-specific alerts.
+- The system includes a Trade Setup Agent (decision layer) that combines sentiment, money flow, fundamentals, and macro regime into explainable `long / short / watch / no_trade` setups available at `/api/trade-setups`.
+- A macro regime snapshot (derived from market and sector sentiment states across the covered stock universe) is available at `/api/macro-regime`.
 
 ## Persistence
 
