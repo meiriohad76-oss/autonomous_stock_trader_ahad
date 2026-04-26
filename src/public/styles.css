@@ -29,7 +29,8 @@ body {
   background: var(--background);
   color: var(--text);
   font-family: var(--font-body);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 button,
@@ -238,9 +239,10 @@ input:focus-visible {
   z-index: 1;
   margin-left: 96px;
   padding: 92px 16px 20px;
-  height: 100vh;
+  min-height: 100vh;
+  height: auto;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .view {
@@ -255,7 +257,8 @@ input:focus-visible {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr) 360px;
   gap: 18px;
-  height: 100%;
+  min-height: calc(100vh - 112px);
+  height: auto;
 }
 
 .column {
@@ -263,7 +266,7 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .workspace-grid {
