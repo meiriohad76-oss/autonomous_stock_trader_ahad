@@ -293,6 +293,52 @@ if (!fundamentalDetail?.factor_cards?.length || !fundamentalDetail?.score_histor
   throw new Error("Fundamental detail is missing factor cards or score history.");
 }
 
+await new Promise(r => setTimeout(r, 600)); // allow debounced agent to fire
+
+const macroRegime = typeof app.getMacroRegime === "function" ? app.getMacroRegime() : null;
+const tradeSetups = typeof app.getTradeSetups === "function" ? app.getTradeSetups() : [];
+const longSetups = typeof app.getTradeSetups === "function" ? app.getTradeSetups({ action: "long" }) : [];
+const provisionalSetups = typeof app.getTradeSetups === "function" ? app.getTradeSetups({ provisional: true }) : [];
+
+if (typeof app.getMacroRegime === "function" && macroRegime !== null) {
+  if (!macroRegime || typeof macroRegime.regime !== "string") {
+    throw new Error("macroRegime is missing or has no regime after replay.");
+  }
+
+  if (!Array.isArray(tradeSetups)) {
+    throw new Error("getTradeSetups() did not return an array.");
+  }
+
+  // Validate shape of first setup if any exist
+  const firstSetup = tradeSetups[0];
+  if (firstSetup) {
+    for (const key of ["setup_id", "ticker", "action", "conviction", "provisional",
+      "thesis", "risk_flags", "evidence", "direction_score"]) {
+      if (!(key in firstSetup)) throw new Error(`Trade setup missing field: ${key}`);
+    }
+    if (!["long", "short", "watch", "no_trade"].includes(firstSetup.action)) {
+      throw new Error(`Invalid action: ${firstSetup.action}`);
+    }
+    if (firstSetup.conviction < 0 || firstSetup.conviction > 1) {
+      throw new Error(`Conviction out of range: ${firstSetup.conviction}`);
+    }
+  }
+
+  // Provisional setups must have conviction <= 0.55
+  for (const s of provisionalSetups) {
+    if (s.conviction > 0.55) {
+      throw new Error(`Provisional setup ${s.ticker} has conviction ${s.conviction} > 0.55`);
+    }
+  }
+
+  // Long setups must have positive direction score
+  for (const s of longSetups) {
+    if (s.direction_score <= 0) {
+      throw new Error(`Long setup ${s.ticker} has non-positive direction_score ${s.direction_score}`);
+    }
+  }
+}
+
 console.log(
   JSON.stringify(
     {
@@ -311,7 +357,11 @@ console.log(
       ticker_history_points: tickerDetail.price_history.length,
       fundamentals_count: fundamentals.leaderboard.length,
       sectors_count: fundamentals.sectors.length,
-      fundamental_change_events: app.getFundamentalsChanges(20).length
+      fundamental_change_events: app.getFundamentalsChanges(20).length,
+      macro_regime: macroRegime?.regime,
+      trade_setups_total: tradeSetups.length,
+      trade_setups_long: longSetups.length,
+      trade_setups_provisional: provisionalSetups.length,
     },
     null,
     2
