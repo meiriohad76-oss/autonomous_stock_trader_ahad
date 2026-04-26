@@ -27,6 +27,7 @@
           <button class="topnav-link active" data-view="overview" type="button">Dashboard</button>
           <button class="topnav-link" data-view="markets" type="button">Analytics</button>
           <a class="topnav-link" href="/fundamentals.html">Fundamentals</a>
+          <button class="topnav-link" data-view="setups" type="button">Setups</button>
           <button class="topnav-link" data-view="alerts" type="button">Signals</button>
           <button class="topnav-link" data-view="system" type="button">Settings</button>
         </nav>
@@ -50,6 +51,15 @@
       </div>
     </header>
 
+    <div class="macro-regime-bar" id="macro-regime-bar" data-regime="neutral">
+      <span class="macro-regime-label">MACRO</span>
+      <span class="macro-regime-badge" id="macro-regime-badge">—</span>
+      <span class="macro-regime-breadth" id="macro-regime-breadth"></span>
+      <span class="macro-regime-confidence" id="macro-regime-confidence"></span>
+      <span class="macro-regime-staleness" id="macro-regime-staleness" hidden>STALE</span>
+      <span class="macro-regime-updated" id="macro-regime-updated"></span>
+    </div>
+
     <aside class="side-nav" aria-label="Sections">
       <button class="side-link active" data-view="overview" type="button">
         <span class="material-symbols-outlined">dashboard</span>
@@ -70,6 +80,10 @@
       <button class="side-link" data-view="system" type="button">
         <span class="material-symbols-outlined">memory</span>
         <span>System</span>
+      </button>
+      <button class="side-link" data-view="setups" type="button">
+        <span class="material-symbols-outlined">insights</span>
+        <span>Setups</span>
       </button>
 
       <div class="side-nav-footer">
@@ -420,6 +434,30 @@
             </div>
             <div id="system-notes" class="workspace-detail"></div>
           </article>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="setups">
+        <div class="setups-header">
+          <div class="setups-summary" id="setups-summary"></div>
+          <div class="setups-filters" id="setups-filters">
+            <button class="setup-filter-btn active" data-filter="all" type="button">All</button>
+            <button class="setup-filter-btn" data-filter="long" type="button">Long</button>
+            <button class="setup-filter-btn" data-filter="short" type="button">Short</button>
+            <button class="setup-filter-btn" data-filter="watch" type="button">Watch</button>
+            <label class="setup-provisional-toggle">
+              <input type="checkbox" id="setups-provisional-toggle"> Provisional only
+            </label>
+          </div>
+        </div>
+        <div class="setups-list" id="setups-list">
+          <div class="setups-empty" id="setups-empty">No setups generated yet. Waiting for data.</div>
+        </div>
+        <div class="setup-drawer" id="setup-drawer" hidden>
+          <button class="setup-drawer-close" id="setup-drawer-close" type="button" aria-label="Close">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+          <div class="setup-drawer-content" id="setup-drawer-content"></div>
         </div>
       </section>
     </main>
