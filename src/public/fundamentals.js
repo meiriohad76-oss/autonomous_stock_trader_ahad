@@ -259,16 +259,61 @@ function dashboardUrl() {
 }
 
 async function loadDashboard() {
-  const [health, dashboard, screenerConfig] = await Promise.all([
+  const [healthResult, dashboardResult, screenerConfigResult] = await Promise.allSettled([
     getJson("/api/health"),
     getJson(dashboardUrl()),
     getJson("/api/settings/fundamental-screener")
   ]);
-  state.health = health;
-  state.dashboard = dashboard;
-  state.screenerConfig = screenerConfig;
 
-  const availableTickers = dashboard.leaderboard.map((item) => item.ticker);
+  if (healthResult.status === "fulfilled") {
+    state.health = healthResult.value;
+  }
+
+  if (dashboardResult.status === "fulfilled") {
+    state.dashboard = dashboardResult.value;
+  } else {
+    console.error(dashboardResult.reason);
+    state.dashboard = state.dashboard || {
+      as_of: null,
+      summary: {
+        coverage_count: 0,
+        sectors_covered: 0,
+        new_filings_today: 0,
+        average_confidence: 0,
+        average_composite_score: 0,
+        data_completeness: 0
+      },
+      screener: {
+        explanation: {
+          headline: "Stage one filters the universe before full ranking.",
+          eligible: "Passes most checks with no hard failure.",
+          watch: "Partial pass or still awaiting live filing support."
+        },
+        tracked_count: 0,
+        eligible_count: 0,
+        watch_count: 0,
+        rejected_count: 0,
+        criteria: [],
+        candidates: [],
+        watchlist: [],
+        live_sec_backed_count: 0,
+        bootstrap_placeholder_count: 0,
+        pass_rate: 0
+      },
+      leaderboard: [],
+      sectors: [],
+      changes: []
+    };
+  }
+
+  if (screenerConfigResult.status === "fulfilled") {
+    state.screenerConfig = screenerConfigResult.value;
+  } else {
+    console.error(screenerConfigResult.reason);
+    state.screenerConfig = state.screenerConfig || { settings: {}, fields: [] };
+  }
+
+  const availableTickers = (state.dashboard?.leaderboard || []).map((item) => item.ticker);
   if (!state.selectedTicker || !availableTickers.includes(state.selectedTicker)) {
     state.selectedTicker = availableTickers[0] || null;
   }

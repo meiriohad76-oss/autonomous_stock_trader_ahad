@@ -312,7 +312,21 @@ async function persistEnvUpdates(filePath, updates) {
 
 function buildWatchlistSnapshot(store, windowKey, filters = {}) {
   const fundamentalsByTicker = new Map((store.fundamentals?.leaderboard || []).map((row) => [row.ticker, row]));
-  const states = store.sentimentStates
+  const dedupedStates = new Map();
+
+  for (const state of store.sentimentStates) {
+    if (state.entity_type !== "ticker" || state.window !== windowKey) {
+      continue;
+    }
+    const previous = dedupedStates.get(state.entity_key);
+    const currentAsOf = new Date(state.as_of || 0).getTime();
+    const previousAsOf = new Date(previous?.as_of || 0).getTime();
+    if (!previous || currentAsOf >= previousAsOf) {
+      dedupedStates.set(state.entity_key, state);
+    }
+  }
+
+  const states = [...dedupedStates.values()]
       .filter((state) => state.entity_type === "ticker" && state.window === windowKey)
       .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
       .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))

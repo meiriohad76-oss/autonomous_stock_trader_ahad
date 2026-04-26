@@ -309,6 +309,32 @@ h1 {
   color: white;
 }
 
+.chip-button[data-criteria-key] {
+  position: relative;
+  cursor: help;
+}
+
+.chip-button[data-criteria-key]:hover::after,
+.chip-button[data-criteria-key]:focus-visible::after {
+  content: attr(title);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  width: min(320px, 70vw);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(17, 24, 39, 0.96);
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.26);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  z-index: 8;
+  pointer-events: none;
+}
+
 .criteria-card {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.78);
