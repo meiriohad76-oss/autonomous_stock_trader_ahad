@@ -197,6 +197,44 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/macro-regime" && request.method === "GET") {
+    const regime = app.getMacroRegime();
+    if (!regime) {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    sendJson(response, 200, regime);
+    return;
+  }
+
+  if (pathname === "/api/trade-setups" && request.method === "GET") {
+    const filters = {
+      action: query.action || null,
+      minConviction: query.minConviction ? Number(query.minConviction) : null,
+      provisional: query.provisional !== undefined ? String(query.provisional) === "true" : null
+    };
+    const setups = app.getTradeSetups(filters);
+    sendJson(response, 200, {
+      as_of: new Date().toISOString(),
+      macro_regime: app.getMacroRegime(),
+      count: setups.length,
+      setups
+    });
+    return;
+  }
+
+  if (pathname?.startsWith("/api/trade-setups/ticker/") && request.method === "GET") {
+    const ticker = decodeURIComponent(pathname.split("/").pop()).toUpperCase();
+    const setup = app.getTradeSetupDetail(ticker);
+    if (!setup) {
+      sendJson(response, 404, { error: `Trade setup for ${ticker} not found` });
+      return;
+    }
+    sendJson(response, 200, setup);
+    return;
+  }
+
   if (pathname === "/api/replay" && request.method === "POST") {
     let options = {};
     let body = "";
@@ -226,7 +264,9 @@ export async function routeRequest(app, request, response) {
       type: "snapshot",
       health: app.getHealth(),
       watchlist: app.getWatchlistSnapshot(app.config.defaultWindow),
-      fundamentals: app.getFundamentalsSnapshot()
+      fundamentals: app.getFundamentalsSnapshot(),
+      macro_regime: app.getMacroRegime(),
+      trade_setups: app.getTradeSetups()
     });
 
     const listener = (event) => sseWrite(response, event);
