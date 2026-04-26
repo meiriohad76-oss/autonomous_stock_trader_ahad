@@ -77,6 +77,32 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/settings/fundamental-screener" && request.method === "GET") {
+    sendJson(response, 200, app.getScreenerSettings());
+    return;
+  }
+
+  if (pathname === "/api/settings/fundamental-screener" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", async () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        const screener = await app.updateScreenerSettings(payload, {
+          persist: String(payload.persist ?? "true").toLowerCase() !== "false"
+        });
+        sendJson(response, 200, { ok: true, screener });
+      } catch (error) {
+        sendJson(response, 400, { ok: false, error: error.message });
+      }
+    });
+    return;
+  }
+
   if (pathname === "/api/fundamentals/dashboard" && request.method === "GET") {
     sendJson(response, 200, app.getFundamentalsSnapshot({
       sector: query.sector || null,
@@ -90,6 +116,27 @@ export async function routeRequest(app, request, response) {
 
   if (pathname === "/api/fundamentals/changes" && request.method === "GET") {
     sendJson(response, 200, app.getFundamentalsChanges(query.limit ? Number(query.limit) : 12));
+    return;
+  }
+
+  if (pathname === "/api/fundamentals/refresh" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", async () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        const result = await app.refreshFundamentals({
+          forceUniverse: String(payload.forceUniverse ?? "false").toLowerCase() === "true"
+        });
+        sendJson(response, 200, result);
+      } catch (error) {
+        sendJson(response, 500, { ok: false, error: error.message });
+      }
+    });
     return;
   }
 

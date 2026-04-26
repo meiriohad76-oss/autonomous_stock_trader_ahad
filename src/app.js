@@ -33,9 +33,185 @@ const MARKET_FLOW_SETTINGS_FIELDS = {
   marketFlowAbnormalVolumeMinNotionalUsd: { env: "MARKET_FLOW_ABNORMAL_VOLUME_MIN_NOTIONAL_USD", min: 100000, max: 10000000000, digits: 0 }
 };
 
+const FUNDAMENTAL_SCREENER_FIELDS = {
+  screenerRequireLiveSecForEligible: {
+    env: "SCREENER_REQUIRE_LIVE_SEC_FOR_ELIGIBLE",
+    type: "boolean",
+    label: "Require Live SEC For Eligible",
+    help: "When enabled, bootstrap placeholders can only reach Watch until live SEC filing data arrives."
+  },
+  screenerMinReportingConfidence: {
+    env: "SCREENER_MIN_REPORTING_CONFIDENCE",
+    type: "number",
+    min: 0.5,
+    max: 1,
+    digits: 2,
+    step: 0.01,
+    label: "Min Reporting Confidence",
+    help: "Minimum reporting confidence for the filing-quality check."
+  },
+  screenerMinDataFreshness: {
+    env: "SCREENER_MIN_DATA_FRESHNESS",
+    type: "number",
+    min: 0.5,
+    max: 1,
+    digits: 2,
+    step: 0.01,
+    label: "Min Data Freshness",
+    help: "Minimum freshness score for the filing-quality check."
+  },
+  screenerMaxMissingFields: {
+    env: "SCREENER_MAX_MISSING_FIELDS",
+    type: "number",
+    min: 0,
+    max: 10,
+    digits: 0,
+    step: 1,
+    label: "Max Missing Fields",
+    help: "Maximum missing-field count allowed in the filing-quality gate."
+  },
+  screenerMinRevenueGrowth: {
+    env: "SCREENER_MIN_REVENUE_GROWTH",
+    type: "number",
+    min: -0.1,
+    max: 0.5,
+    digits: 3,
+    step: 0.01,
+    label: "Min Revenue Growth",
+    help: "Revenue growth threshold for the growth check."
+  },
+  screenerMinEpsGrowth: {
+    env: "SCREENER_MIN_EPS_GROWTH",
+    type: "number",
+    min: -0.1,
+    max: 0.8,
+    digits: 3,
+    step: 0.01,
+    label: "Min EPS Growth",
+    help: "EPS growth threshold for the growth check."
+  },
+  screenerMinOperatingMargin: {
+    env: "SCREENER_MIN_OPERATING_MARGIN",
+    type: "number",
+    min: 0,
+    max: 0.5,
+    digits: 3,
+    step: 0.01,
+    label: "Min Operating Margin",
+    help: "Operating margin threshold for the profitability check."
+  },
+  screenerMinGrossMargin: {
+    env: "SCREENER_MIN_GROSS_MARGIN",
+    type: "number",
+    min: 0,
+    max: 0.9,
+    digits: 3,
+    step: 0.01,
+    label: "Min Gross Margin",
+    help: "Gross margin threshold for the profitability check."
+  },
+  screenerMinCurrentRatio: {
+    env: "SCREENER_MIN_CURRENT_RATIO",
+    type: "number",
+    min: 0.2,
+    max: 5,
+    digits: 2,
+    step: 0.05,
+    label: "Min Current Ratio",
+    help: "Current ratio threshold for the balance-sheet check."
+  },
+  screenerMaxNetDebtToEbitda: {
+    env: "SCREENER_MAX_NET_DEBT_TO_EBITDA",
+    type: "number",
+    min: -5,
+    max: 10,
+    digits: 2,
+    step: 0.1,
+    label: "Max Net Debt / EBITDA",
+    help: "Maximum leverage allowed in the balance-sheet check."
+  },
+  screenerMinFcfConversion: {
+    env: "SCREENER_MIN_FCF_CONVERSION",
+    type: "number",
+    min: 0,
+    max: 1.5,
+    digits: 2,
+    step: 0.01,
+    label: "Min FCF Conversion",
+    help: "FCF conversion threshold for the cash-efficiency check."
+  },
+  screenerMinFcfMargin: {
+    env: "SCREENER_MIN_FCF_MARGIN",
+    type: "number",
+    min: 0,
+    max: 0.5,
+    digits: 3,
+    step: 0.01,
+    label: "Min FCF Margin",
+    help: "FCF margin threshold for the cash-efficiency check."
+  },
+  screenerMaxPeTtm: {
+    env: "SCREENER_MAX_PE_TTM",
+    type: "number",
+    min: 1,
+    max: 120,
+    digits: 1,
+    step: 0.5,
+    label: "Max P/E TTM",
+    help: "P/E ceiling for the valuation sanity check."
+  },
+  screenerMaxPeg: {
+    env: "SCREENER_MAX_PEG",
+    type: "number",
+    min: 0.1,
+    max: 10,
+    digits: 2,
+    step: 0.1,
+    label: "Max PEG",
+    help: "PEG ceiling for the valuation sanity check."
+  },
+  screenerMinFcfYield: {
+    env: "SCREENER_MIN_FCF_YIELD",
+    type: "number",
+    min: 0,
+    max: 0.2,
+    digits: 3,
+    step: 0.005,
+    label: "Min FCF Yield",
+    help: "FCF yield floor for the valuation sanity check."
+  },
+  screenerEligibleScore: {
+    env: "SCREENER_ELIGIBLE_SCORE",
+    type: "number",
+    min: 0.3,
+    max: 1,
+    digits: 2,
+    step: 0.01,
+    label: "Eligible Score Threshold",
+    help: "Minimum fraction of passed checks required for the eligible stage."
+  },
+  screenerWatchScore: {
+    env: "SCREENER_WATCH_SCORE",
+    type: "number",
+    min: 0.1,
+    max: 0.9,
+    digits: 2,
+    step: 0.01,
+    label: "Watch Score Threshold",
+    help: "Minimum fraction of passed checks required for the watch stage."
+  }
+};
+
 function readMarketFlowSettings(currentConfig) {
   return Object.keys(MARKET_FLOW_SETTINGS_FIELDS).reduce((acc, key) => {
     acc[key] = Number(currentConfig[key]);
+    return acc;
+  }, {});
+}
+
+function readScreenerSettings(currentConfig) {
+  return Object.entries(FUNDAMENTAL_SCREENER_FIELDS).reduce((acc, [key, spec]) => {
+    acc[key] = spec.type === "boolean" ? Boolean(currentConfig[key]) : Number(currentConfig[key]);
     return acc;
   }, {});
 }
@@ -96,6 +272,14 @@ function clampSettingValue(value, spec) {
   }
   const bounded = Math.min(spec.max, Math.max(spec.min, numeric));
   return Number(bounded.toFixed(spec.digits));
+}
+
+function normalizeScreenerSettingValue(value, spec) {
+  if (spec.type === "boolean") {
+    return String(value).toLowerCase() === "true" || value === true;
+  }
+
+  return clampSettingValue(value, spec);
 }
 
 async function persistEnvUpdates(filePath, updates) {
@@ -397,6 +581,7 @@ export function createSentimentApp() {
         market_data_provider: config.marketDataProvider,
         market_flow_enabled: config.marketFlowEnabled,
         market_flow_settings: readMarketFlowSettings(config),
+        screener_settings: readScreenerSettings(config),
         fundamental_market_data_provider: config.fundamentalMarketDataProvider,
         fundamental_sec_enabled: config.fundamentalSecEnabled,
         sec_form4_enabled: config.secForm4Enabled,
@@ -427,6 +612,20 @@ export function createSentimentApp() {
     getMarketFlowSettings() {
       return readMarketFlowSettings(config);
     },
+    getScreenerSettings() {
+      return {
+        settings: readScreenerSettings(config),
+        fields: Object.entries(FUNDAMENTAL_SCREENER_FIELDS).map(([key, spec]) => ({
+          key,
+          type: spec.type,
+          label: spec.label,
+          help: spec.help,
+          min: spec.min ?? null,
+          max: spec.max ?? null,
+          step: spec.step ?? null
+        }))
+      };
+    },
     async updateMarketFlowSettings(nextSettings, { persist = true } = {}) {
       const updates = {};
 
@@ -456,6 +655,36 @@ export function createSentimentApp() {
       await persistence.saveStoreSnapshot(store);
 
       return readMarketFlowSettings(config);
+    },
+    async updateScreenerSettings(nextSettings, { persist = true } = {}) {
+      const updates = {};
+
+      for (const [key, spec] of Object.entries(FUNDAMENTAL_SCREENER_FIELDS)) {
+        if (!(key in nextSettings)) {
+          continue;
+        }
+        updates[key] = normalizeScreenerSettingValue(nextSettings[key], spec);
+      }
+
+      Object.assign(config, updates);
+
+      if (persist && Object.keys(updates).length) {
+        const envUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+          acc[FUNDAMENTAL_SCREENER_FIELDS[key].env] =
+            FUNDAMENTAL_SCREENER_FIELDS[key].type === "boolean" ? String(value) : value;
+          return acc;
+        }, {});
+        await persistEnvUpdates(config.envPath, envUpdates);
+      }
+
+      if (store.fundamentals?.asOf && fundamentals.getTrackedCompanies().length) {
+        await fundamentals.replaceCompanies(fundamentals.getTrackedCompanies(), {
+          asOf: new Date().toISOString(),
+          emitDiff: true
+        });
+      }
+
+      return this.getScreenerSettings();
     },
     getSectorDetail(sector) {
       const windows = ["15m", "1h", "4h", "1d", "7d"].reduce((acc, windowKey) => {
@@ -547,6 +776,16 @@ export function createSentimentApp() {
     },
     async replaceFundamentalCompanies(companies, options = {}) {
       return fundamentals.replaceCompanies(companies, options);
+    },
+    async refreshFundamentals(options = {}) {
+      await persistenceReady;
+      await ensureFundamentalCoverage({ force: Boolean(options.forceUniverse) });
+      const refreshResult = await secFundamentalsCollector.pollOnce();
+      return {
+        ok: true,
+        refresh: refreshResult,
+        health: this.getHealth()
+      };
     },
     async startLiveSources() {
       return undefined;

@@ -10,6 +10,9 @@ const state = {
   minConfidence: 0,
   onlyChanged: false,
   screenStage: null,
+  screenerConfig: null,
+  screenerSaveState: "",
+  refreshState: "",
   selectedFactField: "revenue",
   selectedFactPeriod: "quarterly"
 };
@@ -26,6 +29,7 @@ const elements = {
   screenerExplainer: document.querySelector("#screener-explainer"),
   screenerSummary: document.querySelector("#screener-summary"),
   screenerCriteria: document.querySelector("#screener-criteria"),
+  screenerSettings: document.querySelector("#screener-settings"),
   screenerCandidates: document.querySelector("#screener-candidates"),
   screenerWatchlist: document.querySelector("#screener-watchlist"),
   screenerStageChips: document.querySelector("#screener-stage-chips"),
@@ -171,6 +175,11 @@ function sourceLabel(value) {
   return "Sample";
 }
 
+function screenStageLabel(initialScreen = {}) {
+  const base = titleCase(initialScreen.stage || "unknown");
+  return initialScreen.provisional ? `${base} (Provisional)` : base;
+}
+
 async function getJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -221,9 +230,14 @@ function dashboardUrl() {
 }
 
 async function loadDashboard() {
-  const [health, dashboard] = await Promise.all([getJson("/api/health"), getJson(dashboardUrl())]);
+  const [health, dashboard, screenerConfig] = await Promise.all([
+    getJson("/api/health"),
+    getJson(dashboardUrl()),
+    getJson("/api/settings/fundamental-screener")
+  ]);
   state.health = health;
   state.dashboard = dashboard;
+  state.screenerConfig = screenerConfig;
 
   const availableTickers = dashboard.leaderboard.map((item) => item.ticker);
   if (!state.selectedTicker || !availableTickers.includes(state.selectedTicker)) {
@@ -311,10 +325,81 @@ function renderScreener() {
   elements.screenerCriteria.innerHTML = (screener.criteria || []).length
     ? screener.criteria
         .map(
-          (item) => `<span class="chip" title="${item.key || ""}">${item.label}</span>`
+          (item) => `<span class="chip" title="${item.rule || item.key || ""}">${item.label}: ${item.rule || item.key || ""}</span>`
         )
         .join("")
     : `<span class="subtle">No screening criteria loaded yet.</span>`;
+
+  const screenerFields = state.screenerConfig?.fields || [];
+  const screenerValues = state.screenerConfig?.settings || {};
+  elements.screenerSettings.innerHTML = screenerFields
+    .map((field) => {
+      if (field.type === "boolean") {
+        return `
+          <label class="setting-card">
+            <span>${field.label}</span>
+            <small>${field.help || ""}</small>
+            <input type="checkbox" data-screener-setting="${field.key}" ${screenerValues[field.key] ? "checked" : ""}>
+          </label>
+        `;
+      }
+
+      return `
+        <label class="setting-card">
+          <span>${field.label}</span>
+          <small>${field.help || ""}</small>
+          <input
+            type="number"
+            data-screener-setting="${field.key}"
+            min="${field.min ?? ""}"
+            max="${field.max ?? ""}"
+            step="${field.step ?? "0.01"}"
+            value="${screenerValues[field.key] ?? ""}"
+          >
+        </label>
+      `;
+    })
+    .join("");
+
+  for (const input of elements.screenerSettings.querySelectorAll("[data-screener-setting]")) {
+    const key = input.dataset.screenerSetting;
+    input.addEventListener("input", () => {
+      state.screenerSaveState = "";
+      if (input.type === "checkbox") {
+        state.screenerConfig.settings[key] = input.checked;
+      } else {
+        state.screenerConfig.settings[key] = Number(input.value);
+      }
+    });
+  }
+
+  elements.screenerSettings.insertAdjacentHTML(
+    "beforeend",
+    `<div class="settings-actions"><button type="button" class="primary-button" id="save-screener-settings">${state.screenerSaveState === "saving" ? "Saving..." : state.screenerSaveState === "saved" ? "Saved" : "Save Screener Settings"}</button></div>`
+  );
+
+  elements.screenerSettings.querySelector("#save-screener-settings")?.addEventListener("click", async () => {
+    state.screenerSaveState = "saving";
+    renderScreener();
+    try {
+      const response = await fetch("/api/settings/fundamental-screener", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...state.screenerConfig.settings, persist: true })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to save screener settings");
+      }
+      const payload = await response.json();
+      state.screenerConfig = payload.screener;
+      state.screenerSaveState = "saved";
+      await loadDashboard();
+    } catch (error) {
+      console.error(error);
+      state.screenerSaveState = "";
+      renderScreener();
+    }
+  });
 
   elements.screenerStageChips.innerHTML = stageOptions
     .map(
@@ -352,7 +437,7 @@ function renderScreener() {
           `
         )
         .join("")
-    : `<p class="subtle">No names currently pass the initial screener.</p>`;
+    : `<p class="subtle">No names currently pass the current screener settings. Loosen the thresholds below or disable "Require Live SEC For Eligible" to allow provisional candidates through.</p>`;
 
   elements.screenerWatchlist.innerHTML = (screener.watchlist || []).length
     ? screener.watchlist
@@ -433,7 +518,7 @@ function renderLeaderboard() {
             <tr class="${state.selectedTicker === row.ticker ? "is-selected" : ""}" data-ticker="${row.ticker}">
               <td><strong>${row.ticker}</strong><br><small>${row.company_name}</small><br><small class="source-note">${sourceLabel(row.data_source)}</small></td>
               <td>${row.sector}</td>
-              <td><span class="badge ${row.initial_screen?.stage === "eligible" ? "strong" : row.initial_screen?.stage === "watch" ? "balanced" : "weak"}">${titleCase(row.initial_screen?.stage || "unknown")}</span></td>
+                <td><span class="badge ${row.initial_screen?.stage === "eligible" ? "strong" : row.initial_screen?.stage === "watch" ? "balanced" : "weak"}">${screenStageLabel(row.initial_screen)}</span></td>
               <td>${score(row.composite_fundamental_score)}</td>
               <td>${pct(row.final_confidence, 0)}</td>
               <td><span class="badge ${badgeClass(row.rating_label)}">${titleCase(row.rating_label)}</span></td>
@@ -500,7 +585,7 @@ function renderDetail() {
   elements.detailSubtitle.textContent = `${detail.sector} / ${detail.industry} / ${titleCase(detail.regime_label)}`;
   elements.detailSummary.innerHTML = `
     <article class="summary-card"><span>Data Source</span><strong>${sourceLabel(detail.data_source)}</strong></article>
-    <article class="summary-card"><span>Screen Stage</span><strong>${titleCase(detail.initial_screen?.stage || "unknown")}</strong></article>
+      <article class="summary-card"><span>Screen Stage</span><strong>${screenStageLabel(detail.initial_screen)}</strong></article>
     <article class="summary-card"><span>Checks Passed</span><strong>${detail.initial_screen?.passed_count || 0} / ${detail.initial_screen?.total_checks || 0}</strong></article>
     <article class="summary-card"><span>Composite</span><strong>${score(detail.composite_fundamental_score)}</strong></article>
     <article class="summary-card"><span>Confidence</span><strong>${pct(detail.final_confidence, 0)}</strong></article>
@@ -637,6 +722,9 @@ function render() {
   renderLeaderboard();
   renderChanges();
   renderDetail();
+  elements.refreshButton.textContent =
+    state.refreshState === "refreshing" ? "Refreshing..." : state.refreshState === "done" ? "Refreshed" : "Refresh";
+  elements.refreshButton.disabled = state.refreshState === "refreshing";
 }
 
 function attachEvents() {
@@ -668,7 +756,36 @@ function attachEvents() {
     renderDetail();
   });
 
-  elements.refreshButton.addEventListener("click", loadDashboard);
+  elements.refreshButton.addEventListener("click", async () => {
+    state.refreshState = "refreshing";
+    render();
+
+    try {
+      const response = await fetch("/api/fundamentals/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ forceUniverse: true })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to refresh fundamentals");
+      }
+
+      await loadDashboard();
+      state.refreshState = "done";
+    } catch (error) {
+      console.error(error);
+      state.refreshState = "";
+      render();
+      return;
+    }
+
+    render();
+    setTimeout(() => {
+      state.refreshState = "";
+      render();
+    }, 1200);
+  });
 }
 
 function startStream() {

@@ -140,6 +140,64 @@ const INITIAL_SCREENER_CRITERIA = [
   { key: "valuation_sanity", label: "Valuation is still tradable" }
 ];
 
+function screenerSettingsFromConfig(config = {}) {
+  return {
+    requireLiveSecForEligible: Boolean(config.screenerRequireLiveSecForEligible),
+    minReportingConfidence: Number(config.screenerMinReportingConfidence ?? 0.85),
+    minDataFreshness: Number(config.screenerMinDataFreshness ?? 0.85),
+    maxMissingFields: Number(config.screenerMaxMissingFields ?? 2),
+    minRevenueGrowth: Number(config.screenerMinRevenueGrowth ?? 0.08),
+    minEpsGrowth: Number(config.screenerMinEpsGrowth ?? 0.1),
+    minOperatingMargin: Number(config.screenerMinOperatingMargin ?? 0.12),
+    minGrossMargin: Number(config.screenerMinGrossMargin ?? 0.35),
+    minCurrentRatio: Number(config.screenerMinCurrentRatio ?? 1),
+    maxNetDebtToEbitda: Number(config.screenerMaxNetDebtToEbitda ?? 3),
+    minFcfConversion: Number(config.screenerMinFcfConversion ?? 0.75),
+    minFcfMargin: Number(config.screenerMinFcfMargin ?? 0.08),
+    maxPeTtm: Number(config.screenerMaxPeTtm ?? 45),
+    maxPeg: Number(config.screenerMaxPeg ?? 2.5),
+    minFcfYield: Number(config.screenerMinFcfYield ?? 0.02),
+    eligibleScore: Number(config.screenerEligibleScore ?? 0.71),
+    watchScore: Number(config.screenerWatchScore ?? 0.43)
+  };
+}
+
+function buildScreenerCriteria(settings) {
+  return [
+    { key: "scale", label: "Large-cap scale", rule: "Market-cap bucket must be large_cap or mega_cap." },
+    {
+      key: "filing_quality",
+      label: "High filing quality",
+      rule: `Reporting >= ${round(settings.minReportingConfidence, 2)}, freshness >= ${round(settings.minDataFreshness, 2)}, missing fields <= ${settings.maxMissingFields}.`
+    },
+    {
+      key: "growth",
+      label: "Growth clears baseline",
+      rule: `Revenue growth >= ${round(settings.minRevenueGrowth * 100, 1)}% OR EPS growth >= ${round(settings.minEpsGrowth * 100, 1)}%.`
+    },
+    {
+      key: "profitability",
+      label: "Profitability clears baseline",
+      rule: `Operating margin >= ${round(settings.minOperatingMargin * 100, 1)}% OR gross margin >= ${round(settings.minGrossMargin * 100, 1)}%.`
+    },
+    {
+      key: "balance_sheet",
+      label: "Balance sheet is healthy",
+      rule: `Current ratio >= ${round(settings.minCurrentRatio, 2)} OR net debt / EBITDA <= ${round(settings.maxNetDebtToEbitda, 2)}.`
+    },
+    {
+      key: "cash_efficiency",
+      label: "Cash conversion is acceptable",
+      rule: `FCF conversion >= ${round(settings.minFcfConversion, 2)} OR FCF margin >= ${round(settings.minFcfMargin * 100, 1)}%.`
+    },
+    {
+      key: "valuation_sanity",
+      label: "Valuation is still tradable",
+      rule: `P/E <= ${round(settings.maxPeTtm, 1)} OR PEG <= ${round(settings.maxPeg, 2)} OR FCF yield >= ${round(settings.minFcfYield * 100, 1)}%.`
+    }
+  ];
+}
+
 function isFiniteNumber(value) {
   return Number.isFinite(Number(value));
 }
@@ -382,7 +440,7 @@ function buildFactorCards(factorScores) {
   }));
 }
 
-function evaluateInitialScreener(company) {
+function evaluateInitialScreener(company, settings) {
   const metrics = company.metrics || {};
   const qualityFlags = company.quality_flags || {};
   const awaitingSecRefresh = (qualityFlags.anomaly_flags || []).includes("awaiting_sec_refresh");
@@ -397,37 +455,45 @@ function evaluateInitialScreener(company) {
       key: "filing_quality",
       label: "High filing quality",
       passed:
-        qualityFlags.reporting_confidence_score >= 0.85 &&
-        qualityFlags.data_freshness_score >= 0.85 &&
-        Number(qualityFlags.missing_fields_count || 0) <= 2
+        qualityFlags.reporting_confidence_score >= settings.minReportingConfidence &&
+        qualityFlags.data_freshness_score >= settings.minDataFreshness &&
+        Number(qualityFlags.missing_fields_count || 0) <= settings.maxMissingFields
     },
     {
       key: "growth",
       label: "Growth clears baseline",
-      passed: Number(metrics.revenue_growth_yoy || 0) >= 0.08 || Number(metrics.eps_growth_yoy || 0) >= 0.1
+      passed:
+        Number(metrics.revenue_growth_yoy || 0) >= settings.minRevenueGrowth ||
+        Number(metrics.eps_growth_yoy || 0) >= settings.minEpsGrowth
     },
     {
       key: "profitability",
       label: "Profitability clears baseline",
-      passed: Number(metrics.operating_margin || 0) >= 0.12 || Number(metrics.gross_margin || 0) >= 0.35
+      passed:
+        Number(metrics.operating_margin || 0) >= settings.minOperatingMargin ||
+        Number(metrics.gross_margin || 0) >= settings.minGrossMargin
     },
     {
       key: "balance_sheet",
       label: "Balance sheet is healthy",
-      passed: Number(metrics.current_ratio || 0) >= 1 || Number(metrics.net_debt_to_ebitda || 0) <= 3
+      passed:
+        Number(metrics.current_ratio || 0) >= settings.minCurrentRatio ||
+        Number(metrics.net_debt_to_ebitda || 0) <= settings.maxNetDebtToEbitda
     },
     {
       key: "cash_efficiency",
       label: "Cash conversion is acceptable",
-      passed: Number(metrics.fcf_conversion || 0) >= 0.75 || Number(metrics.fcf_margin || 0) >= 0.08
+      passed:
+        Number(metrics.fcf_conversion || 0) >= settings.minFcfConversion ||
+        Number(metrics.fcf_margin || 0) >= settings.minFcfMargin
     },
     {
       key: "valuation_sanity",
       label: "Valuation is still tradable",
       passed:
-        Number(metrics.pe_ttm || Number.POSITIVE_INFINITY) <= 45 ||
-        Number(metrics.peg || Number.POSITIVE_INFINITY) <= 2.5 ||
-        Number(metrics.fcf_yield || 0) >= 0.02
+        Number(metrics.pe_ttm || Number.POSITIVE_INFINITY) <= settings.maxPeTtm ||
+        Number(metrics.peg || Number.POSITIVE_INFINITY) <= settings.maxPeg ||
+        Number(metrics.fcf_yield || 0) >= settings.minFcfYield
     }
   ];
 
@@ -451,13 +517,13 @@ function evaluateInitialScreener(company) {
   const screenScore = round(passedCount / checks.length, 3);
 
   let stage = "reject";
-  if (!hardFailures.length && screenScore >= 0.71) {
+  if (!hardFailures.length && screenScore >= settings.eligibleScore) {
     stage = "eligible";
-  } else if (!hardFailures.length && screenScore >= 0.43) {
+  } else if (!hardFailures.length && screenScore >= settings.watchScore) {
     stage = "watch";
   }
 
-  if (awaitingSecRefresh && stage === "eligible") {
+  if (settings.requireLiveSecForEligible && awaitingSecRefresh && stage === "eligible") {
     stage = "watch";
     failedChecks.unshift("Live SEC filing refresh still pending");
   }
@@ -509,8 +575,8 @@ function mergeCompanyWithMarketReference(company, reference) {
   };
 }
 
-function scoreCompany(company, companies, sectorScores) {
-  const initialScreen = evaluateInitialScreener(company);
+function scoreCompany(company, companies, sectorScores, screenerSettings) {
+  const initialScreen = evaluateInitialScreener(company, screenerSettings);
   const sector = sectorScores.find((item) => item.sector === company.sector);
   const scores = {
     quality: round(
@@ -731,7 +797,7 @@ function buildChangeEvent(companyScore, index, totalCompanies) {
   };
 }
 
-function buildInitialScreener(leaderboard) {
+function buildInitialScreener(leaderboard, screenerSettings) {
   const eligible = leaderboard.filter((item) => item.initial_screen?.stage === "eligible");
   const watch = leaderboard.filter((item) => item.initial_screen?.stage === "watch");
   const rejected = leaderboard.filter((item) => item.initial_screen?.stage === "reject");
@@ -739,7 +805,7 @@ function buildInitialScreener(leaderboard) {
   const liveSecBacked = leaderboard.filter((item) => item.data_source === "live_sec_filing");
 
   return {
-    criteria: INITIAL_SCREENER_CRITERIA,
+    criteria: buildScreenerCriteria(screenerSettings),
     explanation: {
       headline: "Stage one is a first-pass gate, not the final ranking model.",
       eligible: "Eligible names pass most checks, avoid hard failures, and are backed by live SEC filing data.",
@@ -781,10 +847,10 @@ export function buildInitialScreenerSnapshot(leaderboard = []) {
   return buildInitialScreener(leaderboard);
 }
 
-function buildSnapshot(sample, companies) {
+function buildSnapshot(sample, companies, screenerSettings) {
   const sectorScores = buildSectorScores(sample, companies);
   const leaderboard = companies
-    .map((company) => scoreCompany(company, companies, sectorScores))
+    .map((company) => scoreCompany(company, companies, sectorScores, screenerSettings))
     .sort((a, b) => b.composite_fundamental_score - a.composite_fundamental_score)
     .map((item, index) => ({ ...item, rank_global: index + 1 }));
 
@@ -799,7 +865,7 @@ function buildSnapshot(sample, companies) {
     rank_in_sector: sectorRankLookup.get(item.sector)?.get(item.ticker) || 1
   }));
   const sectors = sectorScores.map((sector) => buildSectorDetail(sector, withRanks));
-  const screener = buildInitialScreener(withRanks);
+  const screener = buildInitialScreener(withRanks, screenerSettings);
   const changes = withRanks
     .map((item, index) => buildChangeEvent(item, index, withRanks.length))
     .sort((a, b) => new Date(b.as_of) - new Date(a.as_of));
@@ -859,6 +925,7 @@ function filteredSnapshot(snapshot, filters = {}) {
 }
 
 export function createEmptyFundamentalsState() {
+  const screenerSettings = screenerSettingsFromConfig();
   return {
     asOf: null,
     summary: {
@@ -870,11 +937,19 @@ export function createEmptyFundamentalsState() {
       data_completeness: 0
     },
     screener: {
-      criteria: INITIAL_SCREENER_CRITERIA,
+      criteria: buildScreenerCriteria(screenerSettings),
+      explanation: {
+        headline: "Stage one is a first-pass gate, not the final ranking model.",
+        eligible: "Eligible names pass most checks, avoid hard failures, and are backed by live SEC filing data.",
+        watch: "Watch names either miss several checks or are still waiting for live SEC refresh to replace bootstrap placeholders.",
+        reject: "Rejected names fail too many checks or trip a hard failure."
+      },
       tracked_count: 0,
       eligible_count: 0,
       watch_count: 0,
       rejected_count: 0,
+      live_sec_backed_count: 0,
+      bootstrap_placeholder_count: 0,
       pass_rate: 0,
       candidates: [],
       watchlist: []
@@ -980,7 +1055,7 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
     store.fundamentals = createEmptyFundamentalsState();
 
     for (let index = 0; index < baseCompanies.length; index += 1) {
-      const snapshot = buildSnapshot(samplePayload, buildCompaniesForSnapshot(index + 1));
+      const snapshot = buildSnapshot(samplePayload, buildCompaniesForSnapshot(index + 1), screenerSettingsFromConfig(config));
       const previous = store.fundamentals;
       const next = snapshotToStoreShape(snapshot);
       store.fundamentals = next;
@@ -1021,7 +1096,7 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
       marketReferenceMap = await marketReferenceService.getReferenceBatch(baseCompanies);
     }
 
-    const snapshot = buildSnapshot(samplePayload, buildCompaniesForSnapshot());
+    const snapshot = buildSnapshot(samplePayload, buildCompaniesForSnapshot(), screenerSettingsFromConfig(config));
     await commitSnapshot(snapshot, emitDiff);
     return snapshot.leaderboard.length;
   }
@@ -1032,7 +1107,7 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
       return 0;
     }
 
-    const snapshot = buildSnapshot(samplePayload, buildCompaniesForSnapshot());
+    const snapshot = buildSnapshot(samplePayload, buildCompaniesForSnapshot(), screenerSettingsFromConfig(config));
     await commitSnapshot(snapshot, true);
     return snapshot.leaderboard.length;
   }
