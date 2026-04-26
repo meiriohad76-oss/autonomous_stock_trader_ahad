@@ -238,7 +238,9 @@ input:focus-visible {
   z-index: 1;
   margin-left: 96px;
   padding: 92px 16px 20px;
-  min-height: 100vh;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .view {
@@ -253,6 +255,7 @@ input:focus-visible {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr) 360px;
   gap: 18px;
+  height: 100%;
 }
 
 .column {
@@ -260,6 +263,7 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  overflow-y: auto;
 }
 
 .workspace-grid {
