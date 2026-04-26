@@ -146,6 +146,7 @@
               <div class="panel-toolbar">
                 <div>
                   <h2>Ticker Leaderboard</h2>
+                  <p id="leaderboard-explainer" class="panel-copy">Sentiment still drives this table, but each row now carries its fundamental screen stage and composite score.</p>
                 </div>
                 <div class="chip-row" id="window-tabs">
                   <button class="time-chip" data-window="15m" type="button">15M</button>
@@ -155,6 +156,12 @@
                   <button class="time-chip" data-window="7d" type="button">7D</button>
                 </div>
               </div>
+              <div class="chip-row" id="fundamental-filter-tabs">
+                <button class="time-chip active" data-screen-filter="all" type="button">All Screens</button>
+                <button class="time-chip" data-screen-filter="eligible" type="button">Eligible</button>
+                <button class="time-chip" data-screen-filter="watch" type="button">Watch</button>
+                <button class="time-chip" data-screen-filter="reject" type="button">Reject</button>
+              </div>
 
               <div class="leaderboard-shell">
                 <table class="leaderboard-table">
@@ -162,6 +169,8 @@
                     <tr>
                       <th>Stock</th>
                       <th>Sentiment</th>
+                      <th>Screen</th>
+                      <th>Composite</th>
                       <th>Momentum</th>
                       <th>Conf %</th>
                     </tr>
@@ -328,12 +337,12 @@
       <section class="view" data-view-panel="watch">
         <div class="workspace-grid">
           <article class="panel workspace-panel">
-            <div class="panel-toolbar">
-              <div>
-                <h2>Watchlist Focus</h2>
-                <p>Fast scan for the highest priority names</p>
+              <div class="panel-toolbar">
+                <div>
+                  <h2>Watchlist Focus</h2>
+                  <p>Fast scan for the highest priority names, now with their current fundamental screen stage.</p>
+                </div>
               </div>
-            </div>
             <div id="watch-cards" class="watch-card-grid"></div>
           </article>
 

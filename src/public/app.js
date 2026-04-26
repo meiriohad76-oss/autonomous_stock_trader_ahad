@@ -47,6 +47,7 @@ const state = {
   activeWindow: "1h",
   searchTerm: "",
   activeView: "overview",
+  screenFilter: "all",
   marketFilter: "all",
   alertFilter: "all",
   marketFlowSettings: {},
@@ -78,6 +79,7 @@ const elements = {
   marketImpact: document.querySelector("#market-impact"),
   pulseGaugeFill: document.querySelector("#pulse-gauge-fill"),
   sectorStrip: document.querySelector("#sector-strip"),
+  leaderboardExplainer: document.querySelector("#leaderboard-explainer"),
   leaderboardBody: document.querySelector("#leaderboard-body"),
   liveFeedList: document.querySelector("#live-feed-list"),
   tickerDetailTitle: document.querySelector("#ticker-detail-title"),
@@ -107,6 +109,7 @@ const elements = {
   replayButton: document.querySelector("#replay-button"),
   engineProgressBar: document.querySelector("#engine-progress-bar"),
   windowTabs: document.querySelector("#window-tabs"),
+  fundamentalFilterTabs: document.querySelector("#fundamental-filter-tabs"),
   marketsFilterTabs: document.querySelector("#markets-filter-tabs"),
   alertsFilterTabs: document.querySelector("#alerts-filter-tabs"),
   mobileFab: document.querySelector(".mobile-fab"),
@@ -223,6 +226,31 @@ function badgeClass(label) {
 
 function prettyLabel(value) {
   return String(value || "unknown").replace(/_/g, " ");
+}
+
+function sourceLabel(value) {
+  if (value === "live_sec_filing") {
+    return "SEC live";
+  }
+  if (value === "bootstrap_placeholder") {
+    return "Bootstrap";
+  }
+  return "No fundamentals";
+}
+
+function screenLabel(row) {
+  const stage = row?.screen_stage ? prettyLabel(row.screen_stage) : "unscored";
+  return row?.screen_provisional ? `${stage} (provisional)` : stage;
+}
+
+function screenBadgeClass(row) {
+  if (row?.screen_stage === "eligible") {
+    return "bullish";
+  }
+  if (row?.screen_stage === "watch") {
+    return "neutral";
+  }
+  return "bearish";
 }
 
 function signalTimestamp(item) {
@@ -509,7 +537,10 @@ async function loadHealth() {
 }
 
 function filteredLeaderboard() {
-  const rows = state.snapshot?.leaderboard || [];
+  let rows = state.snapshot?.leaderboard || [];
+  if (state.screenFilter !== "all") {
+    rows = rows.filter((row) => row.screen_stage === state.screenFilter);
+  }
   if (!state.searchTerm) {
     return rows;
   }
@@ -610,11 +641,13 @@ function renderSectorStrip() {
 function renderLeaderboard() {
   const rows = filteredLeaderboard();
   elements.leaderboardBody.innerHTML = "";
+  const overview = state.snapshot?.screener_overview || {};
+  elements.leaderboardExplainer.textContent = `Sentiment still drives the order here. Screen shows the stage-one fundamentals gate, Composite shows the full fundamentals score, and the current universe includes ${overview.eligible || 0} eligible, ${overview.watch || 0} watch, and ${overview.reject || 0} reject names.`;
 
   if (!rows.length) {
     elements.leaderboardBody.innerHTML = `
       <tr class="empty-row">
-        <td colspan="4">No tickers match the current search.</td>
+        <td colspan="6">No tickers match the current search and screen filter.</td>
       </tr>
     `;
     return;
@@ -630,11 +663,16 @@ function renderLeaderboard() {
         <div class="stock-cell">
           <strong>${row.entity_key}</strong>
           <span>${row.unique_story_count} stories</span>
+          <span>${sourceLabel(row.fundamental_data_source)}</span>
         </div>
       </td>
       <td>
         <span class="sentiment-badge ${labelStyle}">${label}</span>
       </td>
+      <td>
+        <span class="sentiment-badge ${screenBadgeClass(row)}">${screenLabel(row)}</span>
+      </td>
+      <td class="conf-cell">${row.composite_fundamental_score !== null && row.composite_fundamental_score !== undefined ? formatNumber(row.composite_fundamental_score, 2) : "--"}</td>
       <td>
         <span class="momentum ${labelStyle}">${formatSignedPercent(row.momentum_delta)}</span>
       </td>
@@ -1163,6 +1201,8 @@ function renderWatchView() {
               </div>
               <p>${row.top_event_types[0] || "mixed flow"}</p>
               <div class="watch-card-meta">
+                <span>${screenLabel(row)}</span>
+                <span>${row.composite_fundamental_score !== null && row.composite_fundamental_score !== undefined ? `F ${formatNumber(row.composite_fundamental_score, 2)}` : "F --"}</span>
                 <span>${formatNumber(row.weighted_confidence * 100, 0)}% conf</span>
                 <span>${formatSignedPercent(row.momentum_delta)}</span>
               </div>
@@ -1193,6 +1233,9 @@ function renderWatchView() {
         .join("")
     : `<div class="workspace-empty">No watchlist feed items available.</div>`;
 
+  const selectedRow = state.tickerDetail
+    ? (state.snapshot?.leaderboard || []).find((row) => row.entity_key === state.tickerDetail.ticker) || null
+    : null;
   elements.watchSummary.innerHTML = state.tickerDetail
     ? `
         <div class="workspace-detail-grid">
@@ -1200,6 +1243,10 @@ function renderWatchView() {
           <div class="workspace-stat-card"><span>Current Price</span><strong>${formatNumber(state.tickerDetail.market_snapshot.current_price)}</strong></div>
           <div class="workspace-stat-card"><span>Trend</span><strong>${formatSignedPercent(state.tickerDetail.market_snapshot.percent_change)}</strong></div>
           <div class="workspace-stat-card"><span>Top Source</span><strong>${state.tickerDetail.source_distribution[0]?.name || "n/a"}</strong></div>
+          <div class="workspace-stat-card"><span>Fundamental Screen</span><strong>${selectedRow ? screenLabel(selectedRow) : "unscored"}</strong></div>
+          <div class="workspace-stat-card"><span>Composite</span><strong>${selectedRow?.composite_fundamental_score !== null && selectedRow?.composite_fundamental_score !== undefined ? formatNumber(selectedRow.composite_fundamental_score, 2) : "--"}</strong></div>
+          <div class="workspace-stat-card"><span>Fundamental Rating</span><strong>${selectedRow?.fundamental_rating ? prettyLabel(selectedRow.fundamental_rating) : "n/a"}</strong></div>
+          <div class="workspace-stat-card"><span>Fundamental Source</span><strong>${sourceLabel(selectedRow?.fundamental_data_source)}</strong></div>
         </div>
         <ul class="workspace-list">
           ${state.tickerDetail.recent_documents
@@ -1564,6 +1611,7 @@ function render() {
   renderSystemView();
   renderSignalDrawer();
   elements.alertCount.textContent = state.alerts.length;
+  updateFilterButtons(elements.fundamentalFilterTabs, "screenFilter", state.screenFilter);
 }
 
 function updateWindowButtons() {
@@ -1605,6 +1653,16 @@ function attachEvents() {
 
   elements.searchInput.addEventListener("input", () => {
     state.searchTerm = elements.searchInput.value.trim();
+    render();
+  });
+
+  elements.fundamentalFilterTabs?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-screen-filter]");
+    if (!button) {
+      return;
+    }
+    state.screenFilter = button.dataset.screenFilter;
+    updateFilterButtons(elements.fundamentalFilterTabs, "screenFilter", state.screenFilter);
     render();
   });
 

@@ -201,7 +201,8 @@ export async function routeRequest(app, request, response) {
   if (pathname === "/api/sentiment/watchlist" && request.method === "GET") {
     sendJson(response, 200, app.getWatchlistSnapshot(query.window || app.config.defaultWindow, {
       label: query.label || null,
-      minConfidence: query.minConfidence ? Number(query.minConfidence) : null
+      minConfidence: query.minConfidence ? Number(query.minConfidence) : null,
+      screenStage: query.screenStage || null
     }));
     return;
   }

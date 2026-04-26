@@ -311,11 +311,26 @@ async function persistEnvUpdates(filePath, updates) {
 }
 
 function buildWatchlistSnapshot(store, windowKey, filters = {}) {
+  const fundamentalsByTicker = new Map((store.fundamentals?.leaderboard || []).map((row) => [row.ticker, row]));
   const states = store.sentimentStates
-    .filter((state) => state.entity_type === "ticker" && state.window === windowKey)
-    .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
-    .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))
-    .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
+      .filter((state) => state.entity_type === "ticker" && state.window === windowKey)
+      .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
+      .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))
+      .map((state) => {
+        const fundamentals = fundamentalsByTicker.get(state.entity_key);
+        return {
+          ...state,
+          screen_stage: fundamentals?.initial_screen?.stage || null,
+          screen_provisional: Boolean(fundamentals?.initial_screen?.provisional),
+          composite_fundamental_score: fundamentals?.composite_fundamental_score ?? null,
+          fundamental_confidence: fundamentals?.final_confidence ?? null,
+          fundamental_rating: fundamentals?.rating_label || null,
+          fundamental_data_source: fundamentals?.data_source || null,
+          fundamental_direction_label: fundamentals?.direction_label || null
+        };
+      })
+      .filter((state) => (filters.screenStage ? state.screen_stage === filters.screenStage : true))
+      .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
 
   const sectors = store.sentimentStates
     .filter((state) => state.entity_type === "sector" && state.window === windowKey)
@@ -325,18 +340,23 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
     (state) => state.entity_type === "market" && state.entity_key === "market" && state.window === windowKey
   );
 
-  return {
-    as_of: store.health.lastUpdate,
-    window: windowKey,
+    return {
+      as_of: store.health.lastUpdate,
+      window: windowKey,
     market_pulse: market || {
       weighted_sentiment: 0,
       weighted_confidence: 0,
       story_velocity: 0,
       sentiment_regime: "neutral"
     },
-    leaderboard: states,
-    sectors,
-    alerts: store.alertHistory.slice(0, 10),
+      leaderboard: states,
+      screener_overview: {
+        eligible: states.filter((row) => row.screen_stage === "eligible").length,
+        watch: states.filter((row) => row.screen_stage === "watch").length,
+        reject: states.filter((row) => row.screen_stage === "reject").length
+      },
+      sectors,
+      alerts: store.alertHistory.slice(0, 10),
     source_quality: [...store.sourceStats.values()].sort((a, b) => b.rolling_avg_confidence - a.rolling_avg_confidence)
   };
 }
