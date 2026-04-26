@@ -22,6 +22,8 @@ export function createStore(config) {
     alertHistory: [],
     eventOutcomes: [],
     fundamentals: createEmptyFundamentalsState(),
+    macroRegime: null,
+    tradeSetups: [],
     health: {
       systemStatus: "green",
       queueDepth: 0,
@@ -54,6 +56,8 @@ export function resetStore(store) {
   store.alertHistory = [];
   store.eventOutcomes = [];
   store.fundamentals = createEmptyFundamentalsState();
+  store.macroRegime = null;
+  store.tradeSetups = [];
   store.health = {
     ...store.health,
     queueDepth: 0,
