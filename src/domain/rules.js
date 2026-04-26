@@ -13,8 +13,8 @@ export function classifyWithRules(normalized) {
 
   if (!matched.length) {
     return {
-      event_family: "product_operations",
-      event_type: "partnership",
+      event_family: "unclassified",
+      event_type: "monitor_item",
       event_direction: "unclear",
       bullish_bearish_label: "neutral",
       urgency: "low",

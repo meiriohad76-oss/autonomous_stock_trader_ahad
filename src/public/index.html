@@ -284,7 +284,7 @@
             <div class="panel-toolbar">
               <div>
                 <h2>Sector Strength</h2>
-                <p>Cross-market sentiment at the active window</p>
+                <p>Grouped view of the currently visible names, ranked by average sentiment strength and confidence.</p>
               </div>
               <div class="chip-row" id="markets-filter-tabs">
                 <button class="time-chip active" data-market-filter="all" type="button">All</button>
@@ -304,7 +304,7 @@
             <div class="panel-toolbar">
               <div>
                 <h2>Market Table</h2>
-                <p>Sorted by strongest active conviction</p>
+                <p>Quick comparison of the visible names by sentiment score, confidence, momentum change, and story velocity.</p>
               </div>
             </div>
             <div id="markets-comparison-strip" class="workspace-card-grid compact-grid"></div>
@@ -315,7 +315,7 @@
                     <th>Asset</th>
                     <th>Sentiment</th>
                     <th>Confidence</th>
-                    <th>Velocity</th>
+                    <th>Momentum / Velocity</th>
                   </tr>
                 </thead>
                 <tbody id="markets-table-body"></tbody>
@@ -327,7 +327,7 @@
             <div class="panel-toolbar">
               <div>
                 <h2>Market Detail</h2>
-                <p>Selected ticker snapshot and event bias</p>
+                <p>Selected name, price-versus-sentiment chart, and the event/source mix driving the current read.</p>
               </div>
             </div>
             <div id="markets-detail" class="workspace-detail"></div>
@@ -341,7 +341,7 @@
               <div class="panel-toolbar">
                 <div>
                   <h2>Watchlist Focus</h2>
-                  <p>Fast scan for the highest priority names, now with their current fundamental screen stage.</p>
+                  <p>Highest-priority names right now, combining sentiment urgency with the current fundamentals screen stage.</p>
                 </div>
               </div>
             <div id="watch-cards" class="watch-card-grid"></div>
@@ -351,7 +351,7 @@
             <div class="panel-toolbar">
               <div>
                 <h2>Recent Watchlist Intelligence</h2>
-                <p>Latest events affecting monitored symbols</p>
+                <p>Deduped recent events for the current watch names, prioritizing stronger and more specific signals first.</p>
               </div>
             </div>
             <div id="watch-feed" class="feed-list"></div>
@@ -361,7 +361,7 @@
             <div class="panel-toolbar">
               <div>
                 <h2>Selected Watch Summary</h2>
-                <p>Live detail for the current focus ticker</p>
+                <p>Live detail for the current focus ticker, including screen result, composite score, and recent evidence.</p>
               </div>
             </div>
             <div id="watch-summary" class="workspace-detail"></div>
@@ -392,7 +392,7 @@
             <div class="panel-toolbar">
               <div>
                 <h2>Smart Money Radar</h2>
-                <p>Insider, institutional, and tape activity</p>
+                <p>Combines SEC Form 4, 13F, and market-data anomaly signals. Use the controls to tune how strict the tape-flow detector should be.</p>
               </div>
             </div>
             <div id="alerts-money-flow" class="workspace-detail"></div>

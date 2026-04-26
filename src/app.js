@@ -337,29 +337,82 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
     }
   }
 
-  const states = [...dedupedStates.values()]
-      .filter((state) => state.entity_type === "ticker" && state.window === windowKey)
-       .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
-       .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))
-       .map((state) => {
-         const fundamentals = fundamentalsByTicker.get(state.entity_key);
-         const metadata = resolveTickerMetadata(state.entity_key, fundamentals, state);
-         return {
-           ...state,
-           company_name: metadata.company_name,
-           sector: metadata.sector,
-           industry: metadata.industry,
-           screen_stage: fundamentals?.initial_screen?.stage || null,
-           screen_provisional: Boolean(fundamentals?.initial_screen?.provisional),
-           composite_fundamental_score: fundamentals?.composite_fundamental_score ?? null,
-          fundamental_confidence: fundamentals?.final_confidence ?? null,
-          fundamental_rating: fundamentals?.rating_label || null,
-          fundamental_data_source: fundamentals?.data_source || null,
-          fundamental_direction_label: fundamentals?.direction_label || null
-        };
-       })
-       .filter((state) => (filters.screenStage ? state.screen_stage === filters.screenStage : true))
-       .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
+  const states = fullFundamentalRows
+    .map((fundamentalsRow) => {
+      const sentimentState = dedupedStates.get(fundamentalsRow.ticker) || null;
+      const metadata = resolveTickerMetadata(fundamentalsRow.ticker, fundamentalsRow, sentimentState);
+      return {
+        state_id: sentimentState?.state_id || null,
+        entity_type: "ticker",
+        entity_key: fundamentalsRow.ticker,
+        entity_name: metadata.company_name,
+        window: windowKey,
+        as_of: sentimentState?.as_of || fundamentalsRow.as_of || store.health.lastUpdate,
+        doc_count: sentimentState?.doc_count || 0,
+        unique_story_count: sentimentState?.unique_story_count || 0,
+        weighted_sentiment: sentimentState?.weighted_sentiment || 0,
+        weighted_impact: sentimentState?.weighted_impact || 0,
+        weighted_confidence: sentimentState?.weighted_confidence ?? fundamentalsRow.final_confidence ?? 0,
+        story_velocity: sentimentState?.story_velocity || 0,
+        momentum_delta: sentimentState?.momentum_delta || 0,
+        event_concentration: sentimentState?.event_concentration || 0,
+        source_diversity: sentimentState?.source_diversity || 0,
+        sentiment_regime: sentimentState?.sentiment_regime || "neutral",
+        top_event_types: sentimentState?.top_event_types || [],
+        top_reasons: sentimentState?.top_reasons || [],
+        state_metadata: sentimentState?.state_metadata || {},
+        company_name: metadata.company_name,
+        sector: metadata.sector,
+        industry: metadata.industry,
+        screen_stage: fundamentalsRow?.initial_screen?.stage || null,
+        screen_provisional: Boolean(fundamentalsRow?.initial_screen?.provisional),
+        composite_fundamental_score: fundamentalsRow?.composite_fundamental_score ?? null,
+        fundamental_confidence: fundamentalsRow?.final_confidence ?? null,
+        fundamental_rating: fundamentalsRow?.rating_label || null,
+        fundamental_data_source: fundamentalsRow?.data_source || null,
+        fundamental_direction_label: fundamentalsRow?.direction_label || null,
+        sentiment_visible: Boolean(sentimentState)
+      };
+    })
+    .concat(
+      [...dedupedStates.values()]
+        .filter((sentimentState) => !fundamentalsByTicker.has(sentimentState.entity_key))
+        .map((sentimentState) => {
+          const metadata = resolveTickerMetadata(sentimentState.entity_key, null, sentimentState);
+          return {
+            ...sentimentState,
+            company_name: metadata.company_name,
+            sector: metadata.sector,
+            industry: metadata.industry,
+            screen_stage: null,
+            screen_provisional: false,
+            composite_fundamental_score: null,
+            fundamental_confidence: null,
+            fundamental_rating: null,
+            fundamental_data_source: null,
+            fundamental_direction_label: null,
+            sentiment_visible: true
+          };
+        })
+    )
+    .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
+    .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))
+    .filter((state) => (filters.screenStage ? state.screen_stage === filters.screenStage : true))
+    .sort((a, b) => {
+      const scoreA =
+        Math.abs(Number(a.weighted_sentiment || 0)) * 3 +
+        Number(a.weighted_confidence || 0) +
+        Math.abs(Number(a.momentum_delta || 0)) * 2 +
+        Math.min(2, Number(a.unique_story_count || 0) * 0.2) +
+        (a.sentiment_visible ? 0.6 : 0);
+      const scoreB =
+        Math.abs(Number(b.weighted_sentiment || 0)) * 3 +
+        Number(b.weighted_confidence || 0) +
+        Math.abs(Number(b.momentum_delta || 0)) * 2 +
+        Math.min(2, Number(b.unique_story_count || 0) * 0.2) +
+        (b.sentiment_visible ? 0.6 : 0);
+      return scoreB - scoreA || Number(b.composite_fundamental_score || 0) - Number(a.composite_fundamental_score || 0);
+    });
 
   const summarizeScreenStages = (rows) => ({
     tracked: rows.length,
@@ -370,6 +423,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
 
   const fullUniverseScreening = summarizeScreenStages(fullFundamentalRows);
   const visibleScreening = summarizeScreenStages(states);
+  const sentimentVisibleScreening = summarizeScreenStages(states.filter((row) => row.sentiment_visible));
 
   const sectors = store.sentimentStates
     .filter((state) => state.entity_type === "sector" && state.window === windowKey)
@@ -395,6 +449,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         reject: visibleScreening.reject,
         full_universe: fullUniverseScreening,
         visible_universe: visibleScreening,
+        sentiment_visible_universe: sentimentVisibleScreening,
         fundamental_sec_live: fullFundamentalRows.filter((row) => row.data_source === "live_sec_filing").length,
         bootstrap: fullFundamentalRows.filter((row) => row.data_source === "bootstrap_placeholder").length
       },

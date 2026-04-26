@@ -370,7 +370,8 @@ function renderSummary() {
     <article class="summary-card"><span>Watch In View</span><strong>${screener.watch_count || 0}</strong><small>needs more proof</small></article>
     <article class="summary-card"><span>Rejected In View</span><strong>${screener.rejected_count || 0}</strong><small>fails current gate</small></article>
     <article class="summary-card"><span>Avg Confidence</span><strong>${pct(summary.average_confidence || 0, 0)}</strong><small>${pct(summary.data_completeness || 0, 0)} complete</small></article>
-    <article class="summary-card"><span>Live SEC In View</span><strong>${screener.live_sec_backed_count || 0}</strong><small>${screener.bootstrap_placeholder_count || 0} bootstrap</small></article>
+    <article class="summary-card"><span>SEC Live In View</span><strong>${screener.live_sec_backed_count || 0}</strong><small>current filtered results</small></article>
+    <article class="summary-card"><span>Bootstrap In View</span><strong>${screener.bootstrap_placeholder_count || 0}</strong><small>provisional fundamentals</small></article>
   `;
 }
 
@@ -430,6 +431,7 @@ function renderStages() {
     <div class="note-meta">
       <span>Current view: ${screener.tracked_count || 0} rows</span>
       <span>SEC live in view: ${screener.live_sec_backed_count || 0}</span>
+      <span>Confidence filter: ${pct(state.minConfidence || 0, 0)} minimum</span>
     </div>
   `;
 
@@ -465,7 +467,7 @@ function renderCriteria() {
               title="${criteriaTooltip(item)}"
             >
               <strong>${item.label}</strong>
-              <span>${item.summary || "Part of the stage-one gate."}</span>
+              <span>${item.summary || "Part of the stage-one gate."} Hover or click for the pass rule and why it matters.</span>
             </button>
           `
         )
@@ -510,18 +512,18 @@ function renderSettings() {
         .map((field) => {
           if (field.type === "boolean") {
             return `
-              <label class="setting-card">
+              <label class="setting-card" title="${field.help || ""}">
                 <span>${field.label}</span>
-                <small>${field.help || ""}</small>
+                <small>${field.help || ""} This directly changes who can reach Eligible versus Watch.</small>
                 <input type="checkbox" data-screener-setting="${field.key}" ${values[field.key] ? "checked" : ""}>
               </label>
             `;
           }
 
           return `
-            <label class="setting-card">
+            <label class="setting-card" title="${field.help || ""}">
               <span>${field.label}</span>
-              <small>${field.help || ""}</small>
+              <small>${field.help || ""} Tightening this threshold makes the screen stricter.</small>
               <input
                 type="number"
                 data-screener-setting="${field.key}"
@@ -656,7 +658,7 @@ function renderChanges() {
             <article class="change-card">
               <strong>${item.ticker} - ${titleCase(item.type)}</strong>
               <p>${item.changes.join(", ")}</p>
-              <small class="subtle">${relativeTime(item.as_of)} · ${pct(item.confidence, 0)} confidence</small>
+              <small class="subtle">${relativeTime(item.as_of)} - ${pct(item.confidence, 0)} confidence</small>
             </article>
           `
         )

@@ -495,6 +495,13 @@ input:focus-visible {
   border: 1px solid var(--surface-border);
 }
 
+.workspace-card,
+.watch-card,
+.panel-action {
+  color: var(--text);
+  text-align: left;
+}
+
 .comparison-card.selected {
   border-color: rgba(0, 122, 255, 0.32);
   box-shadow: inset 0 0 0 1px rgba(0, 122, 255, 0.18);
@@ -839,6 +846,13 @@ input:focus-visible {
   font-size: 12px;
   font-weight: 700;
   text-anchor: middle;
+}
+
+.chart-caption {
+  fill: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .chart-value {
@@ -1219,6 +1233,7 @@ input:focus-visible {
   line-height: 1.5;
   text-transform: none;
   letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .feed-meta,
@@ -1227,6 +1242,10 @@ input:focus-visible {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.watch-card-meta span {
+  line-height: 1.45;
 }
 
 .mobile-nav {

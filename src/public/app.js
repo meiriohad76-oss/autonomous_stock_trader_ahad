@@ -246,12 +246,16 @@ function sourceLabel(value) {
   if (value === "bootstrap_placeholder") {
     return "Bootstrap";
   }
-  return "No fundamentals";
+  return "Sentiment only";
 }
 
 function screenLabel(row) {
   const stage = row?.screen_stage ? prettyLabel(row.screen_stage) : "unscored";
   return row?.screen_provisional ? `${stage} (provisional)` : stage;
+}
+
+function eventTypeLabel(value) {
+  return value === "monitor_item" ? "monitor item" : prettyLabel(value);
 }
 
 function screenBadgeClass(row) {
@@ -350,6 +354,68 @@ function matchesSearch(row) {
   return haystack.includes(state.searchTerm.toLowerCase());
 }
 
+function dedupeSignals(items) {
+  const deduped = [];
+  const seen = new Set();
+  for (const item of items) {
+    const key = [
+      item.ticker || "MKT",
+      item.event_type || item.alert_type || "signal",
+      item.headline || "-",
+      signalTimestamp(item) || item.created_at || "-"
+    ].join("|");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function deriveVisibleSectorSummaries(rows = filteredLeaderboard()) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const key = row.sector || tickerSector(row.entity_key);
+    const entry = grouped.get(key) || {
+      sector: key,
+      count: 0,
+      sentimentSum: 0,
+      confidenceSum: 0,
+      momentumSum: 0,
+      activeCount: 0
+    };
+    entry.count += 1;
+    entry.sentimentSum += Number(row.weighted_sentiment || 0);
+    entry.confidenceSum += Number(row.weighted_confidence || 0);
+    entry.momentumSum += Math.abs(Number(row.momentum_delta || 0));
+    if (row.sentiment_visible || Number(row.doc_count || 0) > 0) {
+      entry.activeCount += 1;
+    }
+    grouped.set(key, entry);
+  }
+
+  return [...grouped.values()]
+    .map((entry) => {
+      const avgSentiment = entry.count ? entry.sentimentSum / entry.count : 0;
+      const avgConfidence = entry.count ? entry.confidenceSum / entry.count : 0;
+      return {
+        entity_key: entry.sector,
+        sentiment_regime: sentimentLabel(avgSentiment).toLowerCase().includes("bearish")
+          ? "bearish"
+          : sentimentLabel(avgSentiment).toLowerCase().includes("bullish")
+            ? "bullish"
+            : "neutral",
+        weighted_sentiment: avgSentiment,
+        weighted_confidence: avgConfidence,
+        average_momentum: entry.count ? entry.momentumSum / entry.count : 0,
+        tracked_names: entry.count,
+        active_names: entry.activeCount
+      };
+    })
+    .sort((a, b) => Math.abs(b.weighted_sentiment) - Math.abs(a.weighted_sentiment) || b.weighted_confidence - a.weighted_confidence);
+}
+
 function buildPriorityWatchRows(limit = 8) {
   const setupByTicker = new Map((state.tradeSetups?.setups || []).map((item) => [item.ticker, item]));
   const alertCounts = state.alerts.reduce((acc, alert) => {
@@ -369,11 +435,25 @@ function buildPriorityWatchRows(limit = 8) {
         Math.abs(Number(row.weighted_sentiment || 0)) * 2 +
         Number(row.weighted_confidence || 0) +
         Math.abs(Number(row.momentum_delta || 0)) * 1.5 +
-        Math.min(2, Number(row.unique_story_count || 0) * 0.25);
+        Math.min(2, Number(row.unique_story_count || 0) * 0.25) +
+        (row.sentiment_visible ? 1.2 : 0) +
+        Number(row.composite_fundamental_score || 0) * 0.8;
 
       return { row, score, setup };
     })
     .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+function collectWatchlistFeedItems(watchRows, limit = 8) {
+  const watchTickers = new Set(watchRows.map(({ row }) => row.entity_key));
+  return dedupeSignals([...state.highImpact, ...state.liveFeed])
+    .filter((item) => watchTickers.has(item.ticker))
+    .sort((a, b) => {
+      const monitorPenaltyA = a.event_type === "monitor_item" ? 0.15 : 0;
+      const monitorPenaltyB = b.event_type === "monitor_item" ? 0.15 : 0;
+      return (Number(b.confidence || 0) - monitorPenaltyB) - (Number(a.confidence || 0) - monitorPenaltyA);
+    })
     .slice(0, limit);
 }
 
@@ -391,6 +471,7 @@ function buildHelpSignal() {
   const overview = state.snapshot?.screener_overview || {};
   const fullUniverse = overview.full_universe || {};
   const visible = overview.visible_universe || visibleScreenerOverview();
+  const sentimentVisible = overview.sentiment_visible_universe || visible;
   return {
     ticker: null,
     title: "Dashboard Help",
@@ -402,7 +483,7 @@ function buildHelpSignal() {
     headline:
       "Overview is sentiment-first, Screen shows the stage-one fundamentals gate, and Trade Setups are the combined decision layer.",
     explanation:
-      `Full fundamentals universe: ${fullUniverse.tracked || 0} tracked, ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. Current sentiment-visible subset: ${visible.tracked} tracked, ${visible.eligible} eligible, ${visible.watch} watch, ${visible.reject} reject.`,
+      `This table now merges the full screened fundamentals universe with currently active sentiment names. Full fundamentals universe: ${fullUniverse.tracked || 0} tracked, ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. Current visible table rows: ${visible.tracked} tracked, ${visible.eligible} eligible, ${visible.watch} watch, ${visible.reject} reject. Names with active sentiment right now: ${sentimentVisible.tracked} tracked, ${sentimentVisible.eligible} eligible, ${sentimentVisible.watch} watch, ${sentimentVisible.reject} reject.`,
     eventType: "dashboard_help",
     url: null,
     sourceMetadata: null
@@ -416,7 +497,7 @@ function viewNeedsTickerDetail(view = state.activeView) {
 function buildSignalFromFeed(item, sourceLabel = "Live Feed") {
   return {
     ticker: item.ticker || null,
-    title: `${item.ticker || "MKT"}: ${prettyLabel(item.event_type)}`,
+    title: `${item.ticker || "MKT"}: ${eventTypeLabel(item.event_type)}`,
     subtitle: sourceLabel,
     label: item.label || sentimentLabel(item.sentiment_score || 0),
     confidence: item.confidence || 0,
@@ -545,7 +626,7 @@ function renderMoneyFlowSection(title, emptyText, signals, sourceLabel) {
                   <button type="button" class="money-flow-card ${badgeClass(item.label)}" data-money-flow-index="${sourceLabel}:${index}">
                     <div class="money-flow-card-head">
                       <div>
-                        <strong>${item.ticker || "MKT"}: ${prettyLabel(item.event_type)}</strong>
+                        <strong>${item.ticker || "MKT"}: ${eventTypeLabel(item.event_type)}</strong>
                       </div>
                       <span>${relativeTime(signalTimestamp(item))}</span>
                     </div>
@@ -582,7 +663,7 @@ function renderMarketFlowControls() {
       <div class="money-flow-controls-head">
         <div>
           <div class="section-kicker">Radar Controls</div>
-          <p>Tune how the engine separates abnormal volume from stronger block-style flow.</p>
+          <p>These controls tune the live money-flow radar. Tape flow comes from market-data anomalies, insider flow comes from SEC Form 4, and institutional flow comes from 13F filings.</p>
         </div>
         <button type="button" class="panel-action" id="market-flow-save-button" ${state.marketFlowSaveState === "saving" ? "disabled" : ""}>${saveLabel}</button>
       </div>
@@ -590,7 +671,7 @@ function renderMarketFlowControls() {
         ${Object.entries(MARKET_FLOW_FIELD_META)
           .map(
             ([key, meta]) => `
-              <label class="money-flow-control">
+              <label class="money-flow-control" title="${meta.help}">
                 <span>${meta.label}</span>
                 <input type="number" data-market-flow-setting="${key}" step="${meta.step}" value="${state.marketFlowSettings[key] ?? ""}">
                 <small>${meta.help}</small>
@@ -805,7 +886,8 @@ function renderLeaderboard() {
   const overview = state.snapshot?.screener_overview || {};
   const fullUniverse = overview.full_universe || {};
   const visibleUniverse = overview.visible_universe || visibleScreenerOverview();
-  elements.leaderboardExplainer.textContent = `Sentiment still drives the order here. Screen shows the stage-one fundamentals gate and Composite shows the full fundamentals score. Full fundamentals universe: ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. Current sentiment-visible subset: ${visibleUniverse.eligible} eligible, ${visibleUniverse.watch} watch, ${visibleUniverse.reject} reject.`;
+  const sentimentVisibleUniverse = overview.sentiment_visible_universe || visibleUniverse;
+  elements.leaderboardExplainer.textContent = `The table now blends the full screened fundamentals universe with names that already have active sentiment. Screen shows the stage-one gate, Composite shows the full fundamentals score, and Sentiment controls the ordering when there is live signal. Full screened universe: ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. Visible rows right now: ${visibleUniverse.eligible} eligible, ${visibleUniverse.watch} watch, ${visibleUniverse.reject} reject. Active sentiment subset: ${sentimentVisibleUniverse.eligible || 0} eligible, ${sentimentVisibleUniverse.watch || 0} watch, ${sentimentVisibleUniverse.reject || 0} reject.`;
 
   if (!rows.length) {
     elements.leaderboardBody.innerHTML = `
@@ -826,7 +908,7 @@ function renderLeaderboard() {
         <div class="stock-cell">
           <strong>${row.entity_key}</strong>
           <span>${row.company_name || tickerCompany(row.entity_key)}</span>
-          <span>${sourceLabel(row.fundamental_data_source)}</span>
+          <span>${row.sentiment_visible ? `Sentiment live - ${sourceLabel(row.fundamental_data_source)}` : `Screen-only - ${sourceLabel(row.fundamental_data_source)}`}</span>
         </div>
       </td>
       <td>
@@ -851,8 +933,9 @@ function renderLeaderboard() {
 }
 
 function renderFeed() {
+  const allItems = dedupeSignals(state.liveFeed).sort((a, b) => new Date(signalTimestamp(b) || 0) - new Date(signalTimestamp(a) || 0));
   const feedItems = state.searchTerm
-    ? state.liveFeed.filter((item) =>
+    ? allItems.filter((item) =>
         [
           item.ticker || "",
           item.headline || "",
@@ -863,7 +946,7 @@ function renderFeed() {
           .toLowerCase()
           .includes(state.searchTerm.toLowerCase())
       )
-    : state.liveFeed;
+    : allItems;
 
   elements.liveFeedList.innerHTML = "";
 
@@ -878,7 +961,7 @@ function renderFeed() {
     article.dataset.feedIndex = `${index}`;
     article.innerHTML = `
       <div class="feed-row">
-        <strong>${item.ticker || "MKT"}: ${item.event_type.replace(/_/g, " ")}</strong>
+        <strong>${item.ticker || "MKT"}: ${eventTypeLabel(item.event_type)}</strong>
         <span>${relativeTime(item.timestamp)}</span>
       </div>
       <p>${item.headline}</p>
@@ -993,7 +1076,7 @@ function renderDetailChart(detail) {
       const date = new Date(point.timestamp);
       const label = `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
       return index % 4 === 0 || index === priceSeries.length - 1
-        ? `<text x="${x}" y="252" class="chart-label">${label}</text>`
+        ? `<text x="${x}" y="244" class="chart-label">${label}</text>`
         : "";
     })
     .join("");
@@ -1027,17 +1110,17 @@ function renderDetail() {
     return;
   }
 
-  elements.tickerDetailTitle.textContent = `${detail.ticker} · ${detail.company_name || tickerCompany(detail.ticker)}`;
-  elements.tickerDetailSubtitle.textContent = `${detail.sector || tickerSector(detail.ticker)} · ${detail.market_snapshot.current_price.toFixed(2)} current price · ${formatSignedPercent(detail.market_snapshot.percent_change)} over ${detail.market_snapshot.baseline_window}`;
+  elements.tickerDetailTitle.textContent = `${detail.ticker} - ${detail.company_name || tickerCompany(detail.ticker)}`;
+  elements.tickerDetailSubtitle.textContent = `${detail.sector || tickerSector(detail.ticker)} - ${detail.market_snapshot.current_price.toFixed(2)} current price - ${formatSignedPercent(detail.market_snapshot.percent_change)} over ${detail.market_snapshot.baseline_window}`;
   renderDetailChart(detail);
 
   const windowCards = WINDOWS.map((windowKey) => {
     const item = detail.windows[windowKey];
     return `
       <div class="window-card">
-        <span>${windowKey.toUpperCase()}</span>
+        <span>${windowKey.toUpperCase()} sentiment</span>
         <strong>${formatNumber(item.weighted_sentiment)}</strong>
-        <small>${formatNumber(item.confidence * 100, 0)}% conf</small>
+        <small>${formatNumber(item.confidence * 100, 0)}% confidence in this window</small>
       </div>
     `;
   }).join("");
@@ -1062,17 +1145,17 @@ function renderDetail() {
     ? recentDocs
         .map(
           (item, index) =>
-            `<li><button type="button" class="workspace-list-button" data-detail-doc="${index}">${prettyLabel(item.event_type)} - ${formatNumber(item.confidence * 100, 0)}% - ${item.headline}</button></li>`
+            `<li><button type="button" class="workspace-list-button" data-detail-doc="${index}">${eventTypeLabel(item.event_type)} - ${formatNumber(item.confidence * 100, 0)}% - ${item.headline}</button></li>`
         )
         .join("")
     : "<li>No events yet.</li>";
 
   elements.detailFamilyBreakdown.innerHTML = detail.event_family_breakdown.length
-    ? detail.event_family_breakdown.map((item) => `<li>${item.name} · ${item.value}</li>`).join("")
+    ? detail.event_family_breakdown.map((item) => `<li>${item.name} - ${item.value}</li>`).join("")
     : "<li>No family mix yet.</li>";
 
   elements.detailSourceBreakdown.innerHTML = detail.source_distribution.length
-    ? detail.source_distribution.map((item) => `<li>${item.name} · ${item.value}</li>`).join("")
+    ? detail.source_distribution.map((item) => `<li>${item.name} - ${item.value}</li>`).join("")
     : "<li>No source mix yet.</li>";
 
   for (const button of elements.detailTopEvents.querySelectorAll("[data-detail-doc]")) {
@@ -1086,7 +1169,7 @@ function renderDetail() {
 }
 
 function renderMarketsView() {
-  const sectors = state.snapshot?.sectors || [];
+  const sectors = deriveVisibleSectorSummaries(filteredLeaderboard());
   const filteredSectors =
     state.marketFilter === "all"
       ? sectors
@@ -1113,7 +1196,7 @@ function renderMarketsView() {
     <div class="workspace-stat-card"><span>Bullish Sectors</span><strong>${bullishCount}</strong></div>
     <div class="workspace-stat-card"><span>Neutral Sectors</span><strong>${neutralCount}</strong></div>
     <div class="workspace-stat-card"><span>Bearish Sectors</span><strong>${bearishCount}</strong></div>
-    <div class="workspace-stat-card"><span>${activeSector ? "Sector Tickers" : "Filtered Tickers"}</span><strong>${rows.length}</strong></div>
+    <div class="workspace-stat-card"><span>${activeSector ? "Sector Names" : "Filtered Names"}</span><strong>${rows.length}</strong></div>
   `;
 
   renderMarketsSectorChart(filteredSectors);
@@ -1125,7 +1208,7 @@ function renderMarketsView() {
             <button type="button" class="workspace-card sentiment-surface ${sentimentClass(sector.sentiment_regime)} ${state.selectedSector === sector.entity_key ? "selected" : ""}" data-sector="${sector.entity_key}">
               <span>${sector.entity_key}</span>
               <strong>${formatNumber(sector.weighted_sentiment)}</strong>
-              <small>${formatNumber(sector.weighted_confidence * 100, 0)}% conf</small>
+              <small>${sector.tracked_names} names - ${formatNumber(sector.weighted_confidence * 100, 0)}% conf</small>
               <div class="mini-bar-track"><div class="mini-bar-fill ${sentimentClass(sector.sentiment_regime)}" style="width:${Math.max(10, Math.round(Math.abs(sector.weighted_sentiment) * 100))}%"></div></div>
             </button>
           `
@@ -1146,15 +1229,15 @@ function renderMarketsView() {
             <div>
               <div class="section-kicker">Sector Focus</div>
               <h3>${activeSector.entity_key}</h3>
-              <p>${prettyLabel(activeSector.sentiment_regime)} flow with ${formatNumber(activeSector.weighted_confidence * 100, 0)}% conviction across ${sectorMembers.length} tracked names.</p>
+              <p>${prettyLabel(activeSector.sentiment_regime)} sentiment across ${sectorMembers.length} visible names, with ${activeSector.active_names || 0} currently carrying live sentiment flow.</p>
             </div>
             <button type="button" class="panel-action" data-clear-sector>Clear</button>
           </div>
           <div class="workspace-detail-grid">
             <div class="workspace-stat-card"><span>Weighted Sentiment</span><strong>${formatNumber(activeSector.weighted_sentiment)}</strong></div>
             <div class="workspace-stat-card"><span>Sector Confidence</span><strong>${formatNumber(activeSector.weighted_confidence * 100, 0)}%</strong></div>
-            <div class="workspace-stat-card"><span>Top Constituent</span><strong>${sectorMembers[0]?.entity_key || "n/a"}</strong></div>
-            <div class="workspace-stat-card"><span>Live Flow</span><strong>${sectorFeed.length}</strong></div>
+            <div class="workspace-stat-card"><span>Active Sentiment Names</span><strong>${activeSector.active_names || 0}</strong></div>
+            <div class="workspace-stat-card"><span>Recent Feed Items</span><strong>${sectorFeed.length}</strong></div>
           </div>
           <ul class="workspace-list inline-list">
             ${sectorMembers.length
@@ -1181,15 +1264,26 @@ function renderMarketsView() {
       `
     : `
         <div class="workspace-empty">
-          Select a sector from the chart or cards to pivot the market table and inspect its constituent names.
+          Select a sector to narrow the comparison table and inspect which visible names are actually carrying sentiment right now.
         </div>
       `;
 
-  const comparisonRows = (() => {
-    const selected = rows.find((row) => row.entity_key === state.selectedTicker);
-    const others = rows.filter((row) => row.entity_key !== state.selectedTicker).slice(0, selected ? 3 : 4);
-    return selected ? [selected, ...others] : others;
-  })();
+  const comparisonRows = rows
+    .slice()
+    .sort((a, b) => {
+      const scoreA =
+        Math.abs(Number(a.momentum_delta || 0)) * 3 +
+        Math.abs(Number(a.weighted_sentiment || 0)) * 2 +
+        Number(a.weighted_confidence || 0) +
+        Math.min(1.5, Number(a.story_velocity || 0) * 0.25);
+      const scoreB =
+        Math.abs(Number(b.momentum_delta || 0)) * 3 +
+        Math.abs(Number(b.weighted_sentiment || 0)) * 2 +
+        Number(b.weighted_confidence || 0) +
+        Math.min(1.5, Number(b.story_velocity || 0) * 0.25);
+      return scoreB - scoreA;
+    })
+    .slice(0, 4);
 
   elements.marketsComparisonStrip.innerHTML = comparisonRows.length
     ? comparisonRows
@@ -1198,7 +1292,7 @@ function renderMarketsView() {
             <button type="button" class="workspace-card comparison-card ${state.selectedTicker === row.entity_key ? "selected" : ""}" data-compare-ticker="${row.entity_key}">
               <span>${row.entity_key}</span>
               <strong>${formatNumber(row.weighted_sentiment)}</strong>
-              <small>${formatSignedPercent(row.momentum_delta)} momentum</small>
+              <small>${formatSignedPercent(row.momentum_delta)} momentum - ${formatNumber(row.weighted_confidence * 100, 0)}% conf</small>
               <div class="mini-bar-track"><div class="mini-bar-fill ${sentimentClass(row.sentiment_regime)}" style="width:${Math.max(10, Math.round(row.weighted_confidence * 100))}%"></div></div>
             </button>
           `
@@ -1210,7 +1304,7 @@ function renderMarketsView() {
     ? rows
         .map(
           (row) => `
-            <tr data-ticker="${row.entity_key}">
+          <tr data-ticker="${row.entity_key}">
               <td>
                 <div class="stock-cell">
                   <strong>${row.entity_key}</strong>
@@ -1219,7 +1313,7 @@ function renderMarketsView() {
               </td>
               <td><span class="sentiment-badge ${badgeClass(sentimentLabel(row.weighted_sentiment))}">${sentimentLabel(row.weighted_sentiment)}</span></td>
               <td>${formatNumber(row.weighted_confidence * 100, 1)}%</td>
-              <td>${formatNumber(row.story_velocity, 2)}/h</td>
+              <td>${formatSignedPercent(row.momentum_delta)} - ${formatNumber(row.story_velocity, 2)}/h</td>
             </tr>
           `
         )
@@ -1233,7 +1327,7 @@ function renderMarketsView() {
           <div class="workspace-stat-card"><span>Company</span><strong>${state.tickerDetail.company_name || tickerCompany(state.tickerDetail.ticker)}</strong></div>
           <div class="workspace-stat-card"><span>Sector</span><strong>${state.tickerDetail.sector || tickerSector(state.tickerDetail.ticker)}</strong></div>
           <div class="workspace-stat-card"><span>Price</span><strong>${formatNumber(state.tickerDetail.market_snapshot.current_price)}</strong></div>
-          <div class="workspace-stat-card"><span>Regime</span><strong>${state.tickerDetail.regime}</strong></div>
+          <div class="workspace-stat-card"><span>Sentiment Regime</span><strong>${state.tickerDetail.regime}</strong></div>
           <div class="workspace-stat-card"><span>Risk Flags</span><strong>${state.tickerDetail.risk_flags.length || 0}</strong></div>
         </div>
         <ul class="workspace-list">
@@ -1241,7 +1335,7 @@ function renderMarketsView() {
             .slice(0, 5)
             .map(
               (item, index) =>
-                `<li><button type="button" class="workspace-list-button" data-market-doc="${index}">${prettyLabel(item.event_type)} - ${formatNumber(item.confidence * 100, 0)}% - ${item.headline}</button></li>`
+                `<li><button type="button" class="workspace-list-button" data-market-doc="${index}">${eventTypeLabel(item.event_type)} - ${formatNumber(item.confidence * 100, 0)}% - ${item.headline}</button></li>`
             )
             .join("")}
         </ul>
@@ -1326,17 +1420,18 @@ function renderMarketsSectorChart(sectors) {
     return;
   }
 
+  const visibleSectors = sectors.slice(0, 8);
   const width = 760;
   const height = 220;
   const chartBottom = 176;
-  const barWidth = Math.min(92, Math.max(44, Math.floor(width / Math.max(1, sectors.length * 1.6))));
-  const gap = (width - sectors.length * barWidth) / Math.max(1, sectors.length + 1);
+  const barWidth = Math.min(92, Math.max(52, Math.floor(width / Math.max(1, visibleSectors.length * 1.35))));
+  const gap = (width - visibleSectors.length * barWidth) / Math.max(1, visibleSectors.length + 1);
   const zeroLine = 102;
   const grid = [36, 69, 102, 135, 168]
     .map((y) => `<line x1="0" y1="${y}" x2="${width}" y2="${y}" class="chart-grid"></line>`)
     .join("");
 
-  const bars = sectors
+  const bars = visibleSectors
     .map((sector, index) => {
       const x = gap + index * (barWidth + gap);
       const amplitude = Math.max(-1, Math.min(1, sector.weighted_sentiment || 0));
@@ -1345,11 +1440,12 @@ function renderMarketsSectorChart(sectors) {
       const y = isPositive ? zeroLine - barHeight : zeroLine;
       const fillClass = `bar-${sentimentClass(sector.sentiment_regime)}`;
       const labelY = chartBottom + 18;
+      const shortLabel = sector.entity_key.length > 16 ? `${sector.entity_key.slice(0, 15)}...` : sector.entity_key;
       return `
         <g class="sector-bar-group ${state.selectedSector === sector.entity_key ? "is-selected" : ""}" data-sector="${sector.entity_key}">
           <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth}" height="${Math.max(10, barHeight).toFixed(1)}" rx="10" class="sector-bar ${fillClass}"></rect>
           <text x="${(x + barWidth / 2).toFixed(1)}" y="${isPositive ? y - 8 : y + Math.max(18, barHeight + 18)}" class="chart-value">${formatNumber(sector.weighted_sentiment)}</text>
-          <text x="${(x + barWidth / 2).toFixed(1)}" y="${labelY}" class="chart-label">${sector.entity_key}</text>
+          <text x="${(x + barWidth / 2).toFixed(1)}" y="${labelY}" class="chart-label">${shortLabel}</text>
         </g>
       `;
     })
@@ -1359,6 +1455,7 @@ function renderMarketsSectorChart(sectors) {
     ${grid}
     <line x1="0" y1="${zeroLine}" x2="${width}" y2="${zeroLine}" class="chart-axis"></line>
     ${bars}
+    <text x="8" y="18" class="chart-caption">Top sectors by visible sentiment intensity</text>
   `;
 }
 
@@ -1373,12 +1470,12 @@ function renderWatchView() {
                 <strong>${row.entity_key}</strong>
                 <span class="sentiment-badge ${badgeClass(sentimentLabel(row.weighted_sentiment))}">${sentimentLabel(row.weighted_sentiment)}</span>
               </div>
-              <p>${row.company_name || tickerCompany(row.entity_key)} · ${row.sector || tickerSector(row.entity_key)}</p>
+              <p>${row.company_name || tickerCompany(row.entity_key)} - ${row.sector || tickerSector(row.entity_key)}</p>
               <div class="watch-card-meta">
-                <span>${screenLabel(row)}</span>
-                <span>${row.composite_fundamental_score !== null && row.composite_fundamental_score !== undefined ? `F ${formatNumber(row.composite_fundamental_score, 2)}` : "F --"}</span>
-                <span>${formatNumber(row.weighted_confidence * 100, 0)}% conf</span>
-                <span>${setup ? prettyLabel(setup.action) : prettyLabel(row.top_event_types[0] || "mixed flow")}</span>
+                <span title="Stage-one fundamentals gate result">${screenLabel(row)}</span>
+                <span title="Full fundamentals composite score">${row.composite_fundamental_score !== null && row.composite_fundamental_score !== undefined ? `F ${formatNumber(row.composite_fundamental_score, 2)}` : "F --"}</span>
+                <span title="Confidence in the current sentiment read">${formatNumber(row.weighted_confidence * 100, 0)}% conf</span>
+                <span title="Current action or strongest active signal">${setup ? prettyLabel(setup.action) : eventTypeLabel(row.top_event_types[0] || "monitor_item")}</span>
               </div>
             </button>
           `
@@ -1386,20 +1483,21 @@ function renderWatchView() {
         .join("")
     : `<div class="workspace-empty">No watchlist items match the current search.</div>`;
 
-  const watchFeedItems = state.liveFeed.filter((item) => watchRows.some(({ row }) => row.entity_key === item.ticker)).slice(0, 8);
+  const watchFeedItems = collectWatchlistFeedItems(watchRows, 8);
   elements.watchFeed.innerHTML = watchFeedItems.length
     ? watchFeedItems
         .map(
           (item) => `
             <article class="feed-card ${badgeClass(item.label)}" data-watch-feed="${item.ticker || ""}">
               <div class="feed-row">
-                <strong>${item.ticker || "MKT"}: ${item.event_type.replace(/_/g, " ")}</strong>
+                <strong>${item.ticker || "MKT"}: ${eventTypeLabel(item.event_type)}</strong>
                 <span>${relativeTime(item.timestamp)}</span>
               </div>
-              <p>${item.explanation_short}</p>
+              <p>${item.explanation_short || item.headline}</p>
               <div class="feed-meta">
                 <span class="sentiment-badge ${badgeClass(item.label)}">${item.label}</span>
                 <span>${formatNumber(item.confidence * 100, 0)}% Conf</span>
+                <span>${item.source_name || "Source n/a"}</span>
               </div>
             </article>
           `
@@ -1428,7 +1526,7 @@ function renderWatchView() {
             .slice(0, 6)
             .map(
               (item, index) =>
-                `<li><button type="button" class="workspace-list-button" data-watch-doc="${index}">${relativeTime(item.published_at)} - ${item.headline}</button></li>`
+                `<li><button type="button" class="workspace-list-button" data-watch-doc="${index}">${relativeTime(item.published_at)} - ${eventTypeLabel(item.event_type)} - ${item.headline}</button></li>`
             )
             .join("")}
         </ul>
@@ -1503,7 +1601,7 @@ function renderAlertsView() {
           (item, index) => `
             <article class="feed-card ${badgeClass(item.label)}" data-high-impact-index="${index}">
               <div class="feed-row">
-                <strong>${item.ticker || "MKT"}: ${item.event_type.replace(/_/g, " ")}</strong>
+                <strong>${item.ticker || "MKT"}: ${eventTypeLabel(item.event_type)}</strong>
                 <span>${relativeTime(item.timestamp)}</span>
               </div>
               <p>${item.headline}</p>
@@ -1542,6 +1640,10 @@ function renderAlertsView() {
   elements.alertsMoneyFlow.innerHTML = `
     <div class="money-flow-shell">
       ${renderMarketFlowControls()}
+      <div class="note-card">
+        <strong>How this relates to Active Alerts</strong>
+        <p>Active Alerts are downstream sentiment-engine triggers. Smart Money Radar shows the upstream raw flow evidence from SEC insider filings, 13F ownership changes, and tape-style market anomalies before or alongside those alerts.</p>
+      </div>
       <div class="workspace-detail-grid">
         <div class="workspace-stat-card"><span>Insider</span><strong>${insiderCount}</strong></div>
         <div class="workspace-stat-card"><span>Institutional</span><strong>${institutionalCount}</strong></div>
@@ -1801,6 +1903,7 @@ function render() {
   renderActiveView();
   renderSignalDrawer();
   elements.alertCount.textContent = state.alerts.length;
+  renderScreenFilterTabLabels();
   updateFilterButtons(elements.fundamentalFilterTabs, "screenFilter", state.screenFilter);
 }
 
@@ -1816,6 +1919,25 @@ function updateFilterButtons(container, key, value) {
   }
   for (const button of container.querySelectorAll(".time-chip")) {
     button.classList.toggle("active", button.dataset[key] === value);
+  }
+}
+
+function renderScreenFilterTabLabels() {
+  if (!elements.fundamentalFilterTabs) {
+    return;
+  }
+  const overview = state.snapshot?.screener_overview || {};
+  const fullUniverse = overview.full_universe || {};
+  const visibleUniverse = overview.visible_universe || {};
+  const labels = {
+    all: `All Screens (${visibleUniverse.tracked || fullUniverse.tracked || 0})`,
+    eligible: `Eligible (${fullUniverse.eligible || 0})`,
+    watch: `Watch (${fullUniverse.watch || 0})`,
+    reject: `Reject (${fullUniverse.reject || 0})`
+  };
+
+  for (const button of elements.fundamentalFilterTabs.querySelectorAll("[data-screen-filter]")) {
+    button.textContent = labels[button.dataset.screenFilter] || button.textContent;
   }
 }
 

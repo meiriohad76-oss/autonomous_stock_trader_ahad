@@ -15,7 +15,8 @@ export const EVENT_TAXONOMY = {
   capital_balance_sheet: ["debt_refinance", "liquidity_concern", "bankruptcy_risk"],
   insider_ownership: ["insider_buy", "insider_sell", "activist_stake", "institutional_buying", "institutional_selling"],
   money_flow: ["abnormal_volume_buying", "abnormal_volume_selling", "block_trade_buying", "block_trade_selling"],
-  macro_sector: ["rate_decision", "inflation_surprise", "commodity_shock", "policy_change"]
+  macro_sector: ["rate_decision", "inflation_surprise", "commodity_shock", "policy_change"],
+  unclassified: ["monitor_item"]
 };
 
 export const WATCHLIST = [
@@ -138,6 +139,7 @@ export const HALF_LIFE_HOURS = {
   policy_change: 12,
   offering: 48,
   buyback: 48,
+  monitor_item: 12,
   default: 24
 };
 
