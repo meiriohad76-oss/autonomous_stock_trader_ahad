@@ -14,6 +14,7 @@ import { createSecInsiderCollector } from "./domain/sec-insider.js";
 import { createStore, resetStore } from "./domain/store.js";
 import { TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
+import { createTradeSetupAgent } from "./domain/trade-setup.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
   marketFlowVolumeSpikeThreshold: { env: "MARKET_FLOW_VOLUME_SPIKE_THRESHOLD", min: 1, max: 20, digits: 2 },
@@ -681,6 +682,18 @@ export function createSentimentApp() {
     getFundamentalsChanges(limit) {
       return fundamentals.getChanges(limit);
     },
+    getMacroRegime() {
+      return store.macroRegime;
+    },
+    getTradeSetups({ action = null, minConviction = null, provisional = null } = {}) {
+      return store.tradeSetups
+        .filter((s) => (action ? s.action === action : true))
+        .filter((s) => (minConviction !== null ? s.conviction >= minConviction : true))
+        .filter((s) => (provisional !== null ? s.provisional === provisional : true));
+    },
+    getTradeSetupDetail(ticker) {
+      return store.tradeSetups.find((s) => s.ticker === ticker) || null;
+    },
     getTrackedFundamentalCompanies() {
       return fundamentals.getTrackedCompanies();
     },
@@ -707,6 +720,7 @@ export function createSentimentApp() {
   };
 
   const secFundamentalsCollector = createSecFundamentalsCollector(app);
+  const tradeSetupAgent = createTradeSetupAgent(app);
   let autosaveTimer = null;
 
   app.startLiveSources = async function startLiveSources() {
@@ -720,7 +734,8 @@ export function createSentimentApp() {
         getCompanies: () => fundamentals.getTrackedCompanies(),
         onUpdate: async (referenceMap) => fundamentals.refreshMarketReference(referenceMap)
       }),
-      secFundamentalsCollector.start()
+      secFundamentalsCollector.start(),
+      tradeSetupAgent.start()
     ]);
     await marketFlowMonitor.start();
 
@@ -734,6 +749,7 @@ export function createSentimentApp() {
   };
 
   app.stopLiveSources = async function stopLiveSources() {
+    tradeSetupAgent.stop();
     liveNewsCollector.stop();
     marketDataService.stop();
     marketFlowMonitor.stop();
