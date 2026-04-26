@@ -1,0 +1,366 @@
+export const WINDOWS = [
+  { key: "15m", label: "15 Minutes", hours: 0.25 },
+  { key: "1h", label: "1 Hour", hours: 1 },
+  { key: "4h", label: "4 Hours", hours: 4 },
+  { key: "1d", label: "1 Day", hours: 24 },
+  { key: "7d", label: "7 Days", hours: 168 }
+];
+
+export const EVENT_TAXONOMY = {
+  earnings: ["beat", "miss", "guidance_raise", "guidance_cut", "margin_change"],
+  corporate_actions: ["merger", "acquisition", "spin_off", "buyback", "dividend_change", "offering"],
+  analyst: ["upgrade", "downgrade", "target_raise", "target_cut"],
+  legal_regulatory: ["investigation", "lawsuit", "settlement", "approval", "rejection"],
+  product_operations: ["launch", "delay", "partnership", "contract_win", "outage", "recall"],
+  capital_balance_sheet: ["debt_refinance", "liquidity_concern", "bankruptcy_risk"],
+  insider_ownership: ["insider_buy", "insider_sell", "activist_stake", "institutional_buying", "institutional_selling"],
+  money_flow: ["abnormal_volume_buying", "abnormal_volume_selling", "block_trade_buying", "block_trade_selling"],
+  macro_sector: ["rate_decision", "inflation_surprise", "commodity_shock", "policy_change"]
+};
+
+export const WATCHLIST = [
+  {
+    ticker: "AAPL",
+    company: "Apple",
+    sector: "Technology",
+    industry: "Consumer Electronics",
+    aliases: ["apple", "iphone maker"],
+    base_price: 212.48
+  },
+  {
+    ticker: "MSFT",
+    company: "Microsoft",
+    sector: "Technology",
+    industry: "Software",
+    aliases: ["microsoft"],
+    base_price: 428.72
+  },
+  {
+    ticker: "NVDA",
+    company: "Nvidia",
+    sector: "Technology",
+    industry: "Semiconductors",
+    aliases: ["nvidia"],
+    base_price: 822.79
+  },
+  {
+    ticker: "TSLA",
+    company: "Tesla",
+    sector: "Consumer Discretionary",
+    industry: "Automobiles",
+    aliases: ["tesla"],
+    base_price: 171.34
+  },
+  {
+    ticker: "AMZN",
+    company: "Amazon",
+    sector: "Consumer Discretionary",
+    industry: "Internet Retail",
+    aliases: ["amazon"],
+    base_price: 186.52
+  },
+  {
+    ticker: "META",
+    company: "Meta Platforms",
+    sector: "Communication Services",
+    industry: "Internet Content",
+    aliases: ["meta", "facebook"],
+    base_price: 501.26
+  },
+  {
+    ticker: "GOOGL",
+    company: "Alphabet",
+    sector: "Communication Services",
+    industry: "Internet Content",
+    aliases: ["alphabet", "google"],
+    base_price: 173.42
+  },
+  {
+    ticker: "QQQ",
+    company: "Invesco QQQ Trust",
+    sector: "Macro",
+    industry: "ETF",
+    aliases: ["nasdaq 100", "qqq"],
+    base_price: 448.31
+  },
+  {
+    ticker: "SPY",
+    company: "SPDR S&P 500 ETF Trust",
+    sector: "Macro",
+    industry: "ETF",
+    aliases: ["s&p 500", "spy"],
+    base_price: 512.88
+  }
+];
+
+export const TICKER_LOOKUP = new Map(WATCHLIST.map((entry) => [entry.ticker, entry]));
+
+export const SOURCE_TRUST = {
+  sec_edgar: 0.98,
+  marketaux: 0.84,
+  google_news: 0.62,
+  yahoo_finance: 0.6,
+  insider_tracker: 0.79,
+  macro_calendar: 0.73,
+  market_flow: 0.76,
+  manual: 0.5
+};
+
+export const HALF_LIFE_HOURS = {
+  guidance_raise: 24,
+  guidance_cut: 24,
+  beat: 24,
+  miss: 24,
+  investigation: 72,
+  lawsuit: 96,
+  approval: 72,
+  rejection: 72,
+  upgrade: 24,
+  downgrade: 24,
+  target_raise: 24,
+  target_cut: 24,
+  delay: 8,
+  outage: 6,
+  contract_win: 24,
+  partnership: 24,
+  launch: 12,
+  recall: 72,
+  insider_buy: 60,
+  insider_sell: 60,
+  institutional_buying: 168,
+  institutional_selling: 168,
+  abnormal_volume_buying: 8,
+  abnormal_volume_selling: 8,
+  block_trade_buying: 12,
+  block_trade_selling: 12,
+  inflation_surprise: 8,
+  rate_decision: 8,
+  policy_change: 12,
+  offering: 48,
+  buyback: 48,
+  default: 24
+};
+
+export const RULE_PATTERNS = [
+  {
+    family: "earnings",
+    type: "guidance_raise",
+    direction: "positive",
+    label: "bullish",
+    urgency: "high",
+    tradeability: "actionable",
+    sentiment: 0.82,
+    impact: 0.86,
+    confidence: 0.88,
+    patterns: [/raises? (full[- ]year )?(guidance|outlook)/i, /stronger-than-expected quarter/i],
+    reasons: ["guidance_raised", "earnings_strength"]
+  },
+  {
+    family: "earnings",
+    type: "guidance_cut",
+    direction: "negative",
+    label: "bearish",
+    urgency: "high",
+    tradeability: "actionable",
+    sentiment: -0.84,
+    impact: 0.87,
+    confidence: 0.9,
+    patterns: [/cuts? (full[- ]year )?(guidance|outlook)/i, /lowers? (forecast|guidance)/i],
+    reasons: ["guidance_cut"]
+  },
+  {
+    family: "earnings",
+    type: "beat",
+    direction: "positive",
+    label: "bullish",
+    urgency: "medium",
+    tradeability: "actionable",
+    sentiment: 0.72,
+    impact: 0.78,
+    confidence: 0.82,
+    patterns: [/earnings beat/i, /stronger-than-expected/i, /margin expansion/i],
+    reasons: ["earnings_beat"]
+  },
+  {
+    family: "product_operations",
+    type: "contract_win",
+    direction: "positive",
+    label: "bullish",
+    urgency: "medium",
+    tradeability: "actionable",
+    sentiment: 0.7,
+    impact: 0.74,
+    confidence: 0.8,
+    patterns: [/wins? major .* contract/i, /multi-year .* contract/i, /backlog/i],
+    reasons: ["contract_win"]
+  },
+  {
+    family: "product_operations",
+    type: "delay",
+    direction: "negative",
+    label: "bearish",
+    urgency: "high",
+    tradeability: "actionable",
+    sentiment: -0.68,
+    impact: 0.75,
+    confidence: 0.82,
+    patterns: [/production delay/i, /supplier outage/i, /deliveries could be affected/i],
+    reasons: ["operational_delay"]
+  },
+  {
+    family: "legal_regulatory",
+    type: "investigation",
+    direction: "negative",
+    label: "bearish",
+    urgency: "high",
+    tradeability: "monitor",
+    sentiment: -0.64,
+    impact: 0.8,
+    confidence: 0.84,
+    patterns: [/investigation/i, /antitrust/i, /regulatory probe/i],
+    reasons: ["regulatory_overhang"]
+  },
+  {
+    family: "insider_ownership",
+    type: "insider_buy",
+    direction: "positive",
+    label: "bullish",
+    urgency: "medium",
+    tradeability: "monitor",
+    sentiment: 0.64,
+    impact: 0.62,
+    confidence: 0.88,
+    patterns: [/open-market share purchase/i, /form 4/i, /director purchased/i, /shares acquired/i],
+    reasons: ["insider_buy"]
+  },
+  {
+    family: "insider_ownership",
+    type: "insider_sell",
+    direction: "negative",
+    label: "bearish",
+    urgency: "medium",
+    tradeability: "monitor",
+    sentiment: -0.64,
+    impact: 0.62,
+    confidence: 0.88,
+    patterns: [/open-market share sale/i, /shares disposed/i, /sold shares/i, /disposed in the market/i],
+    reasons: ["insider_sell"]
+  },
+  {
+    family: "insider_ownership",
+    type: "institutional_buying",
+    direction: "positive",
+    label: "bullish",
+    urgency: "medium",
+    tradeability: "monitor",
+    sentiment: 0.62,
+    impact: 0.6,
+    confidence: 0.86,
+    patterns: [/institutional accumulation/i, /increased position/i, /13f filing/i, /reported value changing/i],
+    reasons: ["institutional_buying"]
+  },
+  {
+    family: "insider_ownership",
+    type: "institutional_selling",
+    direction: "negative",
+    label: "bearish",
+    urgency: "medium",
+    tradeability: "monitor",
+    sentiment: -0.62,
+    impact: 0.6,
+    confidence: 0.86,
+    patterns: [/institutional distribution/i, /reduced position/i, /13f filing/i, /reported value changing/i],
+    reasons: ["institutional_selling"]
+  },
+  {
+    family: "money_flow",
+    type: "abnormal_volume_buying",
+    direction: "positive",
+    label: "bullish",
+    urgency: "high",
+    tradeability: "actionable",
+    sentiment: 0.67,
+    impact: 0.66,
+    confidence: 0.84,
+    patterns: [/abnormal volume surge/i, /bullish tape flow/i, /heavy buying flow/i],
+    reasons: ["abnormal_volume_buying"]
+  },
+  {
+    family: "money_flow",
+    type: "abnormal_volume_selling",
+    direction: "negative",
+    label: "bearish",
+    urgency: "high",
+    tradeability: "actionable",
+    sentiment: -0.67,
+    impact: 0.66,
+    confidence: 0.84,
+    patterns: [/abnormal volume surge/i, /bearish tape flow/i, /heavy selling flow/i],
+    reasons: ["abnormal_volume_selling"]
+  },
+  {
+    family: "money_flow",
+    type: "block_trade_buying",
+    direction: "positive",
+    label: "bullish",
+    urgency: "high",
+    tradeability: "actionable",
+    sentiment: 0.7,
+    impact: 0.72,
+    confidence: 0.88,
+    patterns: [/block trade accumulation/i, /large block buying/i, /institutional block buying/i],
+    reasons: ["block_trade_buying"]
+  },
+  {
+    family: "money_flow",
+    type: "block_trade_selling",
+    direction: "negative",
+    label: "bearish",
+    urgency: "high",
+    tradeability: "actionable",
+    sentiment: -0.7,
+    impact: 0.72,
+    confidence: 0.88,
+    patterns: [/block trade distribution/i, /large block selling/i, /institutional block selling/i],
+    reasons: ["block_trade_selling"]
+  },
+  {
+    family: "analyst",
+    type: "upgrade",
+    direction: "positive",
+    label: "bullish",
+    urgency: "medium",
+    tradeability: "monitor",
+    sentiment: 0.48,
+    impact: 0.52,
+    confidence: 0.7,
+    patterns: [/brokerage upgrade/i, /upgraded/i, /higher price target/i],
+    reasons: ["analyst_upgrade"]
+  },
+  {
+    family: "analyst",
+    type: "target_raise",
+    direction: "positive",
+    label: "bullish",
+    urgency: "medium",
+    tradeability: "monitor",
+    sentiment: 0.44,
+    impact: 0.48,
+    confidence: 0.68,
+    patterns: [/price target/i, /target raised/i, /lifted its target/i],
+    reasons: ["target_raise"]
+  },
+  {
+    family: "macro_sector",
+    type: "inflation_surprise",
+    direction: "positive",
+    label: "bullish",
+    urgency: "high",
+    tradeability: "actionable",
+    sentiment: 0.63,
+    impact: 0.78,
+    confidence: 0.78,
+    patterns: [/inflation comes in cooler/i, /softer inflation/i, /dovish rate path/i],
+    reasons: ["inflation_cooler", "risk_appetite"]
+  }
+];

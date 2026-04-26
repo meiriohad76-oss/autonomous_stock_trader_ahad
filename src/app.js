@@ -1,0 +1,637 @@
+import { config } from "./config.js";
+import { readFile, writeFile } from "node:fs/promises";
+import {
+  getFundamentalPersistenceFactSeries,
+  getFundamentalPersistenceFilings,
+  getFundamentalPersistenceTicker,
+  summarizeFundamentalPersistence
+} from "./domain/fundamental-persistence.js";
+import { createFundamentalMarketDataService } from "./domain/fundamental-market-data.js";
+import { loadFundamentalUniverse } from "./domain/fundamental-universe.js";
+import { createFundamentalsEngine } from "./domain/fundamentals.js";
+import { createLiveNewsCollector } from "./domain/live-news.js";
+import { createMarketDataService } from "./domain/market-data.js";
+import { createMarketFlowMonitor } from "./domain/market-flow.js";
+import { createPersistence } from "./domain/persistence.js";
+import { createPipeline } from "./domain/pipeline.js";
+import { replaySampleEvents } from "./domain/replay.js";
+import { createSecFundamentalsCollector } from "./domain/sec-fundamentals.js";
+import { createSecInstitutionalCollector } from "./domain/sec-institutional.js";
+import { createSecInsiderCollector } from "./domain/sec-insider.js";
+import { createStore, resetStore } from "./domain/store.js";
+import { createMacroRegimeAgent } from "./domain/macro-regime.js";
+import { createTradeSetupAgent } from "./domain/trade-setup.js";
+import { scoreToLabel } from "./utils/helpers.js";
+
+const MARKET_FLOW_SETTINGS_FIELDS = {
+  marketFlowVolumeSpikeThreshold: { env: "MARKET_FLOW_VOLUME_SPIKE_THRESHOLD", min: 1, max: 20, digits: 2 },
+  marketFlowMinPriceMoveThreshold: { env: "MARKET_FLOW_MIN_PRICE_MOVE_THRESHOLD", min: 0.001, max: 0.2, digits: 4 },
+  marketFlowBlockTradeSpikeThreshold: { env: "MARKET_FLOW_BLOCK_TRADE_SPIKE_THRESHOLD", min: 1, max: 30, digits: 2 },
+  marketFlowBlockTradeShockThreshold: { env: "MARKET_FLOW_BLOCK_TRADE_SHOCK_THRESHOLD", min: 1, max: 30, digits: 2 },
+  marketFlowBlockTradeMinShares: { env: "MARKET_FLOW_BLOCK_TRADE_MIN_SHARES", min: 10000, max: 1000000000, digits: 0 },
+  marketFlowBlockTradeMinNotionalUsd: { env: "MARKET_FLOW_BLOCK_TRADE_MIN_NOTIONAL_USD", min: 100000, max: 10000000000, digits: 0 },
+  marketFlowAbnormalVolumeMinNotionalUsd: { env: "MARKET_FLOW_ABNORMAL_VOLUME_MIN_NOTIONAL_USD", min: 100000, max: 10000000000, digits: 0 }
+};
+
+function readMarketFlowSettings(currentConfig) {
+  return Object.keys(MARKET_FLOW_SETTINGS_FIELDS).reduce((acc, key) => {
+    acc[key] = Number(currentConfig[key]);
+    return acc;
+  }, {});
+}
+
+function databaseTargetLabel(currentConfig) {
+  if (currentConfig.databaseProvider === "postgres") {
+    if (!currentConfig.databaseUrl) {
+      return "unconfigured";
+    }
+
+    try {
+      const parsed = new URL(currentConfig.databaseUrl);
+      const host = parsed.hostname || "host";
+      const databaseName = parsed.pathname.replace(/^\/+/, "") || "db";
+      return `${host}/${databaseName}`;
+    } catch {
+      return "configured";
+    }
+  }
+
+  return currentConfig.databasePath || "local file";
+}
+
+function databaseBackupConfig(currentConfig) {
+  return {
+    enabled:
+      Boolean(currentConfig.databaseEnabled) &&
+      currentConfig.databaseProvider === "sqlite" &&
+      Boolean(currentConfig.sqliteBackupEnabled),
+    provider: currentConfig.databaseProvider,
+    backup_dir:
+      currentConfig.databaseProvider === "sqlite" && currentConfig.databaseEnabled
+        ? currentConfig.sqliteBackupDir
+        : null,
+    interval_ms:
+      currentConfig.databaseProvider === "sqlite" && currentConfig.databaseEnabled
+        ? currentConfig.sqliteBackupIntervalMs
+        : null,
+    retention_count:
+      currentConfig.databaseProvider === "sqlite" && currentConfig.databaseEnabled
+        ? currentConfig.sqliteBackupRetentionCount
+        : null,
+    retention_days:
+      currentConfig.databaseProvider === "sqlite" && currentConfig.databaseEnabled
+        ? currentConfig.sqliteBackupRetentionDays
+        : null,
+    on_startup:
+      currentConfig.databaseProvider === "sqlite" && currentConfig.databaseEnabled
+        ? currentConfig.sqliteBackupOnStartup
+        : null
+  };
+}
+
+function clampSettingValue(value, spec) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    throw new Error(`Invalid value for ${spec.env}`);
+  }
+  const bounded = Math.min(spec.max, Math.max(spec.min, numeric));
+  return Number(bounded.toFixed(spec.digits));
+}
+
+async function persistEnvUpdates(filePath, updates) {
+  const raw = await readFile(filePath, "utf8");
+  const lines = raw.split(/\r?\n/);
+  const seen = new Set();
+  const nextLines = lines.map((line) => {
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex <= 0) {
+      return line;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    if (!(key in updates)) {
+      return line;
+    }
+
+    seen.add(key);
+    return `${key}=${updates[key]}`;
+  });
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (!seen.has(key)) {
+      nextLines.push(`${key}=${value}`);
+    }
+  }
+
+  await writeFile(filePath, nextLines.join("\n"), "utf8");
+}
+
+function buildWatchlistSnapshot(store, windowKey, filters = {}) {
+  const states = store.sentimentStates
+    .filter((state) => state.entity_type === "ticker" && state.window === windowKey)
+    .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
+    .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))
+    .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
+
+  const sectors = store.sentimentStates
+    .filter((state) => state.entity_type === "sector" && state.window === windowKey)
+    .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
+
+  const market = store.sentimentStates.find(
+    (state) => state.entity_type === "market" && state.entity_key === "market" && state.window === windowKey
+  );
+
+  return {
+    as_of: store.health.lastUpdate,
+    window: windowKey,
+    market_pulse: market || {
+      weighted_sentiment: 0,
+      weighted_confidence: 0,
+      story_velocity: 0,
+      sentiment_regime: "neutral"
+    },
+    leaderboard: states,
+    sectors,
+    alerts: store.alertHistory.slice(0, 10),
+    source_quality: [...store.sourceStats.values()].sort((a, b) => b.rolling_avg_confidence - a.rolling_avg_confidence)
+  };
+}
+
+async function buildTickerDetail(store, marketDataService, ticker) {
+  const windows = Object.fromEntries(
+    ["15m", "1h", "4h", "1d", "7d"].map((windowKey) => {
+      const state = store.sentimentStates.find(
+        (item) => item.entity_type === "ticker" && item.entity_key === ticker && item.window === windowKey
+      );
+      return [
+        windowKey,
+        state
+          ? {
+              weighted_sentiment: state.weighted_sentiment,
+              confidence: state.weighted_confidence,
+              story_velocity: state.story_velocity
+            }
+          : { weighted_sentiment: 0, confidence: 0, story_velocity: 0 }
+      ];
+    })
+  );
+
+  const scoredDocs = store.documentScores
+    .map((score) => {
+      const normalized = store.normalizedDocuments.find((doc) => doc.doc_id === score.doc_id);
+      return normalized?.primary_ticker === ticker ? { score, normalized } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.normalized.published_at) - new Date(a.normalized.published_at));
+
+  if (!scoredDocs.length) {
+    return null;
+  }
+
+  const eventFamilyBreakdown = Object.entries(
+    scoredDocs.reduce((acc, item) => {
+      acc[item.score.event_family] = (acc[item.score.event_family] || 0) + 1;
+      return acc;
+    }, {})
+  ).map(([name, value]) => ({ name, value }));
+
+  const sourceDistribution = Object.entries(
+    scoredDocs.reduce((acc, item) => {
+      acc[item.normalized.source_name] = (acc[item.normalized.source_name] || 0) + 1;
+      return acc;
+    }, {})
+  ).map(([name, value]) => ({ name, value }));
+
+  const marketSeries = await marketDataService.getTickerSeries(ticker, scoredDocs, store.health.lastUpdate);
+
+  return {
+    ticker,
+    as_of: store.health.lastUpdate,
+    windows,
+    top_events: scoredDocs.slice(0, 5).map(({ score, normalized }) => ({
+      event_type: score.event_type,
+      impact_score: score.impact_score,
+      headline: normalized.headline,
+      confidence: score.final_confidence
+    })),
+    regime: scoreToLabel(windows["1h"].weighted_sentiment),
+    risk_flags: store.alertHistory.filter((alert) => alert.entity_key === ticker).map((alert) => alert.alert_type),
+    recent_documents: scoredDocs.slice(0, 10).map(({ score, normalized }) => ({
+      published_at: normalized.published_at,
+      headline: normalized.headline,
+      source_name: normalized.source_name,
+      event_type: score.event_type,
+      label: score.bullish_bearish_label,
+      confidence: score.final_confidence,
+      explanation_short: score.explanation_short,
+      source_metadata: normalized.source_metadata || null,
+      url: normalized.canonical_url
+    })),
+    price_history: marketSeries.price_history,
+    sentiment_history: marketSeries.sentiment_history,
+    market_snapshot: marketSeries.market_snapshot,
+    source_distribution: sourceDistribution,
+    event_family_breakdown: eventFamilyBreakdown
+  };
+}
+
+function buildRecentDocuments(store, { ticker = null, limit = 20 } = {}) {
+  return store.documentScores
+    .map((score) => {
+      const normalized = store.normalizedDocuments.find((doc) => doc.doc_id === score.doc_id);
+      if (!normalized) {
+        return null;
+      }
+
+      if (ticker && normalized.primary_ticker !== ticker) {
+        return null;
+      }
+
+      return {
+        timestamp: score.scored_at,
+        ticker: normalized.primary_ticker,
+        headline: normalized.headline,
+        source_name: normalized.source_name,
+        event_type: score.event_type,
+        label: score.bullish_bearish_label,
+        sentiment_score: score.sentiment_score,
+        impact_score: score.impact_score,
+        confidence: score.final_confidence,
+        explanation_short: score.explanation_short,
+        url: normalized.canonical_url,
+        source_metadata: normalized.source_metadata || null
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, limit);
+}
+
+export function createSentimentApp() {
+  const store = createStore(config);
+  const persistence = createPersistence({ config });
+  const persistenceReady = persistence.init();
+  store.persistence = persistence;
+  const pipeline = createPipeline(store);
+  const fundamentalMarketDataService = createFundamentalMarketDataService({ config, store });
+  const fundamentals = createFundamentalsEngine({ store, config, marketReferenceService: fundamentalMarketDataService });
+  const liveNewsCollector = createLiveNewsCollector({ config, store, pipeline });
+  const marketDataService = createMarketDataService({ config, store });
+  const marketFlowMonitor = createMarketFlowMonitor({ config, store, pipeline, marketDataService });
+  const secInsiderCollector = createSecInsiderCollector({ config, store, pipeline });
+  const secInstitutionalCollector = createSecInstitutionalCollector({ config, store, pipeline });
+
+  async function bootstrapFundamentalCoverage({ force = false } = {}) {
+    const targetUniverse = await loadFundamentalUniverse({ config });
+    const trackedTickers = fundamentals.getTrackedCompanies().map((company) => company.ticker).sort();
+    const nextTickers = targetUniverse.companies.map((company) => company.ticker).sort();
+    const sameUniverse =
+      trackedTickers.length === nextTickers.length &&
+      trackedTickers.every((ticker, index) => ticker === nextTickers[index]);
+
+    store.health.liveSources.fundamental_universe = {
+      enabled: true,
+      last_bootstrap_at: new Date().toISOString(),
+      universe_name: targetUniverse.universeName,
+      tracked_companies: targetUniverse.counts.combined,
+      sp100_constituents: targetUniverse.counts.sp100,
+      qqq_constituents: targetUniverse.counts.qqq,
+      sp100_source: targetUniverse.sources.sp100,
+      qqq_source: targetUniverse.sources.qqq,
+      last_error: null
+    };
+
+    if (!force && sameUniverse) {
+      return targetUniverse;
+    }
+
+    await fundamentals.replaceCompanies(targetUniverse.companies, {
+      asOf: targetUniverse.asOf,
+      emitDiff: false
+    });
+    return targetUniverse;
+  }
+
+  async function ensureFundamentalCoverage({ force = false, minTrackedCompanies = 25 } = {}) {
+    const trackedCompanies = fundamentals.getTrackedCompanies();
+    const shouldBootstrap =
+      force ||
+      trackedCompanies.length < minTrackedCompanies ||
+      !store.health.liveSources.fundamental_universe;
+
+    if (!shouldBootstrap) {
+      return null;
+    }
+
+    try {
+      return await bootstrapFundamentalCoverage({ force });
+    } catch (error) {
+      store.health.liveSources.fundamental_universe = {
+        enabled: true,
+        last_bootstrap_at: new Date().toISOString(),
+        tracked_companies: trackedCompanies.length,
+        last_error: error.message
+      };
+      console.error("Fundamental universe bootstrap failed:", error);
+      return null;
+    }
+  }
+
+  async function refreshBackupStatus() {
+    store.health.databaseBackup = await persistence.getBackupStatus();
+    return store.health.databaseBackup;
+  }
+
+  const macroRegimeAgent = createMacroRegimeAgent({ store });
+  const tradeSetupAgent = createTradeSetupAgent({
+    store,
+    getMacroRegime: (options = {}) => macroRegimeAgent.getMacroRegime(options)
+  });
+
+  const app = {
+    config,
+    store,
+    pipeline,
+    persistence,
+    async initialize() {
+      await persistenceReady;
+      await persistence.hydrateStore(store);
+      await refreshBackupStatus();
+      await ensureFundamentalCoverage();
+    },
+    async hasPersistedData() {
+      await persistenceReady;
+      return persistence.hasData();
+    },
+    async reset() {
+      await persistenceReady;
+      resetStore(store);
+      await persistence.clearAll();
+    },
+    async replay(options) {
+      const sentimentCount = await replaySampleEvents(this, options);
+      const fundamentalCount = options?.skipFundamentals
+        ? store.fundamentals.leaderboard.length
+        : await fundamentals.replaySample({
+            intervalMs: options?.intervalMs ? Math.max(0, Math.floor(options.intervalMs / 2)) : 0
+          });
+      await persistence.saveStoreSnapshot(store);
+      return { sentimentCount, fundamentalCount };
+    },
+    async bootstrapFundamentalCoverage(options = {}) {
+      await persistenceReady;
+      return bootstrapFundamentalCoverage(options);
+    },
+    getConfig() {
+      return {
+        app_name: "Sentiment Analyst",
+        companion_dashboard: "/fundamentals.html",
+        database_enabled: config.databaseEnabled,
+        database_provider: config.databaseProvider,
+        database_target: databaseTargetLabel(config),
+        database_backup: databaseBackupConfig(config),
+        universe_name: config.universeName,
+        default_window: config.defaultWindow,
+        windows: ["15m", "1h", "4h", "1d", "7d"],
+        live_news_enabled: config.liveNewsEnabled,
+        market_data_provider: config.marketDataProvider,
+        market_flow_enabled: config.marketFlowEnabled,
+        market_flow_settings: readMarketFlowSettings(config),
+        fundamental_market_data_provider: config.fundamentalMarketDataProvider,
+        fundamental_sec_enabled: config.fundamentalSecEnabled,
+        sec_form4_enabled: config.secForm4Enabled,
+        sec_13f_enabled: config.sec13fEnabled,
+        fundamentals_enabled: true
+      };
+    },
+    getHealth() {
+      return {
+        status: store.health.systemStatus,
+        last_update: store.health.lastUpdate,
+        queue_depth: store.health.queueDepth,
+        llm_latency_ms: store.health.llmLatencyMs,
+        documents_processed_today: store.health.documentsProcessedToday,
+        fundamental_companies_scored: store.health.fundamentalCompaniesScored,
+        fundamental_sectors_covered: store.health.fundamentalSectorsCovered,
+        active_sources: store.sourceStats.size,
+        live_sources: store.health.liveSources,
+        database_backup: store.health.databaseBackup
+      };
+    },
+    getWatchlistSnapshot(windowKey, filters) {
+      return buildWatchlistSnapshot(store, windowKey, filters);
+    },
+    async getTickerDetail(ticker) {
+      return buildTickerDetail(store, marketDataService, ticker);
+    },
+    getMarketFlowSettings() {
+      return readMarketFlowSettings(config);
+    },
+    async updateMarketFlowSettings(nextSettings, { persist = true } = {}) {
+      const updates = {};
+
+      for (const [key, spec] of Object.entries(MARKET_FLOW_SETTINGS_FIELDS)) {
+        if (!(key in nextSettings)) {
+          continue;
+        }
+        updates[key] = clampSettingValue(nextSettings[key], spec);
+      }
+
+      Object.assign(config, updates);
+
+      if (persist && Object.keys(updates).length) {
+        const envUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+          acc[MARKET_FLOW_SETTINGS_FIELDS[key].env] = value;
+          return acc;
+        }, {});
+        await persistEnvUpdates(config.envPath, envUpdates);
+      }
+
+      store.bus.emit("event", {
+        type: "snapshot",
+        timestamp: new Date().toISOString(),
+        settings_scope: "market_flow"
+      });
+      await persistenceReady;
+      await persistence.saveStoreSnapshot(store);
+
+      return readMarketFlowSettings(config);
+    },
+    getSectorDetail(sector) {
+      const windows = ["15m", "1h", "4h", "1d", "7d"].reduce((acc, windowKey) => {
+        const state = store.sentimentStates.find(
+          (item) => item.entity_type === "sector" && item.entity_key === sector && item.window === windowKey
+        );
+        acc[windowKey] = state || null;
+        return acc;
+      }, {});
+
+      if (!Object.values(windows).some(Boolean)) {
+        return null;
+      }
+
+      return {
+        sector,
+        as_of: store.health.lastUpdate,
+        windows
+      };
+    },
+    getRecentDocuments(params) {
+      return buildRecentDocuments(store, params);
+    },
+    getHighImpactEvents(limit = 10) {
+      return buildRecentDocuments(store, { limit: 100 })
+        .filter((item) => item.confidence >= 0.7 && Math.abs(item.sentiment_score) >= 0.4)
+        .slice(0, limit);
+    },
+    getFundamentalsSnapshot(filters) {
+      return fundamentals.getSnapshot(filters);
+    },
+    getFundamentalsTickerDetail(ticker) {
+      return fundamentals.getTickerDetail(ticker);
+    },
+    getFundamentalsSectorDetail(sector) {
+      return fundamentals.getSectorDetail(sector);
+    },
+    getFundamentalsChanges(limit) {
+      return fundamentals.getChanges(limit);
+    },
+    getMacroRegime(options = {}) {
+      return macroRegimeAgent.getMacroRegime(options);
+    },
+    getMacroRegimeHistory(limit = 20) {
+      return store.macroRegimeHistory.slice(0, limit);
+    },
+    getTradeSetups(options = {}) {
+      return tradeSetupAgent.getTradeSetups(options);
+    },
+    getTradeSetupTicker(ticker, options = {}) {
+      return tradeSetupAgent.getTickerSetup(ticker, options);
+    },
+    getTradeSetupStorageSummary() {
+      const rows = store.tradeSetupHistory || [];
+      const latestAsOf = rows[0]?.as_of || null;
+      const latestRows = latestAsOf ? rows.filter((row) => row.as_of === latestAsOf) : [];
+      return {
+        latest_as_of: latestAsOf,
+        total_rows: rows.length,
+        distinct_tickers: new Set(rows.map((row) => row.ticker)).size,
+        action_counts: {
+          long: latestRows.filter((row) => row.action === "long").length,
+          short: latestRows.filter((row) => row.action === "short").length,
+          watch: latestRows.filter((row) => row.action === "watch").length,
+          no_trade: latestRows.filter((row) => row.action === "no_trade").length
+        },
+        latest_macro_regime: store.macroRegimeHistory[0] || null
+      };
+    },
+    getTradeSetupStorageTicker(ticker, limit = 20) {
+      return store.tradeSetupHistory
+        .filter((row) => row.ticker === ticker)
+        .slice(0, limit);
+    },
+    getFundamentalPersistenceSummary() {
+      return summarizeFundamentalPersistence(store.fundamentalWarehouse);
+    },
+    getFundamentalPersistenceTicker(ticker) {
+      return getFundamentalPersistenceTicker(store.fundamentalWarehouse, ticker);
+    },
+    getFundamentalPersistenceFilings(ticker, limit) {
+      return getFundamentalPersistenceFilings(store.fundamentalWarehouse, ticker, limit);
+    },
+    getFundamentalPersistenceFactSeries(ticker, canonicalField, options = {}) {
+      return getFundamentalPersistenceFactSeries(store.fundamentalWarehouse, ticker, canonicalField, options);
+    },
+    getTrackedFundamentalCompanies() {
+      return fundamentals.getTrackedCompanies();
+    },
+    async replaceFundamentalCompanies(companies, options = {}) {
+      return fundamentals.replaceCompanies(companies, options);
+    },
+    async startLiveSources() {
+      return undefined;
+    },
+    stopLiveSources() {},
+    async pollLiveSourcesOnce() {
+      const liveNews = await liveNewsCollector.pollOnce();
+      const marketFlow = await marketFlowMonitor.pollOnce();
+      const secForm4 = await secInsiderCollector.pollOnce();
+      const sec13f = await secInstitutionalCollector.pollOnce();
+
+      return {
+        live_news: liveNews,
+        market_flow: marketFlow,
+        sec_form4: secForm4,
+        sec_13f: sec13f
+      };
+    }
+  };
+
+  const secFundamentalsCollector = createSecFundamentalsCollector(app);
+  let autosaveTimer = null;
+  let backupTimer = null;
+
+  app.startLiveSources = async function startLiveSources() {
+    await persistenceReady;
+    await ensureFundamentalCoverage();
+    await Promise.all([
+      liveNewsCollector.start(),
+      marketDataService.start(),
+      secInsiderCollector.start(),
+      secInstitutionalCollector.start(),
+      fundamentalMarketDataService.start({
+        getCompanies: () => fundamentals.getTrackedCompanies(),
+        onUpdate: async (referenceMap) => fundamentals.refreshMarketReference(referenceMap)
+      }),
+      secFundamentalsCollector.start()
+    ]);
+    await marketFlowMonitor.start();
+
+    if (config.databaseEnabled && !autosaveTimer) {
+      autosaveTimer = setInterval(() => {
+        persistence.saveStoreSnapshot(store).catch((error) => {
+          console.error("Persistence autosave failed:", error);
+        });
+      }, config.databaseAutosaveMs);
+    }
+
+    if (config.databaseEnabled && config.databaseProvider === "sqlite") {
+      if (config.sqliteBackupOnStartup) {
+        await persistence.backupNow({ reason: "startup" });
+      }
+      await refreshBackupStatus();
+      if (config.sqliteBackupEnabled && !backupTimer) {
+        backupTimer = setInterval(() => {
+          persistence.backupNow({ reason: "interval" })
+            .then(() => refreshBackupStatus())
+            .catch((error) => {
+              console.error("SQLite backup failed:", error);
+            });
+        }, config.sqliteBackupIntervalMs);
+      }
+    }
+  };
+
+  app.stopLiveSources = async function stopLiveSources() {
+    liveNewsCollector.stop();
+    marketDataService.stop();
+    marketFlowMonitor.stop();
+    secInsiderCollector.stop();
+    secInstitutionalCollector.stop();
+    fundamentalMarketDataService.stop();
+    secFundamentalsCollector.stop();
+    if (autosaveTimer) {
+      clearInterval(autosaveTimer);
+      autosaveTimer = null;
+    }
+    if (backupTimer) {
+      clearInterval(backupTimer);
+      backupTimer = null;
+    }
+    await persistenceReady;
+    await persistence.saveStoreSnapshot(store);
+    await refreshBackupStatus();
+  };
+
+  return app;
+}

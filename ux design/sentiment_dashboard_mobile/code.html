@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SENTIMENT.AI Mobile Analyst</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+    body {
+      background-color: #080808;
+      color: #e5e2e1;
+      font-family: 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .glass-card {
+      background: rgba(18, 18, 18, 0.8);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .sentiment-gauge-track {
+      stroke: rgba(255, 255, 255, 0.1);
+      stroke-linecap: round;
+    }
+    .sentiment-gauge-fill {
+      stroke: #adc6ff;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 4px rgba(173, 198, 255, 0.5));
+    }
+    .pulse-dot {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-highest": "#353534",
+            "on-primary-container": "#00285c",
+            "on-surface-variant": "#c1c6d7",
+            "outline": "#8b90a0",
+            "on-primary-fixed": "#001a41",
+            "on-error-container": "#ffdad6",
+            "tertiary-fixed": "#ffdad6",
+            "surface-container-low": "#1c1b1b",
+            "primary": "#adc6ff",
+            "on-surface": "#e5e2e1",
+            "surface-container-high": "#2a2a2a",
+            "surface-bright": "#393939",
+            "on-error": "#690005",
+            "on-secondary": "#003907",
+            "on-secondary-container": "#007117",
+            "on-tertiary-container": "#5c0005",
+            "error": "#ffb4ab",
+            "on-secondary-fixed-variant": "#00530e",
+            "tertiary": "#ffb4ab",
+            "on-tertiary-fixed": "#410002",
+            "on-secondary-fixed": "#002203",
+            "primary-fixed-dim": "#adc6ff",
+            "surface-tint": "#adc6ff",
+            "secondary-fixed": "#72ff70",
+            "on-background": "#e5e2e1",
+            "secondary-container": "#13ff43",
+            "surface": "#131313",
+            "surface-variant": "#353534",
+            "on-primary-fixed-variant": "#004493",
+            "inverse-primary": "#005bc1",
+            "inverse-on-surface": "#313030",
+            "inverse-surface": "#e5e2e1",
+            "tertiary-fixed-dim": "#ffb4ab",
+            "background": "#131313",
+            "secondary": "#ecffe3",
+            "error-container": "#93000a",
+            "on-primary": "#002e69",
+            "on-tertiary": "#690006",
+            "on-tertiary-fixed-variant": "#93000c",
+            "secondary-fixed-dim": "#00e639",
+            "surface-container": "#201f1f",
+            "surface-dim": "#131313",
+            "primary-container": "#4b8eff",
+            "outline-variant": "#414755",
+            "surface-container-lowest": "#0e0e0e",
+            "tertiary-container": "#ff544b",
+            "primary-fixed": "#d8e2ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "spacing": {
+            "unit": "4px",
+            "stack-sm": "8px",
+            "container-padding": "20px",
+            "gutter": "16px",
+            "margin": "24px",
+            "stack-md": "16px"
+          },
+          "fontFamily": {
+            "body-md": ["Inter"],
+            "display-lg": ["Inter"],
+            "headline-md": ["Inter"],
+            "data-mono": ["Inter"],
+            "label-xs": ["Inter"]
+          },
+          "fontSize": {
+            "body-md": ["14px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400"}],
+            "display-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "headline-md": ["20px", {"lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+            "data-mono": ["13px", {"lineHeight": "1", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+            "label-xs": ["11px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "700"}]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background selection:bg-primary/30">
+<!-- Top Navigation Shell -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-14 bg-[#080808]/80 backdrop-blur-xl border-b border-white/10">
+<div class="flex items-center gap-unit">
+<div class="w-2 h-2 rounded-full bg-secondary-fixed pulse-dot"></div>
+<span class="text-xl font-black tracking-tighter text-white uppercase font-inter">SENTIMENT.AI</span>
+</div>
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-gray-400 text-[20px]">sensors</span>
+<div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant overflow-hidden">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="close up professional headshot of an executive in dark lighting with blue neon accents" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAeHd8m6chGCsf7XMrImAjScoYUMp4u6KwNqtZ06llONXReoPy4XBvC4BT8ipTy3bqZgb8HQa4QQPWeV4MwTrp-LThzaDA34Wgxkm2Coo9XummH8WlfS5XUCpGtYYButDOI1t2t13sDsbakIzYmJUm5eOZaSbKRUnWNxhbveNTBih6tCtq_wLweCZpi4eIhuOQnhkuQYmvqqzlJBYWlvvima9B06d1eqg-Ocf7hyxW8eYzz4R9HhP0aHkpCt6a3L-pln2AAkx-nXiR2"/>
+</div>
+</div>
+</header>
+<main class="pt-14 pb-24 px-gutter flex flex-col gap-stack-md">
+<!-- System Health Bar (Compact) -->
+<section class="mt-stack-md flex items-center justify-between px-stack-md py-2 glass-card rounded-lg">
+<div class="flex items-center gap-2">
+<span class="font-label-xs text-label-xs text-outline">ENGINE STATUS</span>
+<span class="font-data-mono text-data-mono text-secondary-fixed">OPTIMAL</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">memory</span>
+<span class="font-data-mono text-data-mono text-on-surface">14ms</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-outline">database</span>
+<span class="font-data-mono text-data-mono text-on-surface">99.9%</span>
+</div>
+</div>
+</section>
+<!-- Market Pulse Gauge -->
+<section class="glass-card rounded-xl p-container-padding flex flex-col items-center justify-center relative overflow-hidden">
+<div class="absolute inset-0 bg-gradient-to-t from-primary/5 to-transparent pointer-events-none"></div>
+<div class="relative w-48 h-24 mb-stack-sm">
+<svg class="w-full h-full" viewbox="0 0 100 50">
+<path class="sentiment-gauge-track" d="M 10 45 A 40 40 0 0 1 90 45" fill="none" stroke-width="8"></path>
+<path class="sentiment-gauge-fill" d="M 10 45 A 40 40 0 0 1 75 20" fill="none" stroke-width="8"></path>
+</svg>
+<div class="absolute bottom-0 left-1/2 -translate-x-1/2 text-center">
+<span class="font-display-lg text-display-lg text-white">74.2</span>
+<p class="font-label-xs text-label-xs text-primary -mt-1">BULLISH</p>
+</div>
+</div>
+<div class="w-full flex justify-between items-end mt-stack-md">
+<div class="flex flex-col">
+<span class="font-label-xs text-label-xs text-outline">GLOBAL PULSE</span>
+<span class="font-headline-md text-headline-md text-white">High Conviction</span>
+</div>
+<div class="text-right">
+<span class="font-data-mono text-data-mono text-secondary-fixed">+12.4%</span>
+<p class="font-label-xs text-label-xs text-outline">24H CHANGE</p>
+</div>
+</div>
+</section>
+<!-- Top Tickers Horizontal Scroll -->
+<section>
+<div class="flex items-center justify-between mb-2 px-1">
+<span class="font-label-xs text-label-xs text-outline">ACTIVE TICKERS</span>
+<span class="font-label-xs text-label-xs text-primary">VIEW ALL</span>
+</div>
+<div class="flex gap-stack-sm overflow-x-auto pb-2 scrollbar-hide no-scrollbar">
+<!-- Ticker Card 1 -->
+<div class="flex-shrink-0 w-28 glass-card rounded-lg p-stack-sm border-l-2 border-secondary-fixed">
+<div class="flex justify-between items-start mb-1">
+<span class="font-headline-md text-[14px] text-white">BTC</span>
+<span class="material-symbols-outlined text-secondary-fixed text-[16px]">trending_up</span>
+</div>
+<span class="font-data-mono text-data-mono text-on-surface">64.2k</span>
+<div class="h-1 w-full bg-white/5 mt-2 rounded-full overflow-hidden">
+<div class="h-full bg-secondary-fixed w-[80%]"></div>
+</div>
+</div>
+<!-- Ticker Card 2 -->
+<div class="flex-shrink-0 w-28 glass-card rounded-lg p-stack-sm border-l-2 border-error">
+<div class="flex justify-between items-start mb-1">
+<span class="font-headline-md text-[14px] text-white">NVDA</span>
+<span class="material-symbols-outlined text-error text-[16px]">trending_down</span>
+</div>
+<span class="font-data-mono text-data-mono text-on-surface">122.4</span>
+<div class="h-1 w-full bg-white/5 mt-2 rounded-full overflow-hidden">
+<div class="h-full bg-error w-[45%]"></div>
+</div>
+</div>
+<!-- Ticker Card 3 -->
+<div class="flex-shrink-0 w-28 glass-card rounded-lg p-stack-sm border-l-2 border-primary">
+<div class="flex justify-between items-start mb-1">
+<span class="font-headline-md text-[14px] text-white">ETH</span>
+<span class="material-symbols-outlined text-primary text-[16px]">side_navigation</span>
+</div>
+<span class="font-data-mono text-data-mono text-on-surface">3.4k</span>
+<div class="h-1 w-full bg-white/5 mt-2 rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[60%]"></div>
+</div>
+</div>
+<!-- Ticker Card 4 -->
+<div class="flex-shrink-0 w-28 glass-card rounded-lg p-stack-sm border-l-2 border-secondary-fixed">
+<div class="flex justify-between items-start mb-1">
+<span class="font-headline-md text-[14px] text-white">TSLA</span>
+<span class="material-symbols-outlined text-secondary-fixed text-[16px]">trending_up</span>
+</div>
+<span class="font-data-mono text-data-mono text-on-surface">248.1</span>
+<div class="h-1 w-full bg-white/5 mt-2 rounded-full overflow-hidden">
+<div class="h-full bg-secondary-fixed w-[72%]"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Live Event Feed -->
+<section class="flex flex-col gap-stack-md flex-grow">
+<div class="flex items-center justify-between px-1">
+<h2 class="font-headline-md text-headline-md text-white">Live Intelligence</h2>
+<div class="flex items-center gap-1 px-2 py-1 bg-surface-container rounded-full">
+<div class="w-1.5 h-1.5 rounded-full bg-secondary-fixed pulse-dot"></div>
+<span class="font-label-xs text-[9px] text-outline">LIVE</span>
+</div>
+</div>
+<!-- Feed Item 1 -->
+<div class="glass-card rounded-xl p-container-padding border-l-4 border-secondary-fixed">
+<div class="flex justify-between items-start mb-2">
+<div class="flex gap-2 items-center">
+<div class="w-8 h-8 rounded bg-secondary-fixed/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary-fixed text-[18px]">account_tree</span>
+</div>
+<div>
+<p class="font-label-xs text-label-xs text-outline uppercase">Institutional Flow</p>
+<p class="font-body-md text-body-md text-white font-semibold">Whale Accumulation: BTC</p>
+</div>
+</div>
+<span class="font-data-mono text-[10px] text-outline">2m ago</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mb-stack-md">
+          Unusual transaction volume detected in offshore wallets. AI predicts a supply squeeze in the next 4-hour candle.
+        </p>
+<div class="bg-black/40 rounded-lg p-stack-sm border border-white/5">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-[14px]">psychology</span>
+<span class="font-label-xs text-label-xs text-primary">AI ANALYSIS</span>
+</div>
+<p class="font-body-md text-[13px] text-on-surface italic">
+            "Confidence score: 88%. Correlated with recent Fed commentary on liquidity."
+          </p>
+</div>
+</div>
+<!-- Feed Item 2 -->
+<div class="glass-card rounded-xl p-container-padding border-l-4 border-error">
+<div class="flex justify-between items-start mb-2">
+<div class="flex gap-2 items-center">
+<div class="w-8 h-8 rounded bg-error/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-error text-[18px]">emergency_home</span>
+</div>
+<div>
+<p class="font-label-xs text-label-xs text-outline uppercase">Macro Event</p>
+<p class="font-body-md text-body-md text-white font-semibold">Tech Sector Headwinds</p>
+</div>
+</div>
+<span class="font-data-mono text-[10px] text-outline">14m ago</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mb-stack-md">
+          Regulator signaling strict oversight on semi-conductor export licenses. Sentiment dropping rapidly.
+        </p>
+<button class="w-full py-2 bg-white/5 rounded-lg font-label-xs text-label-xs text-outline border border-white/5">
+          EXPAND FULL REPORT
+        </button>
+</div>
+<!-- Feed Item 3 -->
+<div class="glass-card rounded-xl p-container-padding border-l-4 border-primary">
+<div class="flex justify-between items-start mb-2">
+<div class="flex gap-2 items-center">
+<div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[18px]">star</span>
+</div>
+<div>
+<p class="font-label-xs text-label-xs text-outline uppercase">Watchlist Update</p>
+<p class="font-body-md text-body-md text-white font-semibold">ETH Neutral Rotation</p>
+</div>
+</div>
+<span class="font-data-mono text-[10px] text-outline">32m ago</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant">
+          Social sentiment for ETH has normalized after the weekend surge. Liquidity remains stable at $3.4k.
+        </p>
+</div>
+</section>
+</main>
+<!-- Bottom NavBar Shell -->
+<nav class="fixed bottom-0 w-full h-16 bg-[#080808]/90 backdrop-blur-xl border-t border-white/5 px-gutter flex items-center justify-around z-50">
+<!-- Market Tab -->
+<a class="flex flex-col items-center gap-1 group" href="#">
+<div class="px-5 py-1 rounded-full group-active:bg-white/5 transition-all">
+<span class="material-symbols-outlined text-gray-500 group-hover:text-white">show_chart</span>
+</div>
+<span class="font-label-xs text-[10px] text-gray-500 uppercase tracking-tighter">Market</span>
+</a>
+<!-- Feed Tab (Active) -->
+<a class="flex flex-col items-center gap-1" href="#">
+<div class="px-5 py-1 rounded-full bg-primary/10 transition-all">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">terminal</span>
+</div>
+<span class="font-label-xs text-[10px] text-primary uppercase tracking-tighter">Feed</span>
+</a>
+<!-- FAB Center - Quick Action -->
+<div class="relative -mt-12">
+<button class="w-14 h-14 rounded-full bg-primary text-on-primary-container shadow-2xl shadow-primary/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</button>
+</div>
+<!-- Alerts Tab -->
+<a class="flex flex-col items-center gap-1 group" href="#">
+<div class="px-5 py-1 rounded-full group-active:bg-white/5 transition-all">
+<span class="material-symbols-outlined text-gray-500 group-hover:text-white">crisis_alert</span>
+</div>
+<span class="font-label-xs text-[10px] text-gray-500 uppercase tracking-tighter">Alerts</span>
+</a>
+<!-- Settings Tab -->
+<a class="flex flex-col items-center gap-1 group" href="#">
+<div class="px-5 py-1 rounded-full group-active:bg-white/5 transition-all">
+<span class="material-symbols-outlined text-gray-500 group-hover:text-white">settings</span>
+</div>
+<span class="font-label-xs text-[10px] text-gray-500 uppercase tracking-tighter">System</span>
+</a>
+</nav>
+</body></html>

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentiment-analyst.local/schemas/fundamental-ticker-response.schema.json",
+  "title": "FundamentalTickerResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticker",
+    "company_name",
+    "sector",
+    "industry",
+    "as_of",
+    "composite_fundamental_score",
+    "final_confidence",
+    "rating_label",
+    "valuation_label",
+    "direction_label",
+    "regime_label",
+    "factor_cards",
+    "confidence_breakdown",
+    "metric_snapshot",
+    "peer_percentiles",
+    "score_history",
+    "filing_timeline",
+    "reason_codes",
+    "top_strengths",
+    "top_weaknesses"
+  ],
+  "properties": {
+    "ticker": { "type": "string" },
+    "company_name": { "type": "string" },
+    "sector": { "type": "string" },
+    "industry": { "type": "string" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "composite_fundamental_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "final_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "rating_label": { "type": "string" },
+    "valuation_label": { "type": "string" },
+    "direction_label": { "type": "string" },
+    "regime_label": { "type": "string" },
+    "factor_cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "label", "summary", "value"],
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "summary": { "type": "string" },
+          "value": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "confidence_breakdown": { "type": "object" },
+    "metric_snapshot": { "type": "object" },
+    "peer_percentiles": { "type": "object" },
+    "market_reference": {
+      "type": ["object", "null"]
+    },
+    "score_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "timestamp", "score"],
+        "properties": {
+          "label": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "filing_timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["form_type", "filing_date", "period_end", "note", "url"],
+        "properties": {
+          "form_type": { "type": "string" },
+          "filing_date": { "type": "string", "format": "date" },
+          "period_end": { "type": "string", "format": "date" },
+          "note": { "type": "string" },
+          "url": { "type": "string", "format": "uri" }
+        }
+      }
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "top_strengths": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "top_weaknesses": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

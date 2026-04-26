@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentiment-analyst.local/schemas/ticker-response.schema.json",
+  "title": "TickerSentimentResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticker",
+    "as_of",
+    "windows",
+    "top_events",
+    "price_history",
+    "sentiment_history",
+    "market_snapshot",
+    "regime",
+    "risk_flags"
+  ],
+  "properties": {
+    "ticker": { "type": "string" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "windows": { "type": "object" },
+    "top_events": { "type": "array", "items": { "type": "object" } },
+    "price_history": { "type": "array", "items": { "type": "object" } },
+    "sentiment_history": { "type": "array", "items": { "type": "object" } },
+    "market_snapshot": { "type": "object" },
+    "regime": {
+      "type": "string",
+      "enum": ["bullish", "neutral", "bearish"]
+    },
+    "risk_flags": { "type": "array", "items": { "type": "string" } }
+  }
+}

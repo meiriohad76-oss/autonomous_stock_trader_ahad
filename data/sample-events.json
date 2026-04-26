@@ -1,0 +1,122 @@
+[
+  {
+    "source_name": "sec_edgar",
+    "source_type": "filing",
+    "source_priority": 0.98,
+    "url": "https://www.sec.gov/Archives/edgar/data/0000320193/aapl-8k-guidance-raise.html",
+    "title": "Apple raises full-year services outlook after stronger-than-expected quarter",
+    "body": "Apple reported stronger-than-expected services growth and raised full-year outlook in an 8-K update. Management highlighted resilient demand and margin expansion.",
+    "language": "en",
+    "source_metadata": {
+      "ticker_hint": "AAPL",
+      "sector_hint": "Technology",
+      "published_offset_minutes": 8
+    },
+    "raw_payload": {}
+  },
+  {
+    "source_name": "marketaux",
+    "source_type": "news_api",
+    "source_priority": 0.84,
+    "url": "https://www.marketaux.com/news/nvda-major-cloud-contract",
+    "title": "Nvidia wins major multi-year cloud infrastructure contract with sovereign AI consortium",
+    "body": "The new agreement is expected to expand Nvidia's data center backlog and strengthen demand visibility over the next several quarters.",
+    "language": "en",
+    "source_metadata": {
+      "ticker_hint": "NVDA",
+      "sector_hint": "Technology",
+      "published_offset_minutes": 14
+    },
+    "raw_payload": {}
+  },
+  {
+    "source_name": "google_news",
+    "source_type": "rss",
+    "source_priority": 0.62,
+    "url": "https://news.google.com/articles/tsla-production-delay",
+    "title": "Tesla faces production delay at key plant after supplier outage",
+    "body": "Reports say Tesla may face a temporary production delay after a supplier outage disrupted a key component line. Analysts warn near-term deliveries could be affected.",
+    "language": "en",
+    "source_metadata": {
+      "ticker_hint": "TSLA",
+      "sector_hint": "Consumer Discretionary",
+      "published_offset_minutes": 20
+    },
+    "raw_payload": {}
+  },
+  {
+    "source_name": "google_news",
+    "source_type": "rss",
+    "source_priority": 0.58,
+    "url": "https://news.google.com/articles/tsla-production-delay-syndicated",
+    "title": "Tesla faces production delay at key plant after supplier outage",
+    "body": "Tesla may see near-term delivery pressure after a supplier outage disrupted production at a key plant, according to syndicated reports.",
+    "language": "en",
+    "source_metadata": {
+      "ticker_hint": "TSLA",
+      "sector_hint": "Consumer Discretionary",
+      "published_offset_minutes": 18
+    },
+    "raw_payload": {}
+  },
+  {
+    "source_name": "marketaux",
+    "source_type": "news_api",
+    "source_priority": 0.76,
+    "url": "https://www.marketaux.com/news/msft-antitrust-investigation",
+    "title": "EU opens fresh antitrust investigation into Microsoft's enterprise bundling practices",
+    "body": "The new investigation could create legal overhang and increase uncertainty for enterprise product bundling in Europe.",
+    "language": "en",
+    "source_metadata": {
+      "ticker_hint": "MSFT",
+      "sector_hint": "Technology",
+      "published_offset_minutes": 24
+    },
+    "raw_payload": {}
+  },
+  {
+    "source_name": "insider_tracker",
+    "source_type": "insider",
+    "source_priority": 0.79,
+    "url": "https://example.com/form4/amzn-insider-buy",
+    "title": "Amazon director reports sizable open-market share purchase",
+    "body": "A Form 4 filing shows a director purchased shares in the open market, a signal often watched for insider conviction.",
+    "language": "en",
+    "source_metadata": {
+      "ticker_hint": "AMZN",
+      "sector_hint": "Consumer Discretionary",
+      "published_offset_minutes": 35
+    },
+    "raw_payload": {}
+  },
+  {
+    "source_name": "macro_calendar",
+    "source_type": "macro",
+    "source_priority": 0.73,
+    "url": "https://example.com/macro/inflation-cooler",
+    "title": "US inflation comes in cooler than expected, boosting risk appetite across growth sectors",
+    "body": "A softer inflation print lifted expectations for a more dovish rate path and sparked a rally in long-duration growth names.",
+    "language": "en",
+    "source_metadata": {
+      "ticker_hint": "QQQ",
+      "sector_hint": "Macro",
+      "published_offset_minutes": 42
+    },
+    "raw_payload": {}
+  },
+  {
+    "source_name": "google_news",
+    "source_type": "rss",
+    "source_priority": 0.65,
+    "url": "https://news.google.com/articles/meta-ad-upgrade",
+    "title": "Meta shares climb after brokerage upgrade and higher price target",
+    "body": "A brokerage upgraded Meta and lifted its target after improved ad monetization checks and stronger engagement trends.",
+    "language": "en",
+    "source_metadata": {
+      "ticker_hint": "META",
+      "sector_hint": "Communication Services",
+      "published_offset_minutes": 55
+    },
+    "raw_payload": {}
+  }
+]

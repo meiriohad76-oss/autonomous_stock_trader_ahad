@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentiment-analyst.local/schemas/fundamental-sector.schema.json",
+  "title": "FundamentalSector",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sector",
+    "as_of",
+    "rank",
+    "growth_breadth",
+    "profitability_strength",
+    "revision_breadth",
+    "relative_valuation",
+    "macro_fit",
+    "median_revenue_growth",
+    "median_operating_margin",
+    "median_roic",
+    "median_pe_ttm",
+    "sector_attractiveness_score",
+    "leaders"
+  ],
+  "properties": {
+    "sector": { "type": "string" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "rank": { "type": "integer", "minimum": 1 },
+    "growth_breadth": { "type": "number", "minimum": 0, "maximum": 1 },
+    "profitability_strength": { "type": "number", "minimum": 0, "maximum": 1 },
+    "revision_breadth": { "type": "number", "minimum": 0, "maximum": 1 },
+    "relative_valuation": { "type": "number", "minimum": 0, "maximum": 1 },
+    "macro_fit": { "type": "number", "minimum": 0, "maximum": 1 },
+    "median_revenue_growth": { "type": "number" },
+    "median_operating_margin": { "type": "number" },
+    "median_roic": { "type": "number" },
+    "median_pe_ttm": { "type": "number" },
+    "sector_attractiveness_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "leaders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ticker",
+          "company_name",
+          "composite_fundamental_score",
+          "final_confidence",
+          "direction_label"
+        ],
+        "properties": {
+          "ticker": { "type": "string" },
+          "company_name": { "type": "string" },
+          "composite_fundamental_score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "final_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "direction_label": { "type": "string" }
+        }
+      }
+    }
+  }
+}

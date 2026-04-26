@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SENTIMENT.AI | Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    >
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@300;400;500;700"
+      rel="stylesheet"
+    >
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="backdrop-orb orb-left"></div>
+    <div class="backdrop-orb orb-right"></div>
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <a class="brand" href="/">SENTIMENT.AI</a>
+        <nav class="topnav" aria-label="Primary">
+          <button class="topnav-link active" data-view="overview" type="button">Dashboard</button>
+          <button class="topnav-link" data-view="markets" type="button">Analytics</button>
+          <a class="topnav-link" href="/fundamentals.html">Fundamentals</a>
+          <button class="topnav-link" data-view="alerts" type="button">Signals</button>
+          <button class="topnav-link" data-view="system" type="button">Settings</button>
+        </nav>
+      </div>
+
+      <div class="topbar-right">
+        <label class="search-shell" for="ticker-search">
+          <span class="material-symbols-outlined">search</span>
+          <input id="ticker-search" type="search" placeholder="Search Markets...">
+        </label>
+        <button class="icon-button" type="button" aria-label="Entity graph">
+          <span class="material-symbols-outlined">account_tree</span>
+        </button>
+        <button class="icon-button" type="button" aria-label="Sensors">
+          <span class="material-symbols-outlined">sensors</span>
+        </button>
+        <button class="icon-button has-dot" type="button" aria-label="Notifications">
+          <span class="material-symbols-outlined">notifications</span>
+        </button>
+        <button class="profile-avatar" type="button" aria-label="Profile">AI</button>
+      </div>
+    </header>
+
+    <aside class="side-nav" aria-label="Sections">
+      <button class="side-link active" data-view="overview" type="button">
+        <span class="material-symbols-outlined">dashboard</span>
+        <span>Overview</span>
+      </button>
+      <button class="side-link" data-view="markets" type="button">
+        <span class="material-symbols-outlined">show_chart</span>
+        <span>Markets</span>
+      </button>
+      <button class="side-link" data-view="watch" type="button">
+        <span class="material-symbols-outlined">star</span>
+        <span>Watch</span>
+      </button>
+      <button class="side-link" data-view="alerts" type="button">
+        <span class="material-symbols-outlined">crisis_alert</span>
+        <span>Alerts</span>
+      </button>
+      <button class="side-link" data-view="system" type="button">
+        <span class="material-symbols-outlined">memory</span>
+        <span>System</span>
+      </button>
+
+      <div class="side-nav-footer">
+        <button class="side-link utility" type="button" aria-label="Help">
+          <span class="material-symbols-outlined">help</span>
+        </button>
+        <button class="side-link utility" type="button" aria-label="Terminal">
+          <span class="material-symbols-outlined">terminal</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="app-stage">
+      <section class="view is-active" data-view-panel="overview">
+        <div class="dashboard-shell">
+          <section class="column column-left">
+            <article class="panel pulse-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Market Pulse</h2>
+                  <p>Aggregate Sentiment</p>
+                </div>
+                <span class="live-pill">Live</span>
+              </div>
+
+              <div class="gauge-wrap">
+                <svg class="pulse-gauge" viewBox="0 0 220 220" aria-hidden="true">
+                  <circle class="gauge-track" cx="110" cy="110" r="82"></circle>
+                  <circle id="pulse-gauge-fill" class="gauge-fill" cx="110" cy="110" r="82"></circle>
+                </svg>
+                <div class="gauge-center">
+                  <strong id="market-pulse-score">0%</strong>
+                  <span id="market-regime" class="gauge-label neutral">Neutral</span>
+                </div>
+              </div>
+
+              <div class="mini-metrics">
+                <div class="mini-card">
+                  <span>Story Volume</span>
+                  <strong id="market-volume">0</strong>
+                </div>
+                <div class="mini-card">
+                  <span>Weighted Impact</span>
+                  <strong id="market-impact">0.00</strong>
+                </div>
+              </div>
+
+              <div class="sector-strip" id="sector-strip"></div>
+            </article>
+
+            <article class="panel engine-panel">
+              <div class="section-kicker">Core Engine Status</div>
+              <div class="engine-stat">
+                <span>Model Latency</span>
+                <strong id="health-latency">0 ms</strong>
+              </div>
+              <div class="engine-stat">
+                <span>Active Sources</span>
+                <strong id="health-sources">0</strong>
+              </div>
+              <div class="engine-progress">
+                <div class="engine-progress-bar" id="engine-progress-bar"></div>
+              </div>
+              <div class="engine-meta">
+                <span id="universe-name">Universe</span>
+                <span id="health-docs">0 docs</span>
+              </div>
+              <button id="replay-button" class="primary-action" type="button">Replay Feed</button>
+            </article>
+          </section>
+
+          <section class="column column-center">
+            <article class="panel leaderboard-panel">
+              <div class="panel-toolbar">
+                <div>
+                  <h2>Ticker Leaderboard</h2>
+                </div>
+                <div class="chip-row" id="window-tabs">
+                  <button class="time-chip" data-window="15m" type="button">15M</button>
+                  <button class="time-chip active" data-window="1h" type="button">1H</button>
+                  <button class="time-chip" data-window="4h" type="button">4H</button>
+                  <button class="time-chip" data-window="1d" type="button">1D</button>
+                  <button class="time-chip" data-window="7d" type="button">7D</button>
+                </div>
+              </div>
+
+              <div class="leaderboard-shell">
+                <table class="leaderboard-table">
+                  <thead>
+                    <tr>
+                      <th>Stock</th>
+                      <th>Sentiment</th>
+                      <th>Momentum</th>
+                      <th>Conf %</th>
+                    </tr>
+                  </thead>
+                  <tbody id="leaderboard-body"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel detail-panel">
+              <div class="panel-toolbar">
+                <div>
+                  <h2 id="ticker-detail-title">Ticker Detail Analysis</h2>
+                  <p id="ticker-detail-subtitle">Sentiment divergence vs price</p>
+                </div>
+                <div class="legend">
+                  <span class="legend-item">
+                    <i class="legend-dot price"></i>
+                    Price
+                  </span>
+                  <span class="legend-item">
+                    <i class="legend-dot sentiment"></i>
+                    Sentiment
+                  </span>
+                </div>
+              </div>
+
+              <div class="detail-chart-shell">
+                <svg id="detail-chart" class="detail-chart" viewBox="0 0 720 260" preserveAspectRatio="none"></svg>
+              </div>
+
+              <div class="detail-summary">
+                <div class="summary-grid" id="detail-window-cards"></div>
+                <div class="summary-list-wrap">
+                  <div class="summary-list">
+                    <div class="section-kicker">Top Events</div>
+                    <ul id="detail-top-events"></ul>
+                  </div>
+                  <div class="summary-list">
+                    <div class="section-kicker">Signal Mix</div>
+                    <ul id="detail-family-breakdown"></ul>
+                  </div>
+                  <div class="summary-list">
+                    <div class="section-kicker">Source Mix</div>
+                    <ul id="detail-source-breakdown"></ul>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="column column-right">
+            <article class="panel health-panel">
+              <div class="health-header">
+                <div class="section-kicker">System Health</div>
+                <div class="health-status">
+                  <span class="status-dot"></span>
+                  <strong id="health-status">Optimal</strong>
+                </div>
+              </div>
+
+              <div class="health-grid">
+                <div class="health-stat">
+                  <span>Latency</span>
+                  <strong id="health-latency-compact">0 ms</strong>
+                </div>
+                <div class="health-stat">
+                  <span>Queue</span>
+                  <strong id="health-queue">0</strong>
+                </div>
+                <div class="health-stat">
+                  <span>Last Update</span>
+                  <strong id="health-update">-</strong>
+                </div>
+                <div class="health-stat">
+                  <span>Alerts</span>
+                  <strong id="alert-count">0</strong>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel trade-agent-panel">
+              <div class="panel-toolbar feed-toolbar">
+                <div>
+                  <h2>Trade Setup Agent</h2>
+                  <p>Ranked long, short, and watch ideas</p>
+                </div>
+                <span class="material-symbols-outlined feed-tune">smart_toy</span>
+              </div>
+              <div id="trade-setup-summary" class="trade-setup-summary"></div>
+              <div id="trade-setup-list" class="feed-list"></div>
+            </article>
+
+            <article class="panel feed-panel">
+              <div class="panel-toolbar feed-toolbar">
+                <div>
+                  <h2>Live Event Feed</h2>
+                </div>
+                <span class="material-symbols-outlined feed-tune">tune</span>
+              </div>
+              <div id="live-feed-list" class="feed-list"></div>
+            </article>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="markets">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Sector Strength</h2>
+                <p>Cross-market sentiment at the active window</p>
+              </div>
+              <div class="chip-row" id="markets-filter-tabs">
+                <button class="time-chip active" data-market-filter="all" type="button">All</button>
+                <button class="time-chip" data-market-filter="bullish" type="button">Bullish</button>
+                <button class="time-chip" data-market-filter="bearish" type="button">Bearish</button>
+              </div>
+            </div>
+            <div id="markets-breadth" class="workspace-card-grid"></div>
+            <div class="chart-panel-shell">
+              <svg id="markets-sector-chart" class="workspace-chart" viewBox="0 0 760 220" preserveAspectRatio="none"></svg>
+            </div>
+            <div id="markets-sector-grid" class="workspace-card-grid"></div>
+            <div id="markets-sector-focus" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Market Table</h2>
+                <p>Sorted by strongest active conviction</p>
+              </div>
+            </div>
+            <div id="markets-comparison-strip" class="workspace-card-grid compact-grid"></div>
+            <div class="leaderboard-shell">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Sentiment</th>
+                    <th>Confidence</th>
+                    <th>Velocity</th>
+                  </tr>
+                </thead>
+                <tbody id="markets-table-body"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Market Detail</h2>
+                <p>Selected ticker snapshot and event bias</p>
+              </div>
+            </div>
+            <div id="markets-detail" class="workspace-detail"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="watch">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Watchlist Focus</h2>
+                <p>Fast scan for the highest priority names</p>
+              </div>
+            </div>
+            <div id="watch-cards" class="watch-card-grid"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Recent Watchlist Intelligence</h2>
+                <p>Latest events affecting monitored symbols</p>
+              </div>
+            </div>
+            <div id="watch-feed" class="feed-list"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Selected Watch Summary</h2>
+                <p>Live detail for the current focus ticker</p>
+              </div>
+            </div>
+            <div id="watch-summary" class="workspace-detail"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="alerts">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Active Alerts</h2>
+                <p>High-confidence and reversal triggers</p>
+              </div>
+              <div class="chip-row" id="alerts-filter-tabs">
+                <button class="time-chip active" data-alert-filter="all" type="button">All</button>
+                <button class="time-chip" data-alert-filter="high_confidence_positive" type="button">Positive</button>
+                <button class="time-chip" data-alert-filter="high_confidence_negative" type="button">Negative</button>
+                <button class="time-chip" data-alert-filter="polarity_reversal" type="button">Reversal</button>
+              </div>
+            </div>
+            <div id="alerts-summary-strip" class="workspace-card-grid"></div>
+            <div id="alerts-critical" class="alerts-grid"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Smart Money Radar</h2>
+                <p>Insider, institutional, and tape activity</p>
+              </div>
+            </div>
+            <div id="alerts-money-flow" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>High Impact Signals</h2>
+                <p>Most actionable recent sentiment events</p>
+              </div>
+            </div>
+            <div id="alerts-high-impact" class="feed-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="system">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>System Overview</h2>
+                <p>Pipeline health, throughput, and freshness</p>
+              </div>
+            </div>
+            <div id="system-overview" class="workspace-card-grid"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Source Quality</h2>
+                <p>Confidence, volume, and lag by source</p>
+              </div>
+            </div>
+            <div id="system-source-quality" class="source-quality-grid"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>System Notes</h2>
+                <p>Runtime mode, limitations, and next adapters</p>
+              </div>
+            </div>
+            <div id="system-notes" class="workspace-detail"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <div id="signal-backdrop" class="signal-backdrop" hidden></div>
+    <aside id="signal-drawer" class="signal-drawer" aria-hidden="true">
+      <div class="signal-drawer-head">
+        <div>
+          <div class="section-kicker">Signal Detail</div>
+          <h2 id="signal-drawer-title">No signal selected</h2>
+          <p id="signal-drawer-subtitle">Choose an event from the dashboard to inspect its context.</p>
+        </div>
+        <button id="signal-drawer-close" class="icon-button signal-drawer-close" type="button" aria-label="Close signal detail">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <div class="signal-drawer-body">
+        <div class="signal-badge-row">
+          <span id="signal-drawer-badge" class="sentiment-badge neutral">Neutral</span>
+          <span id="signal-drawer-time" class="section-kicker">-</span>
+        </div>
+
+        <p id="signal-drawer-summary" class="signal-drawer-summary">Select a live event, alert, or document to inspect it here.</p>
+
+        <div id="signal-drawer-stats" class="workspace-detail-grid"></div>
+
+        <div class="summary-list signal-drawer-card">
+          <div class="section-kicker">Analyst Take</div>
+          <p id="signal-drawer-explanation" class="signal-drawer-copy">No signal selected yet.</p>
+        </div>
+
+        <div class="summary-list signal-drawer-card">
+          <div class="section-kicker">Context</div>
+          <ul id="signal-drawer-context" class="workspace-list"></ul>
+        </div>
+      </div>
+
+      <div class="signal-drawer-actions">
+        <button id="signal-focus-button" class="primary-action" type="button">Focus Ticker</button>
+        <button id="signal-source-button" class="secondary-action" type="button">Open Source</button>
+      </div>
+    </aside>
+
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      <button class="mobile-nav-link" data-view="markets" type="button">
+        <span class="material-symbols-outlined">show_chart</span>
+        <span>Market</span>
+      </button>
+      <button class="mobile-nav-link active" data-view="overview" type="button">
+        <span class="material-symbols-outlined">terminal</span>
+        <span>Feed</span>
+      </button>
+      <button class="mobile-fab" type="button" aria-label="Replay feed">
+        <span class="material-symbols-outlined">bolt</span>
+      </button>
+      <button class="mobile-nav-link" data-view="alerts" type="button">
+        <span class="material-symbols-outlined">crisis_alert</span>
+        <span>Alerts</span>
+      </button>
+      <button class="mobile-nav-link" data-view="system" type="button">
+        <span class="material-symbols-outlined">settings</span>
+        <span>System</span>
+      </button>
+    </nav>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

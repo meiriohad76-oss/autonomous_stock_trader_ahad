@@ -1,0 +1,20 @@
+{
+  "name": "sentiment-analyst-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-light MVP for a sentiment analyst pipeline and live dashboard.",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "replay": "node scripts/replay.js",
+    "check": "node scripts/check.js",
+    "sqlite:backup": "node scripts/sqlite-backup.js"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.20.0"
+  }
+}
