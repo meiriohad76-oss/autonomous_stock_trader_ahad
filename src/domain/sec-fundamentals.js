@@ -557,6 +557,7 @@ function mergeLiveCompany(baseCompany, submissions, companyFacts, lookbackHours)
   return {
     ...hydrateCompanyIdentity(baseCompany, submissions, submissions?.cik, filing),
     as_of: new Date().toISOString(),
+    data_source: "live_sec_filing",
     summary: buildSummary(baseCompany.company_name, { ...baseCompany.metrics, ...liveMetrics }, filing),
     notes,
     metrics: {

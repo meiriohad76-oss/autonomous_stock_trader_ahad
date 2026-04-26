@@ -385,6 +385,7 @@ function buildFactorCards(factorScores) {
 function evaluateInitialScreener(company) {
   const metrics = company.metrics || {};
   const qualityFlags = company.quality_flags || {};
+  const awaitingSecRefresh = (qualityFlags.anomaly_flags || []).includes("awaiting_sec_refresh");
 
   const checks = [
     {
@@ -446,7 +447,8 @@ function evaluateInitialScreener(company) {
 
   const passedChecks = checks.filter((item) => item.passed).map((item) => item.label);
   const failedChecks = checks.filter((item) => !item.passed).map((item) => item.label);
-  const screenScore = round(passedChecks.length / checks.length, 3);
+  const passedCount = passedChecks.length;
+  const screenScore = round(passedCount / checks.length, 3);
 
   let stage = "reject";
   if (!hardFailures.length && screenScore >= 0.71) {
@@ -455,16 +457,26 @@ function evaluateInitialScreener(company) {
     stage = "watch";
   }
 
+  if (awaitingSecRefresh && stage === "eligible") {
+    stage = "watch";
+    failedChecks.unshift("Live SEC filing refresh still pending");
+  }
+
   return {
     stage,
     passed: stage === "eligible",
     score: screenScore,
+    passed_count: passedCount,
+    total_checks: checks.length,
+    provisional: awaitingSecRefresh,
     passed_checks: passedChecks,
     failed_checks: failedChecks,
     hard_failures: hardFailures,
     summary:
       stage === "eligible"
-        ? "Passes the initial liquidity, quality, growth, and tradability gate."
+        ? "Passes the initial liquidity, quality, growth, and tradability gate with live filing-backed support."
+        : awaitingSecRefresh
+          ? "Looks broadly investable, but stays in watch until a live SEC filing refresh replaces the bootstrap placeholder metrics."
         : stage === "watch"
           ? "Shows some strong traits but misses enough baseline checks to stay on watch rather than pass."
           : "Fails the current first-pass screen and should not enter the ranked candidate set yet."
@@ -596,6 +608,7 @@ function scoreCompany(company, companies, sectorScores) {
   return {
     ticker: company.ticker,
     company_name: company.company_name,
+    data_source: company.data_source || "replayed_sample",
     sector: company.sector,
     industry: company.industry,
     exchange: company.exchange,
@@ -722,19 +735,32 @@ function buildInitialScreener(leaderboard) {
   const eligible = leaderboard.filter((item) => item.initial_screen?.stage === "eligible");
   const watch = leaderboard.filter((item) => item.initial_screen?.stage === "watch");
   const rejected = leaderboard.filter((item) => item.initial_screen?.stage === "reject");
+  const bootstrapPlaceholders = leaderboard.filter((item) => item.data_source === "bootstrap_placeholder");
+  const liveSecBacked = leaderboard.filter((item) => item.data_source === "live_sec_filing");
 
   return {
     criteria: INITIAL_SCREENER_CRITERIA,
+    explanation: {
+      headline: "Stage one is a first-pass gate, not the final ranking model.",
+      eligible: "Eligible names pass most checks, avoid hard failures, and are backed by live SEC filing data.",
+      watch: "Watch names either miss several checks or are still waiting for live SEC refresh to replace bootstrap placeholders.",
+      reject: "Rejected names fail too many checks or trip a hard failure."
+    },
     tracked_count: leaderboard.length,
     eligible_count: eligible.length,
     watch_count: watch.length,
     rejected_count: rejected.length,
+    live_sec_backed_count: liveSecBacked.length,
+    bootstrap_placeholder_count: bootstrapPlaceholders.length,
     pass_rate: leaderboard.length ? round(eligible.length / leaderboard.length, 3) : 0,
     candidates: eligible.slice(0, 5).map((item) => ({
       ticker: item.ticker,
       company_name: item.company_name,
       sector: item.sector,
+      data_source: item.data_source,
       screen_score: item.initial_screen.score,
+      passed_count: item.initial_screen.passed_count,
+      total_checks: item.initial_screen.total_checks,
       composite_fundamental_score: item.composite_fundamental_score,
       final_confidence: item.final_confidence
     })),
@@ -742,7 +768,10 @@ function buildInitialScreener(leaderboard) {
       ticker: item.ticker,
       company_name: item.company_name,
       sector: item.sector,
+      data_source: item.data_source,
       screen_score: item.initial_screen.score,
+      passed_count: item.initial_screen.passed_count,
+      total_checks: item.initial_screen.total_checks,
       failed_checks: item.initial_screen.failed_checks
     }))
   };

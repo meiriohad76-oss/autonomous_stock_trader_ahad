@@ -23,6 +23,7 @@ const elements = {
   lastUpdate: document.querySelector("#last-update"),
   healthStatus: document.querySelector("#health-status"),
   healthFundamentals: document.querySelector("#health-fundamentals"),
+  screenerExplainer: document.querySelector("#screener-explainer"),
   screenerSummary: document.querySelector("#screener-summary"),
   screenerCriteria: document.querySelector("#screener-criteria"),
   screenerCandidates: document.querySelector("#screener-candidates"),
@@ -160,6 +161,16 @@ function badgeClass(label) {
   return "weak";
 }
 
+function sourceLabel(value) {
+  if (value === "live_sec_filing") {
+    return "SEC live";
+  }
+  if (value === "bootstrap_placeholder") {
+    return "Bootstrap";
+  }
+  return "Sample";
+}
+
 async function getJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -263,6 +274,29 @@ function renderScreener() {
     { key: "reject", label: "Reject" }
   ];
 
+  const liveSecBacked = screener.live_sec_backed_count || 0;
+  const bootstrapCount = screener.bootstrap_placeholder_count || 0;
+  const healthLiveCompanies = state.health?.live_sources?.sec_fundamentals?.live_companies || 0;
+
+  elements.screenerExplainer.innerHTML = `
+    <article class="explain-card explain-card-primary">
+      <strong>${screener.explanation?.headline || "Stage one filters the universe before full ranking."}</strong>
+      <p>${screener.explanation?.eligible || "Eligible names are the ones that clear the first-pass gate cleanly."}</p>
+    </article>
+    <article class="explain-card">
+      <span>What eligible means</span>
+      <p>${screener.explanation?.eligible || "Passes most checks with no hard failure."}</p>
+    </article>
+    <article class="explain-card">
+      <span>What watch means</span>
+      <p>${screener.explanation?.watch || "Partial pass or still awaiting live filing support."}</p>
+    </article>
+    <article class="explain-card">
+      <span>Data quality note</span>
+      <p>${bootstrapCount ? `${bootstrapCount} names are still bootstrap placeholders awaiting live SEC refresh. Only ${liveSecBacked || healthLiveCompanies} names are fully SEC-backed right now.` : "All displayed names are currently backed by live SEC refresh."}</p>
+    </article>
+  `;
+
   elements.screenerSummary.innerHTML = `
     <article class="summary-card"><span>Tracked</span><strong>${screener.tracked_count || 0}</strong></article>
     <article class="summary-card"><span>Eligible</span><strong>${screener.eligible_count || 0}</strong></article>
@@ -270,6 +304,8 @@ function renderScreener() {
     <article class="summary-card"><span>Rejected</span><strong>${screener.rejected_count || 0}</strong></article>
     <article class="summary-card"><span>Pass Rate</span><strong>${pct(screener.pass_rate || 0, 0)}</strong></article>
     <article class="summary-card"><span>Criteria</span><strong>${(screener.criteria || []).length}</strong></article>
+    <article class="summary-card"><span>SEC Live</span><strong>${liveSecBacked || healthLiveCompanies}</strong></article>
+    <article class="summary-card"><span>Bootstrap</span><strong>${bootstrapCount}</strong></article>
   `;
 
   elements.screenerCriteria.innerHTML = (screener.criteria || []).length
@@ -308,6 +344,10 @@ function renderScreener() {
                 <span>Screen ${score(item.screen_score)}</span>
                 <span>${pct(item.final_confidence, 0)} conf</span>
               </div>
+              <div class="score-row">
+                <span>Checks ${item.passed_count || 0}/${item.total_checks || 0}</span>
+                <span>${sourceLabel(item.data_source)}</span>
+              </div>
             </article>
           `
         )
@@ -325,7 +365,7 @@ function renderScreener() {
               </div>
               <p>${item.company_name}</p>
               <div class="score-row">
-                <span>Screen ${score(item.screen_score)}</span>
+                <span>Screen ${score(item.screen_score)} · ${item.passed_count || 0}/${item.total_checks || 0}</span>
                 <span>${(item.failed_checks || []).slice(0, 2).join(", ") || "Needs review"}</span>
               </div>
             </article>
@@ -391,7 +431,7 @@ function renderLeaderboard() {
         .map(
           (row) => `
             <tr class="${state.selectedTicker === row.ticker ? "is-selected" : ""}" data-ticker="${row.ticker}">
-              <td><strong>${row.ticker}</strong><br><small>${row.company_name}</small></td>
+              <td><strong>${row.ticker}</strong><br><small>${row.company_name}</small><br><small class="source-note">${sourceLabel(row.data_source)}</small></td>
               <td>${row.sector}</td>
               <td><span class="badge ${row.initial_screen?.stage === "eligible" ? "strong" : row.initial_screen?.stage === "watch" ? "balanced" : "weak"}">${titleCase(row.initial_screen?.stage || "unknown")}</span></td>
               <td>${score(row.composite_fundamental_score)}</td>
@@ -459,7 +499,9 @@ function renderDetail() {
   elements.detailTitle.textContent = `${detail.ticker} | ${detail.company_name}`;
   elements.detailSubtitle.textContent = `${detail.sector} / ${detail.industry} / ${titleCase(detail.regime_label)}`;
   elements.detailSummary.innerHTML = `
+    <article class="summary-card"><span>Data Source</span><strong>${sourceLabel(detail.data_source)}</strong></article>
     <article class="summary-card"><span>Screen Stage</span><strong>${titleCase(detail.initial_screen?.stage || "unknown")}</strong></article>
+    <article class="summary-card"><span>Checks Passed</span><strong>${detail.initial_screen?.passed_count || 0} / ${detail.initial_screen?.total_checks || 0}</strong></article>
     <article class="summary-card"><span>Composite</span><strong>${score(detail.composite_fundamental_score)}</strong></article>
     <article class="summary-card"><span>Confidence</span><strong>${pct(detail.final_confidence, 0)}</strong></article>
     <article class="summary-card"><span>Valuation</span><strong>${titleCase(detail.valuation_label)}</strong></article>
@@ -497,6 +539,7 @@ function renderDetail() {
   elements.reasonCodes.innerHTML = detail.reason_codes.map((code) => `<span class="chip">${titleCase(code)}</span>`).join("");
   elements.detailNotes.innerHTML = [
     `<li>Initial screener: ${detail.initial_screen?.summary || "No screener summary available."}</li>`,
+    `<li>Data source: ${sourceLabel(detail.data_source)}.</li>`,
     `<li>${detail.explanation_short}</li>`,
     ...detail.notes.map((note) => `<li>${note}</li>`),
     `<li>Top strengths: ${detail.top_strengths.join(", ")}.</li>`,

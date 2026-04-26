@@ -1,15 +1,15 @@
 :root {
-  --bg: #f5f1e8;
-  --ink: #1e2a33;
-  --muted: #697782;
-  --panel: rgba(255, 252, 246, 0.88);
-  --line: rgba(30, 42, 51, 0.1);
+  --bg: #f7f3eb;
+  --ink: #17232d;
+  --muted: #485966;
+  --panel: rgba(255, 253, 249, 0.97);
+  --line: rgba(23, 35, 45, 0.16);
   --accent: #a63d2f;
   --accent-soft: rgba(166, 61, 47, 0.12);
   --teal: #197278;
   --teal-soft: rgba(25, 114, 120, 0.12);
   --warn: #c77d1c;
-  --shadow: 0 18px 36px rgba(56, 43, 31, 0.12);
+  --shadow: 0 14px 30px rgba(56, 43, 31, 0.1);
 }
 
 * {
@@ -99,6 +99,13 @@ h1 {
 .bullet-list,
 .feed-card p {
   color: var(--muted);
+}
+
+.subhead,
+.subtle,
+.feed-card p,
+.bullet-list {
+  line-height: 1.55;
 }
 
 .topbar-actions {
@@ -200,6 +207,46 @@ h1 {
 
 .panel {
   padding: 22px;
+}
+
+.screener-explainer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.explain-card {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.82);
+  padding: 14px;
+}
+
+.explain-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.explain-card strong {
+  display: block;
+  font-size: 1rem;
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+
+.explain-card p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.explain-card-primary {
+  background: linear-gradient(135deg, rgba(25, 114, 120, 0.1), rgba(255, 255, 255, 0.9));
 }
 
 .panel-tall {
@@ -334,6 +381,19 @@ h1 {
   text-align: left;
   padding: 14px 10px;
   border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.leaderboard-table th {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.leaderboard-table td small {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 .leaderboard-table tbody tr {
@@ -389,6 +449,14 @@ h1 {
   margin-top: 8px;
   font-size: 14px;
   line-height: 1.5;
+}
+
+.source-note {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .metric-list,
@@ -493,6 +561,10 @@ h1 {
     grid-row: auto;
     grid-column: auto;
   }
+
+  .screener-explainer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 780px) {
@@ -509,6 +581,10 @@ h1 {
   .hero-grid,
   .detail-summary {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .screener-explainer {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -1,3 +1,5 @@
+import { fingerprint, round } from "../utils/helpers.js";
+
 const OEF_HOLDINGS_URL =
   "https://www.ishares.com/us/products/239723/ishares-sp-100-etf/1467271812596.ajax?dataType=fund&fileName=OEF_holdings&fileType=csv";
 
@@ -133,40 +135,117 @@ const QQQ_NAME_OVERRIDES = new Map([
   ["ZS", "Zscaler, Inc."]
 ]);
 
-const DEFAULT_METRICS = {
-  revenue_growth_yoy: 0.11,
-  eps_growth_yoy: 0.1,
-  fcf_growth_yoy: 0.08,
-  gross_margin: 0.42,
-  operating_margin: 0.18,
-  net_margin: 0.14,
-  roe: 0.17,
-  roic: 0.13,
-  debt_to_equity: 0.7,
-  net_debt_to_ebitda: 1.4,
-  current_ratio: 1.35,
-  interest_coverage: 12,
-  fcf_margin: 0.1,
-  fcf_conversion: 0.86,
-  asset_turnover: 0.8,
-  margin_stability: 0.68,
-  revenue_consistency: 0.7,
-  pe_ttm: 26,
-  ev_to_ebitda_ttm: 16,
-  price_to_sales_ttm: 5,
-  peg: 1.9,
-  fcf_yield: 0.03
+const DEFAULT_METRIC_RANGES = {
+  revenue_growth_yoy: [0.01, 0.2],
+  eps_growth_yoy: [-0.03, 0.22],
+  fcf_growth_yoy: [-0.08, 0.2],
+  gross_margin: [0.2, 0.72],
+  operating_margin: [0.06, 0.32],
+  net_margin: [0.04, 0.24],
+  roe: [0.07, 0.28],
+  roic: [0.05, 0.22],
+  debt_to_equity: [0.08, 1.15],
+  net_debt_to_ebitda: [-0.4, 3.6],
+  current_ratio: [0.9, 2.3],
+  interest_coverage: [5, 42],
+  fcf_margin: [0.02, 0.22],
+  fcf_conversion: [0.45, 1.02],
+  asset_turnover: [0.28, 1.05],
+  margin_stability: [0.48, 0.9],
+  revenue_consistency: [0.45, 0.88],
+  pe_ttm: [15, 48],
+  ev_to_ebitda_ttm: [9, 28],
+  price_to_sales_ttm: [1.8, 11.5],
+  peg: [0.9, 3.4],
+  fcf_yield: [0.01, 0.055]
 };
 
-const DEFAULT_QUALITY_FLAGS = {
-  restatement_flag: false,
-  missing_fields_count: 2,
-  anomaly_flags: ["awaiting_sec_refresh"],
-  reporting_confidence_score: 0.8,
-  data_freshness_score: 0.78,
-  peer_comparability_score: 0.74,
-  rule_confidence: 0.79,
-  llm_confidence: 0.72
+const SECTOR_METRIC_RANGES = {
+  "Information Technology": {
+    revenue_growth_yoy: [0.04, 0.24],
+    gross_margin: [0.38, 0.8],
+    operating_margin: [0.1, 0.38],
+    pe_ttm: [20, 54],
+    price_to_sales_ttm: [3, 15],
+    peg: [1.1, 3.6]
+  },
+  "Communication Services": {
+    revenue_growth_yoy: [0.03, 0.22],
+    gross_margin: [0.32, 0.72],
+    operating_margin: [0.08, 0.34],
+    pe_ttm: [16, 34],
+    price_to_sales_ttm: [2.2, 9.5]
+  },
+  "Consumer Discretionary": {
+    revenue_growth_yoy: [0.02, 0.2],
+    gross_margin: [0.18, 0.52],
+    operating_margin: [0.04, 0.19],
+    pe_ttm: [18, 60],
+    current_ratio: [0.85, 1.9]
+  },
+  "Consumer Staples": {
+    revenue_growth_yoy: [0.01, 0.12],
+    gross_margin: [0.22, 0.48],
+    operating_margin: [0.06, 0.21],
+    pe_ttm: [15, 31],
+    fcf_yield: [0.02, 0.06]
+  },
+  "Health Care": {
+    revenue_growth_yoy: [0.03, 0.18],
+    gross_margin: [0.42, 0.82],
+    operating_margin: [0.08, 0.32],
+    pe_ttm: [17, 45],
+    current_ratio: [1, 2.8]
+  },
+  Financials: {
+    revenue_growth_yoy: [0.01, 0.13],
+    gross_margin: [0.28, 0.62],
+    operating_margin: [0.12, 0.33],
+    debt_to_equity: [0.4, 1.45],
+    current_ratio: [0.85, 1.5],
+    pe_ttm: [10, 23],
+    fcf_yield: [0.025, 0.07]
+  },
+  Industrials: {
+    revenue_growth_yoy: [0.01, 0.16],
+    gross_margin: [0.18, 0.46],
+    operating_margin: [0.05, 0.2],
+    asset_turnover: [0.45, 1.18]
+  },
+  Energy: {
+    revenue_growth_yoy: [-0.02, 0.18],
+    gross_margin: [0.16, 0.42],
+    operating_margin: [0.04, 0.22],
+    pe_ttm: [8, 19],
+    fcf_yield: [0.03, 0.09]
+  },
+  Materials: {
+    revenue_growth_yoy: [0, 0.14],
+    gross_margin: [0.17, 0.38],
+    operating_margin: [0.04, 0.18]
+  },
+  Utilities: {
+    revenue_growth_yoy: [0, 0.08],
+    gross_margin: [0.18, 0.34],
+    operating_margin: [0.07, 0.2],
+    pe_ttm: [12, 27],
+    current_ratio: [0.75, 1.5]
+  },
+  "Real Estate": {
+    revenue_growth_yoy: [0, 0.09],
+    gross_margin: [0.22, 0.5],
+    operating_margin: [0.08, 0.24],
+    debt_to_equity: [0.35, 1.5]
+  }
+};
+
+const DEFAULT_QUALITY_FLAG_RANGES = {
+  missing_fields_count: [2, 5],
+  reporting_confidence_score: [0.72, 0.84],
+  data_freshness_score: [0.69, 0.82],
+  peer_comparability_score: [0.66, 0.8],
+  rule_confidence: [0.7, 0.82],
+  llm_confidence: [0.68, 0.78]
 };
 
 function withTimeout(timeoutMs) {
@@ -198,6 +277,75 @@ function normalizeSectorLabel(value) {
   }
 
   return normalized;
+}
+
+function deterministicUnit(value) {
+  const hex = fingerprint(value).slice(0, 8);
+  return parseInt(hex, 16) / 0xffffffff;
+}
+
+function rangeValue(seed, min, max, digits = 6) {
+  return round(min + deterministicUnit(seed) * (max - min), digits);
+}
+
+function metricRangesForSector(sector) {
+  return {
+    ...DEFAULT_METRIC_RANGES,
+    ...(SECTOR_METRIC_RANGES[sector] || {})
+  };
+}
+
+function buildPlaceholderMetrics({ ticker, sector, inSp100, inQqq }) {
+  const ranges = metricRangesForSector(sector);
+  const sizeLift = inSp100 ? 0.01 : 0;
+  const qqqGrowthLift = inQqq ? 0.015 : 0;
+
+  return {
+    revenue_growth_yoy: round(rangeValue(`${ticker}:revenue_growth`, ...ranges.revenue_growth_yoy) + qqqGrowthLift, 6),
+    eps_growth_yoy: rangeValue(`${ticker}:eps_growth`, ...ranges.eps_growth_yoy),
+    fcf_growth_yoy: rangeValue(`${ticker}:fcf_growth`, ...ranges.fcf_growth_yoy),
+    gross_margin: rangeValue(`${ticker}:gross_margin`, ...ranges.gross_margin),
+    operating_margin: rangeValue(`${ticker}:operating_margin`, ...ranges.operating_margin),
+    net_margin: rangeValue(`${ticker}:net_margin`, ...ranges.net_margin),
+    roe: rangeValue(`${ticker}:roe`, ...ranges.roe),
+    roic: rangeValue(`${ticker}:roic`, ...ranges.roic),
+    debt_to_equity: rangeValue(`${ticker}:debt_to_equity`, ...ranges.debt_to_equity),
+    net_debt_to_ebitda: rangeValue(`${ticker}:net_debt_to_ebitda`, ...ranges.net_debt_to_ebitda),
+    current_ratio: round(rangeValue(`${ticker}:current_ratio`, ...ranges.current_ratio) + sizeLift, 6),
+    interest_coverage: rangeValue(`${ticker}:interest_coverage`, ...ranges.interest_coverage),
+    fcf_margin: rangeValue(`${ticker}:fcf_margin`, ...ranges.fcf_margin),
+    fcf_conversion: rangeValue(`${ticker}:fcf_conversion`, ...ranges.fcf_conversion),
+    asset_turnover: rangeValue(`${ticker}:asset_turnover`, ...ranges.asset_turnover),
+    margin_stability: rangeValue(`${ticker}:margin_stability`, ...ranges.margin_stability),
+    revenue_consistency: rangeValue(`${ticker}:revenue_consistency`, ...ranges.revenue_consistency),
+    pe_ttm: rangeValue(`${ticker}:pe_ttm`, ...ranges.pe_ttm),
+    ev_to_ebitda_ttm: rangeValue(`${ticker}:ev_to_ebitda_ttm`, ...ranges.ev_to_ebitda_ttm),
+    price_to_sales_ttm: rangeValue(`${ticker}:price_to_sales_ttm`, ...ranges.price_to_sales_ttm),
+    peg: rangeValue(`${ticker}:peg`, ...ranges.peg),
+    fcf_yield: rangeValue(`${ticker}:fcf_yield`, ...ranges.fcf_yield)
+  };
+}
+
+function buildPlaceholderQualityFlags({ ticker, inSp100, inQqq }) {
+  const missingFields = Math.round(
+    rangeValue(`${ticker}:missing_fields_count`, ...DEFAULT_QUALITY_FLAG_RANGES.missing_fields_count, 0)
+  );
+  const anomalyFlags = ["awaiting_sec_refresh", "bootstrap_placeholder"];
+
+  if (!inSp100 && inQqq) {
+    anomalyFlags.push("qqq_seed_only");
+  }
+
+  return {
+    restatement_flag: false,
+    missing_fields_count: missingFields,
+    anomaly_flags: anomalyFlags,
+    reporting_confidence_score: rangeValue(`${ticker}:reporting_confidence`, ...DEFAULT_QUALITY_FLAG_RANGES.reporting_confidence_score),
+    data_freshness_score: rangeValue(`${ticker}:data_freshness`, ...DEFAULT_QUALITY_FLAG_RANGES.data_freshness_score),
+    peer_comparability_score: rangeValue(`${ticker}:peer_comparability`, ...DEFAULT_QUALITY_FLAG_RANGES.peer_comparability_score),
+    rule_confidence: rangeValue(`${ticker}:rule_confidence`, ...DEFAULT_QUALITY_FLAG_RANGES.rule_confidence),
+    llm_confidence: rangeValue(`${ticker}:llm_confidence`, ...DEFAULT_QUALITY_FLAG_RANGES.llm_confidence)
+  };
 }
 
 function parseCsvLine(line) {
@@ -296,6 +444,8 @@ function buildPlaceholderCompany({
   inSp100,
   inQqq
 }) {
+  const sector = normalizeSectorLabel(sp100Record?.sector);
+
   return {
     ticker,
     company_name:
@@ -303,8 +453,8 @@ function buildPlaceholderCompany({
       sp100Record?.company_name ||
       secRecord?.company_name ||
       ticker,
-    sector: normalizeSectorLabel(sp100Record?.sector),
-    industry: sp100Record?.sector ? `${normalizeSectorLabel(sp100Record.sector)} Constituents` : "Pending SEC classification",
+    sector,
+    industry: sp100Record?.sector ? `${sector} Constituents` : "Pending SEC classification",
     exchange: sp100Record?.exchange || (inQqq ? "NASDAQ" : "NYSE"),
     market_cap_bucket: inSp100 ? "mega_cap" : "large_cap",
     cik: secRecord?.cik || null,
@@ -315,10 +465,10 @@ function buildPlaceholderCompany({
     filing_url: "",
     summary:
       inSp100 && inQqq
-        ? "Loaded from the S&P 100 and QQQ universe bootstrap while the live SEC refresh catches up."
+        ? "Bootstrapped into coverage from the S&P 100 and QQQ universe while the live SEC filing refresh catches up."
         : inSp100
-          ? "Loaded from the S&P 100 universe bootstrap while the live SEC refresh catches up."
-          : "Loaded from the QQQ holdings universe bootstrap while the live SEC refresh catches up.",
+          ? "Bootstrapped into coverage from the S&P 100 universe while the live SEC filing refresh catches up."
+          : "Bootstrapped into coverage from the QQQ universe while the live SEC filing refresh catches up.",
     notes: [
       inSp100 && inQqq
         ? "This company sits in both the S&P 100 and QQQ coverage universes."
@@ -327,9 +477,10 @@ function buildPlaceholderCompany({
           : "This company is seeded from the QQQ coverage universe.",
       "Live SEC filings will replace this placeholder classification and metric pack after startup."
     ],
-    metrics: { ...DEFAULT_METRICS },
-    quality_flags: { ...DEFAULT_QUALITY_FLAGS },
-    previous_composite_score: 0.5
+    data_source: "bootstrap_placeholder",
+    metrics: buildPlaceholderMetrics({ ticker, sector, inSp100, inQqq }),
+    quality_flags: buildPlaceholderQualityFlags({ ticker, inSp100, inQqq }),
+    previous_composite_score: rangeValue(`${ticker}:previous_composite_score`, 0.36, 0.66, 3)
   };
 }
 
