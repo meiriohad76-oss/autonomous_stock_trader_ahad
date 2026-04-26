@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentiment-analyst.local/schemas/raw-document.schema.json",
+  "title": "RawDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "raw_id",
+    "source_name",
+    "source_type",
+    "source_priority",
+    "url",
+    "title",
+    "published_at",
+    "fetched_at",
+    "language",
+    "source_metadata",
+    "raw_payload"
+  ],
+  "properties": {
+    "raw_id": { "type": "string", "format": "uuid" },
+    "source_name": { "type": "string", "minLength": 1 },
+    "source_type": {
+      "type": "string",
+      "enum": ["rss", "news_api", "filing", "insider", "macro", "calendar", "manual"]
+    },
+    "source_priority": { "type": "number", "minimum": 0, "maximum": 1 },
+    "url": { "type": "string", "format": "uri" },
+    "canonical_url": { "type": ["string", "null"], "format": "uri" },
+    "title": { "type": "string", "minLength": 1 },
+    "body": { "type": ["string", "null"] },
+    "published_at": { "type": "string", "format": "date-time" },
+    "fetched_at": { "type": "string", "format": "date-time" },
+    "language": { "type": "string", "minLength": 2, "maxLength": 8 },
+    "author": { "type": ["string", "null"] },
+    "source_metadata": { "type": "object" },
+    "raw_payload": { "type": "object" }
+  }
+}

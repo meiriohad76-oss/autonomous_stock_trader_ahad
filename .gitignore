@@ -1,0 +1,9 @@
+node_modules/
+.env
+dist/
+coverage/
+*.log
+data/runtime/
+data/_backup-*.sqlite
+data/sentiment-analyst-*.sqlite.gz
+logs/

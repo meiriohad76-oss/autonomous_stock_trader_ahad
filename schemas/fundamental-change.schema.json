@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentiment-analyst.local/schemas/fundamental-change.schema.json",
+  "title": "FundamentalChangeEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "type",
+    "ticker",
+    "sector",
+    "as_of",
+    "form_type",
+    "filing_date",
+    "changes",
+    "confidence",
+    "composite_fundamental_score",
+    "score_delta_30d",
+    "rating_label"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "filing_processed",
+        "company_rank_jump",
+        "confidence_drop",
+        "anomaly_flag"
+      ]
+    },
+    "ticker": { "type": "string" },
+    "sector": { "type": "string" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "form_type": { "type": "string" },
+    "filing_date": { "type": "string", "format": "date" },
+    "changes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "composite_fundamental_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "score_delta_30d": { "type": "number", "minimum": -1, "maximum": 1 },
+    "rating_label": {
+      "type": "string",
+      "enum": ["fundamentally_strong", "balanced", "weak", "deteriorating"]
+    }
+  }
+}

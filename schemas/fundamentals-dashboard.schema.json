@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentiment-analyst.local/schemas/fundamentals-dashboard.schema.json",
+  "title": "FundamentalsDashboardSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["as_of", "summary", "leaderboard", "sectors", "changes"],
+  "properties": {
+    "as_of": { "type": ["string", "null"], "format": "date-time" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverage_count",
+        "sectors_covered",
+        "new_filings_today",
+        "average_confidence",
+        "average_composite_score",
+        "data_completeness"
+      ],
+      "properties": {
+        "coverage_count": { "type": "integer", "minimum": 0 },
+        "sectors_covered": { "type": "integer", "minimum": 0 },
+        "new_filings_today": { "type": "integer", "minimum": 0 },
+        "average_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "average_composite_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "data_completeness": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "leaderboard": {
+      "type": "array",
+      "items": {
+        "$ref": "https://sentiment-analyst.local/schemas/fundamental-score.schema.json"
+      }
+    },
+    "sectors": {
+      "type": "array",
+      "items": {
+        "$ref": "https://sentiment-analyst.local/schemas/fundamental-sector.schema.json"
+      }
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "$ref": "https://sentiment-analyst.local/schemas/fundamental-change.schema.json"
+      }
+    }
+  }
+}

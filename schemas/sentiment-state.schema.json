@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentiment-analyst.local/schemas/sentiment-state.schema.json",
+  "title": "SentimentState",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "state_id",
+    "entity_type",
+    "entity_key",
+    "entity_name",
+    "window",
+    "as_of",
+    "doc_count",
+    "unique_story_count",
+    "weighted_sentiment",
+    "weighted_impact",
+    "weighted_confidence",
+    "story_velocity",
+    "momentum_delta",
+    "event_concentration",
+    "source_diversity",
+    "sentiment_regime",
+    "top_event_types",
+    "top_reasons"
+  ],
+  "properties": {
+    "state_id": { "type": "string", "format": "uuid" },
+    "entity_type": {
+      "type": "string",
+      "enum": ["ticker", "sector", "watchlist", "market"]
+    },
+    "entity_key": { "type": "string" },
+    "entity_name": { "type": "string" },
+    "window": { "type": "string" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "doc_count": { "type": "integer", "minimum": 0 },
+    "unique_story_count": { "type": "integer", "minimum": 0 },
+    "weighted_sentiment": { "type": "number", "minimum": -1, "maximum": 1 },
+    "weighted_impact": { "type": "number", "minimum": 0, "maximum": 1 },
+    "weighted_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "story_velocity": { "type": "number", "minimum": 0 },
+    "momentum_delta": { "type": "number", "minimum": -1, "maximum": 1 },
+    "event_concentration": { "type": "number", "minimum": 0, "maximum": 1 },
+    "source_diversity": { "type": "number", "minimum": 0, "maximum": 1 },
+    "sentiment_regime": {
+      "type": "string",
+      "enum": ["bullish", "neutral", "bearish"]
+    },
+    "top_event_types": { "type": "array", "items": { "type": "string" } },
+    "top_reasons": { "type": "array", "items": { "type": "string" } },
+    "state_metadata": { "type": "object" }
+  }
+}

@@ -1,0 +1,475 @@
+openapi: 3.1.0
+info:
+  title: Sentiment Analyst API
+  version: 0.1.0
+  summary: Contract for the Sentiment Analyst and Fundamental Analyst MVP server.
+servers:
+  - url: http://127.0.0.1:3000
+    description: Local development bind
+  - url: https://{publicHost}
+    description: Public dashboard or tunnel hostname
+    variables:
+      publicHost:
+        default: dashboard.example.com
+paths:
+  /api/health:
+    get:
+      summary: Health and freshness snapshot.
+      responses:
+        "200":
+          description: Health payload.
+  /api/config:
+    get:
+      summary: Dashboard and universe configuration.
+      responses:
+        "200":
+          description: Config payload.
+  /api/fundamentals/dashboard:
+    get:
+      summary: Fundamental Analyst dashboard snapshot with sectors, company leaderboard, and recent changes.
+      parameters:
+        - in: query
+          name: sector
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: minConfidence
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+        - in: query
+          name: onlyChanged
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Fundamental dashboard snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FundamentalsDashboardSnapshot"
+  /api/fundamentals/changes:
+    get:
+      summary: Recent fundamental change events for the live feed.
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Fundamental change events.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FundamentalChangeEvent"
+  /api/fundamentals/ticker/{ticker}:
+    get:
+      summary: Detailed factor pack, confidence breakdown, and filing context for one ticker.
+      parameters:
+        - in: path
+          name: ticker
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Fundamental ticker detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FundamentalTickerResponse"
+        "404":
+          description: Ticker not found.
+  /api/fundamentals/sector/{sector}:
+    get:
+      summary: Sector-level attractiveness and leading companies within that sector.
+      parameters:
+        - in: path
+          name: sector
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Fundamental sector detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FundamentalSector"
+        "404":
+          description: Sector not found.
+  /api/sentiment/watchlist:
+    get:
+      summary: Watchlist leaderboard and global state.
+      parameters:
+        - in: query
+          name: window
+          schema:
+            type: string
+            enum: [15m, 1h, 4h, 1d, 7d]
+        - in: query
+          name: label
+          schema:
+            type: string
+            enum: [bullish, neutral, bearish]
+        - in: query
+          name: minConfidence
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+      responses:
+        "200":
+          description: Watchlist snapshot.
+  /api/sentiment/ticker/{ticker}:
+    get:
+      summary: Ticker sentiment detail including provider-backed price history with synthetic fallback.
+      parameters:
+        - in: path
+          name: ticker
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticker sentiment detail.
+        "404":
+          description: Ticker not found.
+  /api/sentiment/sector/{sector}:
+    get:
+      summary: Sector sentiment detail.
+      parameters:
+        - in: path
+          name: sector
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sector sentiment detail.
+        "404":
+          description: Sector not found.
+  /api/news/recent:
+    get:
+      summary: Recent scored documents.
+      parameters:
+        - in: query
+          name: ticker
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Recent scored document feed.
+  /api/money-flow:
+    get:
+      summary: Aggregate smart-money snapshot across insider, institutional, and tape flow.
+      parameters:
+        - in: query
+          name: hours
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: Money-flow snapshot.
+  /api/money-flow/ticker/{ticker}:
+    get:
+      summary: Ticker-specific smart-money detail with recent alerts and flow timeline.
+      parameters:
+        - in: path
+          name: ticker
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: hours
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: Money-flow ticker detail.
+        "404":
+          description: Ticker not found.
+  /api/events/high-impact:
+    get:
+      summary: High impact and high confidence events.
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Event list.
+  /api/replay:
+    post:
+      summary: Replay the local sample event set into the live pipeline.
+      responses:
+        "202":
+          description: Replay started.
+  /api/stream:
+    get:
+      summary: Server-Sent Events stream for dashboard updates.
+      responses:
+        "200":
+          description: Event stream.
+components:
+  schemas:
+    FundamentalChangeEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        ticker:
+          type: string
+        sector:
+          type: string
+        as_of:
+          type: string
+          format: date-time
+        form_type:
+          type: string
+        filing_date:
+          type: string
+          format: date
+        changes:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+        composite_fundamental_score:
+          type: number
+        score_delta_30d:
+          type: number
+        rating_label:
+          type: string
+      required:
+        - event_id
+        - type
+        - ticker
+        - sector
+        - as_of
+        - changes
+        - confidence
+        - composite_fundamental_score
+    FundamentalScore:
+      type: object
+      properties:
+        ticker:
+          type: string
+        company_name:
+          type: string
+        sector:
+          type: string
+        industry:
+          type: string
+        as_of:
+          type: string
+          format: date-time
+        rank_global:
+          type: integer
+        rank_in_sector:
+          type: integer
+        composite_fundamental_score:
+          type: number
+        final_confidence:
+          type: number
+        quality_score:
+          type: number
+        growth_score:
+          type: number
+        valuation_score:
+          type: number
+        balance_sheet_score:
+          type: number
+        efficiency_score:
+          type: number
+        earnings_stability_score:
+          type: number
+        sector_score:
+          type: number
+        rating_label:
+          type: string
+        valuation_label:
+          type: string
+        direction_label:
+          type: string
+        regime_label:
+          type: string
+        score_delta_30d:
+          type: number
+        reason_codes:
+          type: array
+          items:
+            type: string
+        top_strengths:
+          type: array
+          items:
+            type: string
+        top_weaknesses:
+          type: array
+          items:
+            type: string
+        market_reference:
+          type: object
+      required:
+        - ticker
+        - company_name
+        - sector
+        - as_of
+        - composite_fundamental_score
+        - final_confidence
+        - rating_label
+    FundamentalSector:
+      type: object
+      properties:
+        sector:
+          type: string
+        as_of:
+          type: string
+          format: date-time
+        rank:
+          type: integer
+        growth_breadth:
+          type: number
+        profitability_strength:
+          type: number
+        revision_breadth:
+          type: number
+        relative_valuation:
+          type: number
+        macro_fit:
+          type: number
+        median_revenue_growth:
+          type: number
+        median_operating_margin:
+          type: number
+        median_roic:
+          type: number
+        median_pe_ttm:
+          type: number
+        sector_attractiveness_score:
+          type: number
+        leaders:
+          type: array
+          items:
+            type: object
+      required:
+        - sector
+        - as_of
+        - rank
+        - sector_attractiveness_score
+        - leaders
+    FundamentalTickerResponse:
+      allOf:
+        - $ref: "#/components/schemas/FundamentalScore"
+        - type: object
+          properties:
+            factor_cards:
+              type: array
+              items:
+                type: object
+            confidence_breakdown:
+              type: object
+            metric_snapshot:
+              type: object
+            peer_percentiles:
+              type: object
+            market_reference:
+              type: object
+            score_history:
+              type: array
+              items:
+                type: object
+            filing_timeline:
+              type: array
+              items:
+                type: object
+          required:
+            - factor_cards
+            - confidence_breakdown
+            - metric_snapshot
+            - peer_percentiles
+            - score_history
+            - filing_timeline
+    FundamentalsDashboardSnapshot:
+      type: object
+      properties:
+        as_of:
+          type: string
+          nullable: true
+        summary:
+          type: object
+          properties:
+            coverage_count:
+              type: integer
+            sectors_covered:
+              type: integer
+            new_filings_today:
+              type: integer
+            average_confidence:
+              type: number
+            average_composite_score:
+              type: number
+            data_completeness:
+              type: number
+          required:
+            - coverage_count
+            - sectors_covered
+            - new_filings_today
+            - average_confidence
+            - average_composite_score
+            - data_completeness
+        leaderboard:
+          type: array
+          items:
+            $ref: "#/components/schemas/FundamentalScore"
+        sectors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FundamentalSector"
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/FundamentalChangeEvent"
+      required:
+        - as_of
+        - summary
+        - leaderboard
+        - sectors
+        - changes

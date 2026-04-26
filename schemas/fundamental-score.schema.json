@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentiment-analyst.local/schemas/fundamental-score.schema.json",
+  "title": "FundamentalScore",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticker",
+    "company_name",
+    "sector",
+    "industry",
+    "as_of",
+    "rank_global",
+    "rank_in_sector",
+    "composite_fundamental_score",
+    "quality_score",
+    "growth_score",
+    "valuation_score",
+    "balance_sheet_score",
+    "efficiency_score",
+    "earnings_stability_score",
+    "sector_score",
+    "final_confidence",
+    "rating_label",
+    "valuation_label",
+    "direction_label",
+    "regime_label",
+    "reason_codes",
+    "top_strengths",
+    "top_weaknesses",
+    "score_delta_30d"
+  ],
+  "properties": {
+    "ticker": { "type": "string" },
+    "company_name": { "type": "string" },
+    "sector": { "type": "string" },
+    "industry": { "type": "string" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "rank_global": { "type": "integer", "minimum": 1 },
+    "rank_in_sector": { "type": "integer", "minimum": 1 },
+    "composite_fundamental_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "quality_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "growth_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "valuation_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "balance_sheet_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "efficiency_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "earnings_stability_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "sector_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "reporting_confidence_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "data_freshness_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "peer_comparability_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "rule_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "llm_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "final_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "score_delta_30d": { "type": "number", "minimum": -1, "maximum": 1 },
+    "rating_label": {
+      "type": "string",
+      "enum": ["fundamentally_strong", "balanced", "weak", "deteriorating"]
+    },
+    "valuation_label": {
+      "type": "string",
+      "enum": ["cheap", "fair", "expensive", "extremely_expensive"]
+    },
+    "direction_label": {
+      "type": "string",
+      "enum": ["bullish_supportive", "neutral", "bearish_headwind"]
+    },
+    "regime_label": {
+      "type": "string",
+      "enum": [
+        "compounder",
+        "cyclical_recovery",
+        "value_trap_risk",
+        "quality_at_premium",
+        "distressed",
+        "mixed"
+      ]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "top_strengths": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "top_weaknesses": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "market_reference": {
+      "type": ["object", "null"]
+    },
+    "explanation_short": { "type": "string" }
+  }
+}

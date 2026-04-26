@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FUNDAMENTALS.AI | Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    >
+    <link rel="stylesheet" href="/fundamentals.css">
+  </head>
+  <body>
+    <div class="fund-shell">
+      <header class="fund-topbar">
+        <div>
+          <p class="eyebrow">Autonomous Agent Dashboard</p>
+          <h1>Fundamental Analyst</h1>
+          <p class="subhead">Sector-first scoring for quality, growth, valuation, balance-sheet strength, and confidence.</p>
+        </div>
+        <div class="topbar-actions">
+          <a class="ghost-link" href="/">Sentiment Dashboard</a>
+          <button id="refresh-button" class="primary-button" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section class="hero-grid">
+        <article class="hero-card">
+          <span>Coverage</span>
+          <strong id="coverage-count">0</strong>
+          <small id="sector-count">0 sectors</small>
+        </article>
+        <article class="hero-card">
+          <span>Avg Confidence</span>
+          <strong id="average-confidence">0%</strong>
+          <small id="data-completeness">0% complete</small>
+        </article>
+        <article class="hero-card">
+          <span>New Filings</span>
+          <strong id="new-filings">0</strong>
+          <small id="last-update">No refresh yet</small>
+        </article>
+        <article class="hero-card">
+          <span>Live Health</span>
+          <strong id="health-status">-</strong>
+          <small id="health-fundamentals">0 companies scored</small>
+        </article>
+      </section>
+
+      <section class="controls-row">
+        <label class="search-field" for="ticker-search">
+          <span>Search</span>
+          <input id="ticker-search" type="search" placeholder="Search ticker or company">
+        </label>
+        <label class="search-field" for="confidence-filter">
+          <span>Min Confidence</span>
+          <input id="confidence-filter" type="range" min="0" max="100" step="5" value="0">
+          <small id="confidence-value">0%</small>
+        </label>
+        <label class="toggle-field">
+          <span>Only changed</span>
+          <input id="changed-only" type="checkbox">
+        </label>
+      </section>
+
+      <main class="dashboard-grid">
+        <aside class="panel panel-tall">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Sector Outlook</p>
+              <h2>Top-Down Attractiveness</h2>
+            </div>
+          </div>
+          <div id="sector-filter-chips" class="chip-row"></div>
+          <div id="sector-cards" class="stack-grid"></div>
+        </aside>
+
+        <section class="panel panel-wide">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Leaderboard</p>
+              <h2>Company Fundamentals</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Sector</th>
+                  <th>Composite</th>
+                  <th>Confidence</th>
+                  <th>Rating</th>
+                  <th>Delta 30d</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboard-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Live Changes</p>
+              <h2>What Changed</h2>
+            </div>
+          </div>
+          <div id="changes-feed" class="feed-list"></div>
+        </section>
+
+        <section class="panel panel-detail">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Company Detail</p>
+              <h2 id="detail-title">Select a company</h2>
+              <p id="detail-subtitle" class="subtle">Factor cards, confidence, and filing context.</p>
+            </div>
+          </div>
+          <div id="detail-summary" class="detail-summary"></div>
+          <div class="detail-grid">
+            <div>
+              <h3>Factor Pack</h3>
+              <div id="factor-cards" class="factor-grid"></div>
+            </div>
+            <div>
+              <h3>Confidence Breakdown</h3>
+              <div id="confidence-breakdown" class="metric-list"></div>
+            </div>
+          </div>
+          <div class="detail-grid">
+            <div>
+              <h3>Why It Scores Here</h3>
+              <div id="reason-codes" class="chip-row"></div>
+              <ul id="detail-notes" class="bullet-list"></ul>
+            </div>
+            <div>
+              <h3>Recent Filing Timeline</h3>
+              <div id="filing-timeline" class="timeline-list"></div>
+            </div>
+          </div>
+          <div>
+            <h3>Score History</h3>
+            <div id="score-history" class="history-strip"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/fundamentals.js"></script>
+  </body>
+</html>
