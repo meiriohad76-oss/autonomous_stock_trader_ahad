@@ -19,6 +19,7 @@ import { createSecFundamentalsCollector } from "./domain/sec-fundamentals.js";
 import { createSecInstitutionalCollector } from "./domain/sec-institutional.js";
 import { createSecInsiderCollector } from "./domain/sec-insider.js";
 import { createStore, resetStore } from "./domain/store.js";
+import { TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { createMacroRegimeAgent } from "./domain/macro-regime.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
 import { scoreToLabel } from "./utils/helpers.js";
@@ -311,8 +312,18 @@ async function persistEnvUpdates(filePath, updates) {
 }
 
 function buildWatchlistSnapshot(store, windowKey, filters = {}) {
-  const fundamentalsByTicker = new Map((store.fundamentals?.leaderboard || []).map((row) => [row.ticker, row]));
+  const fullFundamentalRows = store.fundamentals?.leaderboard || [];
+  const fundamentalsByTicker = new Map(fullFundamentalRows.map((row) => [row.ticker, row]));
   const dedupedStates = new Map();
+
+  function resolveTickerMetadata(ticker, fundamentalsRow, sentimentState) {
+    const watchlistEntry = TICKER_LOOKUP.get(ticker);
+    return {
+      company_name: fundamentalsRow?.company_name || sentimentState?.entity_name || watchlistEntry?.company || ticker,
+      sector: fundamentalsRow?.sector || watchlistEntry?.sector || "Other",
+      industry: fundamentalsRow?.industry || watchlistEntry?.industry || null
+    };
+  }
 
   for (const state of store.sentimentStates) {
     if (state.entity_type !== "ticker" || state.window !== windowKey) {
@@ -328,23 +339,37 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
 
   const states = [...dedupedStates.values()]
       .filter((state) => state.entity_type === "ticker" && state.window === windowKey)
-      .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
-      .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))
-      .map((state) => {
-        const fundamentals = fundamentalsByTicker.get(state.entity_key);
-        return {
-          ...state,
-          screen_stage: fundamentals?.initial_screen?.stage || null,
-          screen_provisional: Boolean(fundamentals?.initial_screen?.provisional),
-          composite_fundamental_score: fundamentals?.composite_fundamental_score ?? null,
+       .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
+       .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))
+       .map((state) => {
+         const fundamentals = fundamentalsByTicker.get(state.entity_key);
+         const metadata = resolveTickerMetadata(state.entity_key, fundamentals, state);
+         return {
+           ...state,
+           company_name: metadata.company_name,
+           sector: metadata.sector,
+           industry: metadata.industry,
+           screen_stage: fundamentals?.initial_screen?.stage || null,
+           screen_provisional: Boolean(fundamentals?.initial_screen?.provisional),
+           composite_fundamental_score: fundamentals?.composite_fundamental_score ?? null,
           fundamental_confidence: fundamentals?.final_confidence ?? null,
           fundamental_rating: fundamentals?.rating_label || null,
           fundamental_data_source: fundamentals?.data_source || null,
           fundamental_direction_label: fundamentals?.direction_label || null
         };
-      })
-      .filter((state) => (filters.screenStage ? state.screen_stage === filters.screenStage : true))
-      .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
+       })
+       .filter((state) => (filters.screenStage ? state.screen_stage === filters.screenStage : true))
+       .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
+
+  const summarizeScreenStages = (rows) => ({
+    tracked: rows.length,
+    eligible: rows.filter((row) => row.initial_screen?.stage === "eligible" || row.screen_stage === "eligible").length,
+    watch: rows.filter((row) => row.initial_screen?.stage === "watch" || row.screen_stage === "watch").length,
+    reject: rows.filter((row) => row.initial_screen?.stage === "reject" || row.screen_stage === "reject").length
+  });
+
+  const fullUniverseScreening = summarizeScreenStages(fullFundamentalRows);
+  const visibleScreening = summarizeScreenStages(states);
 
   const sectors = store.sentimentStates
     .filter((state) => state.entity_type === "sector" && state.window === windowKey)
@@ -365,9 +390,13 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
     },
       leaderboard: states,
       screener_overview: {
-        eligible: states.filter((row) => row.screen_stage === "eligible").length,
-        watch: states.filter((row) => row.screen_stage === "watch").length,
-        reject: states.filter((row) => row.screen_stage === "reject").length
+        eligible: visibleScreening.eligible,
+        watch: visibleScreening.watch,
+        reject: visibleScreening.reject,
+        full_universe: fullUniverseScreening,
+        visible_universe: visibleScreening,
+        fundamental_sec_live: fullFundamentalRows.filter((row) => row.data_source === "live_sec_filing").length,
+        bootstrap: fullFundamentalRows.filter((row) => row.data_source === "bootstrap_placeholder").length
       },
       sectors,
       alerts: store.alertHistory.slice(0, 10),
@@ -376,6 +405,9 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
 }
 
 async function buildTickerDetail(store, marketDataService, ticker) {
+  const fundamentalsByTicker = new Map((store.fundamentals?.leaderboard || []).map((row) => [row.ticker, row]));
+  const tickerMeta = TICKER_LOOKUP.get(ticker);
+  const fundamentalRow = fundamentalsByTicker.get(ticker) || null;
   const windows = Object.fromEntries(
     ["15m", "1h", "4h", "1d", "7d"].map((windowKey) => {
       const state = store.sentimentStates.find(
@@ -424,6 +456,9 @@ async function buildTickerDetail(store, marketDataService, ticker) {
 
   return {
     ticker,
+    company_name: fundamentalRow?.company_name || windows["1h"]?.entity_name || tickerMeta?.company || ticker,
+    sector: fundamentalRow?.sector || tickerMeta?.sector || "Other",
+    industry: fundamentalRow?.industry || tickerMeta?.industry || null,
     as_of: store.health.lastUpdate,
     windows,
     top_events: scoredDocs.slice(0, 5).map(({ score, normalized }) => ({

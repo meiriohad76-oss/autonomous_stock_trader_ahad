@@ -1,5 +1,5 @@
 const WINDOWS = ["15m", "1h", "4h", "1d", "7d"];
-const TICKER_META = {
+const FALLBACK_TICKER_META = {
   AAPL: { company: "Apple", sector: "Technology" },
   MSFT: { company: "Microsoft", sector: "Technology" },
   NVDA: { company: "Nvidia", sector: "Technology" },
@@ -125,8 +125,19 @@ const elements = {
   signalDrawerExplanation: document.querySelector("#signal-drawer-explanation"),
   signalDrawerContext: document.querySelector("#signal-drawer-context"),
   signalFocusButton: document.querySelector("#signal-focus-button"),
-  signalSourceButton: document.querySelector("#signal-source-button")
+  signalSourceButton: document.querySelector("#signal-source-button"),
+  topEntityGraph: document.querySelector("#top-entity-graph"),
+  topSensors: document.querySelector("#top-sensors"),
+  topNotifications: document.querySelector("#top-notifications"),
+  topProfile: document.querySelector("#top-profile"),
+  sideHelp: document.querySelector("#side-help"),
+  sideTerminal: document.querySelector("#side-terminal")
 };
+
+let refreshTimer = null;
+let refreshInFlight = false;
+let refreshQueued = false;
+let snapshotLoadToken = 0;
 
 function formatNumber(value, digits = 2) {
   return Number(value || 0).toFixed(digits);
@@ -291,8 +302,22 @@ function collectMoneyFlowSignals() {
   return deduped.sort((a, b) => new Date(signalTimestamp(b) || 0) - new Date(signalTimestamp(a) || 0));
 }
 
+function findTickerRow(ticker) {
+  return (state.snapshot?.leaderboard || []).find((row) => row.entity_key === ticker) || null;
+}
+
 function tickerMeta(ticker) {
-  return TICKER_META[ticker] || { company: ticker || "Unknown", sector: "Other" };
+  const row = findTickerRow(ticker);
+  const setup = (state.tradeSetups?.setups || []).find((item) => item.ticker === ticker) || null;
+  const detail = state.tickerDetail?.ticker === ticker ? state.tickerDetail : null;
+  const feedItem = [...state.liveFeed, ...state.highImpact].find((item) => item.ticker === ticker) || null;
+  const fallback = FALLBACK_TICKER_META[ticker] || null;
+
+  return {
+    company: row?.company_name || setup?.company_name || detail?.company_name || fallback?.company || ticker || "Unknown",
+    sector: row?.sector || setup?.sector || detail?.sector || feedItem?.source_metadata?.sector_hint || fallback?.sector || "Other",
+    industry: row?.industry || detail?.industry || null
+  };
 }
 
 function tickerSector(ticker) {
@@ -301,6 +326,91 @@ function tickerSector(ticker) {
 
 function tickerCompany(ticker) {
   return tickerMeta(ticker).company;
+}
+
+function matchesSearch(row) {
+  if (!state.searchTerm) {
+    return true;
+  }
+
+  const haystack = [
+    row.entity_key,
+    row.company_name,
+    row.sector,
+    row.industry,
+    row.fundamental_rating,
+    row.fundamental_direction_label,
+    ...(row.top_event_types || []),
+    ...(row.top_reasons || [])
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(state.searchTerm.toLowerCase());
+}
+
+function buildPriorityWatchRows(limit = 8) {
+  const setupByTicker = new Map((state.tradeSetups?.setups || []).map((item) => [item.ticker, item]));
+  const alertCounts = state.alerts.reduce((acc, alert) => {
+    acc[alert.entity_key] = (acc[alert.entity_key] || 0) + 1;
+    return acc;
+  }, {});
+
+  return filteredLeaderboard()
+    .map((row) => {
+      const setup = setupByTicker.get(row.entity_key);
+      const actionWeight =
+        setup?.action === "long" ? 4 : setup?.action === "short" ? 4 : setup?.action === "watch" ? 2.5 : 0;
+      const alertWeight = alertCounts[row.entity_key] || 0;
+      const score =
+        actionWeight +
+        alertWeight * 0.9 +
+        Math.abs(Number(row.weighted_sentiment || 0)) * 2 +
+        Number(row.weighted_confidence || 0) +
+        Math.abs(Number(row.momentum_delta || 0)) * 1.5 +
+        Math.min(2, Number(row.unique_story_count || 0) * 0.25);
+
+      return { row, score, setup };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+function visibleScreenerOverview() {
+  const rows = filteredLeaderboard();
+  return {
+    tracked: rows.length,
+    eligible: rows.filter((row) => row.screen_stage === "eligible").length,
+    watch: rows.filter((row) => row.screen_stage === "watch").length,
+    reject: rows.filter((row) => row.screen_stage === "reject").length
+  };
+}
+
+function buildHelpSignal() {
+  const overview = state.snapshot?.screener_overview || {};
+  const fullUniverse = overview.full_universe || {};
+  const visible = overview.visible_universe || visibleScreenerOverview();
+  return {
+    ticker: null,
+    title: "Dashboard Help",
+    subtitle: "How the sentiment workspace works",
+    label: "Neutral",
+    confidence: 1,
+    timestamp: new Date().toISOString(),
+    sourceName: "Product Guide",
+    headline:
+      "Overview is sentiment-first, Screen shows the stage-one fundamentals gate, and Trade Setups are the combined decision layer.",
+    explanation:
+      `Full fundamentals universe: ${fullUniverse.tracked || 0} tracked, ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. Current sentiment-visible subset: ${visible.tracked} tracked, ${visible.eligible} eligible, ${visible.watch} watch, ${visible.reject} reject.`,
+    eventType: "dashboard_help",
+    url: null,
+    sourceMetadata: null
+  };
+}
+
+function viewNeedsTickerDetail(view = state.activeView) {
+  return view === "overview" || view === "markets" || view === "watch";
 }
 
 function buildSignalFromFeed(item, sourceLabel = "Live Feed") {
@@ -541,38 +651,89 @@ function filteredLeaderboard() {
   if (state.screenFilter !== "all") {
     rows = rows.filter((row) => row.screen_stage === state.screenFilter);
   }
-  if (!state.searchTerm) {
-    return rows;
+  return rows.filter(matchesSearch);
+}
+
+async function ensureTickerDetail(force = false) {
+  if (!state.selectedTicker) {
+    state.tickerDetail = null;
+    return;
   }
-  return rows.filter((row) => row.entity_key.toLowerCase().includes(state.searchTerm.toLowerCase()));
+
+  if (!force && state.tickerDetail?.ticker === state.selectedTicker) {
+    return;
+  }
+
+  state.tickerDetail = await getJson(`/api/sentiment/ticker/${state.selectedTicker}`);
 }
 
 async function loadSnapshot() {
+  const loadToken = ++snapshotLoadToken;
   const params = new URLSearchParams({ window: state.activeWindow });
-  const [snapshot, liveFeed, highImpact, macroRegime, tradeSetups] = await Promise.all([
+  const [snapshotResult, liveFeedResult, highImpactResult, macroRegimeResult, tradeSetupsResult] = await Promise.allSettled([
     getJson(`/api/sentiment/watchlist?${params.toString()}`),
     getJson("/api/news/recent?limit=12"),
     getJson("/api/events/high-impact?limit=10"),
     getJson(`/api/macro-regime?window=${encodeURIComponent(state.activeWindow)}`),
     getJson(`/api/trade-setups?window=${encodeURIComponent(state.activeWindow)}&limit=6`)
   ]);
-  state.snapshot = snapshot;
-  state.liveFeed = liveFeed;
-  state.highImpact = highImpact;
-  state.macroRegime = macroRegime;
-  state.tradeSetups = tradeSetups;
-  state.alerts = state.snapshot.alerts;
+  if (snapshotResult.status !== "fulfilled") {
+    throw snapshotResult.reason;
+  }
+  if (loadToken !== snapshotLoadToken) {
+    return;
+  }
+  state.snapshot = snapshotResult.value;
+  state.liveFeed = liveFeedResult.status === "fulfilled" ? liveFeedResult.value : [];
+  state.highImpact = highImpactResult.status === "fulfilled" ? highImpactResult.value : [];
+  state.macroRegime = macroRegimeResult.status === "fulfilled" ? macroRegimeResult.value : null;
+  state.tradeSetups = tradeSetupsResult.status === "fulfilled" ? tradeSetupsResult.value : { counts: {}, setups: [] };
+  state.alerts = state.snapshot.alerts || [];
 
   const currentRows = filteredLeaderboard();
-  if ((!state.selectedTicker || !currentRows.some((row) => row.entity_key === state.selectedTicker)) && currentRows.length) {
-    state.selectedTicker = currentRows[0].entity_key;
+  if (!state.selectedTicker || !currentRows.some((row) => row.entity_key === state.selectedTicker)) {
+    state.selectedTicker = currentRows[0]?.entity_key || null;
   }
 
-  if (state.selectedTicker) {
-    state.tickerDetail = await getJson(`/api/sentiment/ticker/${state.selectedTicker}`);
+  if (viewNeedsTickerDetail()) {
+    await ensureTickerDetail(true);
+  } else if (state.selectedTicker && state.tickerDetail?.ticker !== state.selectedTicker) {
+    state.tickerDetail = null;
   }
 
   render();
+}
+
+async function performRefresh() {
+  if (refreshInFlight) {
+    refreshQueued = true;
+    return;
+  }
+
+  refreshInFlight = true;
+  try {
+    await loadHealth();
+    await loadSnapshot();
+  } finally {
+    refreshInFlight = false;
+    if (refreshQueued) {
+      refreshQueued = false;
+      scheduleRefresh(150);
+    }
+  }
+}
+
+function scheduleRefresh(delayMs = 120) {
+  if (refreshTimer) {
+    return;
+  }
+
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    performRefresh().catch((error) => {
+      console.error(error);
+    });
+  }, delayMs);
 }
 
 async function focusTicker(ticker, view = null) {
@@ -581,7 +742,7 @@ async function focusTicker(ticker, view = null) {
   }
 
   state.selectedTicker = ticker;
-  state.tickerDetail = await getJson(`/api/sentiment/ticker/${ticker}`);
+  await ensureTickerDetail(true);
   if (view) {
     setActiveView(view);
   }
@@ -625,7 +786,7 @@ function renderSectorStrip() {
     `;
     button.addEventListener("click", async () => {
       state.selectedSector = sector.entity_key;
-      const rows = filteredLeaderboard().filter((row) => tickerSector(row.entity_key) === sector.entity_key);
+      const rows = filteredLeaderboard().filter((row) => (row.sector || tickerSector(row.entity_key)) === sector.entity_key);
       const firstMatch = rows[0];
       if (firstMatch) {
         await focusTicker(firstMatch.entity_key, "markets");
@@ -642,7 +803,9 @@ function renderLeaderboard() {
   const rows = filteredLeaderboard();
   elements.leaderboardBody.innerHTML = "";
   const overview = state.snapshot?.screener_overview || {};
-  elements.leaderboardExplainer.textContent = `Sentiment still drives the order here. Screen shows the stage-one fundamentals gate, Composite shows the full fundamentals score, and the current universe includes ${overview.eligible || 0} eligible, ${overview.watch || 0} watch, and ${overview.reject || 0} reject names.`;
+  const fullUniverse = overview.full_universe || {};
+  const visibleUniverse = overview.visible_universe || visibleScreenerOverview();
+  elements.leaderboardExplainer.textContent = `Sentiment still drives the order here. Screen shows the stage-one fundamentals gate and Composite shows the full fundamentals score. Full fundamentals universe: ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. Current sentiment-visible subset: ${visibleUniverse.eligible} eligible, ${visibleUniverse.watch} watch, ${visibleUniverse.reject} reject.`;
 
   if (!rows.length) {
     elements.leaderboardBody.innerHTML = `
@@ -662,7 +825,7 @@ function renderLeaderboard() {
       <td>
         <div class="stock-cell">
           <strong>${row.entity_key}</strong>
-          <span>${row.unique_story_count} stories</span>
+          <span>${row.company_name || tickerCompany(row.entity_key)}</span>
           <span>${sourceLabel(row.fundamental_data_source)}</span>
         </div>
       </td>
@@ -689,7 +852,17 @@ function renderLeaderboard() {
 
 function renderFeed() {
   const feedItems = state.searchTerm
-    ? state.liveFeed.filter((item) => (item.ticker || "").toLowerCase().includes(state.searchTerm.toLowerCase()))
+    ? state.liveFeed.filter((item) =>
+        [
+          item.ticker || "",
+          item.headline || "",
+          item.source_name || "",
+          item.event_type || ""
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(state.searchTerm.toLowerCase())
+      )
     : state.liveFeed;
 
   elements.liveFeedList.innerHTML = "";
@@ -854,8 +1027,8 @@ function renderDetail() {
     return;
   }
 
-  elements.tickerDetailTitle.textContent = `${detail.ticker} Detail Analysis`;
-  elements.tickerDetailSubtitle.textContent = `${detail.market_snapshot.current_price.toFixed(2)} current price · ${formatSignedPercent(detail.market_snapshot.percent_change)} over ${detail.market_snapshot.baseline_window}`;
+  elements.tickerDetailTitle.textContent = `${detail.ticker} · ${detail.company_name || tickerCompany(detail.ticker)}`;
+  elements.tickerDetailSubtitle.textContent = `${detail.sector || tickerSector(detail.ticker)} · ${detail.market_snapshot.current_price.toFixed(2)} current price · ${formatSignedPercent(detail.market_snapshot.percent_change)} over ${detail.market_snapshot.baseline_window}`;
   renderDetailChart(detail);
 
   const windowCards = WINDOWS.map((windowKey) => {
@@ -927,7 +1100,7 @@ function renderMarketsView() {
 
   const allRows = applyMarketFilter(filteredLeaderboard());
   const rows = state.selectedSector
-    ? allRows.filter((row) => tickerSector(row.entity_key) === state.selectedSector)
+    ? allRows.filter((row) => (row.sector || tickerSector(row.entity_key)) === state.selectedSector)
     : allRows;
   const bullishCount = sectors.filter((sector) => sector.sentiment_regime === "bullish").length;
   const bearishCount = sectors.filter((sector) => sector.sentiment_regime === "bearish").length;
@@ -961,7 +1134,7 @@ function renderMarketsView() {
     : `<div class="workspace-empty">No sector data available.</div>`;
 
   const sectorMembers = activeSector
-    ? (state.snapshot?.leaderboard || []).filter((row) => tickerSector(row.entity_key) === activeSector.entity_key)
+    ? (state.snapshot?.leaderboard || []).filter((row) => (row.sector || tickerSector(row.entity_key)) === activeSector.entity_key)
     : [];
   const sectorFeed = activeSector
     ? state.liveFeed.filter((item) => item.ticker && tickerSector(item.ticker) === activeSector.entity_key).slice(0, 3)
@@ -989,7 +1162,7 @@ function renderMarketsView() {
                   .slice(0, 6)
                   .map(
                     (row) =>
-                      `<li><button type="button" class="workspace-list-button" data-sector-ticker="${row.entity_key}">${row.entity_key} - ${tickerCompany(row.entity_key)} - ${formatSignedPercent(row.momentum_delta)}</button></li>`
+                      `<li><button type="button" class="workspace-list-button" data-sector-ticker="${row.entity_key}">${row.entity_key} - ${row.company_name || tickerCompany(row.entity_key)} - ${formatSignedPercent(row.momentum_delta)}</button></li>`
                   )
                   .join("")
               : "<li>No tracked tickers for this sector.</li>"}
@@ -1041,7 +1214,7 @@ function renderMarketsView() {
               <td>
                 <div class="stock-cell">
                   <strong>${row.entity_key}</strong>
-                  <span>${row.top_event_types[0] || "mixed flow"}</span>
+                  <span>${row.company_name || tickerCompany(row.entity_key)}</span>
                 </div>
               </td>
               <td><span class="sentiment-badge ${badgeClass(sentimentLabel(row.weighted_sentiment))}">${sentimentLabel(row.weighted_sentiment)}</span></td>
@@ -1057,7 +1230,8 @@ function renderMarketsView() {
     ? `
         <div class="workspace-detail-grid">
           <div class="workspace-stat-card"><span>Ticker</span><strong>${state.tickerDetail.ticker}</strong></div>
-          <div class="workspace-stat-card"><span>Sector</span><strong>${tickerSector(state.tickerDetail.ticker)}</strong></div>
+          <div class="workspace-stat-card"><span>Company</span><strong>${state.tickerDetail.company_name || tickerCompany(state.tickerDetail.ticker)}</strong></div>
+          <div class="workspace-stat-card"><span>Sector</span><strong>${state.tickerDetail.sector || tickerSector(state.tickerDetail.ticker)}</strong></div>
           <div class="workspace-stat-card"><span>Price</span><strong>${formatNumber(state.tickerDetail.market_snapshot.current_price)}</strong></div>
           <div class="workspace-stat-card"><span>Regime</span><strong>${state.tickerDetail.regime}</strong></div>
           <div class="workspace-stat-card"><span>Risk Flags</span><strong>${state.tickerDetail.risk_flags.length || 0}</strong></div>
@@ -1090,7 +1264,7 @@ function renderMarketsView() {
     button.addEventListener("click", async () => {
       const sector = button.dataset.sector;
       state.selectedSector = state.selectedSector === sector ? null : sector;
-      const sectorRows = allRows.filter((row) => tickerSector(row.entity_key) === state.selectedSector);
+      const sectorRows = allRows.filter((row) => (row.sector || tickerSector(row.entity_key)) === state.selectedSector);
       if (state.selectedSector && sectorRows.length) {
         await focusTicker(sectorRows[0].entity_key);
         return;
@@ -1103,7 +1277,7 @@ function renderMarketsView() {
     button.addEventListener("click", async () => {
       const sector = button.dataset.sector;
       state.selectedSector = state.selectedSector === sector ? null : sector;
-      const sectorRows = allRows.filter((row) => tickerSector(row.entity_key) === state.selectedSector);
+      const sectorRows = allRows.filter((row) => (row.sector || tickerSector(row.entity_key)) === state.selectedSector);
       if (state.selectedSector && sectorRows.length) {
         await focusTicker(sectorRows[0].entity_key);
         return;
@@ -1189,22 +1363,22 @@ function renderMarketsSectorChart(sectors) {
 }
 
 function renderWatchView() {
-  const rows = filteredLeaderboard().slice(0, 6);
-  elements.watchCards.innerHTML = rows.length
-    ? rows
+  const watchRows = buildPriorityWatchRows(8);
+  elements.watchCards.innerHTML = watchRows.length
+    ? watchRows
         .map(
-          (row) => `
+          ({ row, setup }) => `
             <button type="button" class="watch-card ${state.selectedTicker === row.entity_key ? "selected" : ""}" data-watch-ticker="${row.entity_key}">
               <div class="watch-card-head">
                 <strong>${row.entity_key}</strong>
                 <span class="sentiment-badge ${badgeClass(sentimentLabel(row.weighted_sentiment))}">${sentimentLabel(row.weighted_sentiment)}</span>
               </div>
-              <p>${row.top_event_types[0] || "mixed flow"}</p>
+              <p>${row.company_name || tickerCompany(row.entity_key)} · ${row.sector || tickerSector(row.entity_key)}</p>
               <div class="watch-card-meta">
                 <span>${screenLabel(row)}</span>
                 <span>${row.composite_fundamental_score !== null && row.composite_fundamental_score !== undefined ? `F ${formatNumber(row.composite_fundamental_score, 2)}` : "F --"}</span>
                 <span>${formatNumber(row.weighted_confidence * 100, 0)}% conf</span>
-                <span>${formatSignedPercent(row.momentum_delta)}</span>
+                <span>${setup ? prettyLabel(setup.action) : prettyLabel(row.top_event_types[0] || "mixed flow")}</span>
               </div>
             </button>
           `
@@ -1212,7 +1386,7 @@ function renderWatchView() {
         .join("")
     : `<div class="workspace-empty">No watchlist items match the current search.</div>`;
 
-  const watchFeedItems = state.liveFeed.filter((item) => rows.some((row) => row.entity_key === item.ticker)).slice(0, 8);
+  const watchFeedItems = state.liveFeed.filter((item) => watchRows.some(({ row }) => row.entity_key === item.ticker)).slice(0, 8);
   elements.watchFeed.innerHTML = watchFeedItems.length
     ? watchFeedItems
         .map(
@@ -1240,6 +1414,7 @@ function renderWatchView() {
     ? `
         <div class="workspace-detail-grid">
           <div class="workspace-stat-card"><span>Selected</span><strong>${state.tickerDetail.ticker}</strong></div>
+          <div class="workspace-stat-card"><span>Company</span><strong>${selectedRow?.company_name || state.tickerDetail.company_name || tickerCompany(state.tickerDetail.ticker)}</strong></div>
           <div class="workspace-stat-card"><span>Current Price</span><strong>${formatNumber(state.tickerDetail.market_snapshot.current_price)}</strong></div>
           <div class="workspace-stat-card"><span>Trend</span><strong>${formatSignedPercent(state.tickerDetail.market_snapshot.percent_change)}</strong></div>
           <div class="workspace-stat-card"><span>Top Source</span><strong>${state.tickerDetail.source_distribution[0]?.name || "n/a"}</strong></div>
@@ -1584,20 +1759,17 @@ function renderSystemView() {
       <div class="workspace-stat-card"><span>Institutional Poll</span><strong>${sec13f?.last_success_at ? formatTime(sec13f.last_success_at) : "n/a"}</strong></div>
     </div>
     <ul class="workspace-list">
-      <li>Tabs now route to live app views instead of acting like static mockup controls.</li>
-      <li>The detail chart now uses the configured market data provider when available and falls back to synthetic local series when it is not.</li>
-      <li>The dashboard state is now persisted in the configured database provider instead of existing only in memory during the current process lifetime.</li>
-      <li>SQLite deployments now create scheduled snapshot backups with retention, so the Pi can recover from bad writes or accidental corruption without needing PostgreSQL first.</li>
-      <li>The Google News RSS collector now polls in the background and feeds new stories into the same scoring pipeline.</li>
-      <li>The market flow monitor now converts abnormal price and volume spikes into fast money-flow events when live market data is available.</li>
-      <li>The SEC Form 4 collector now ingests insider transactions from official EDGAR filings for tracked tickers.</li>
-      <li>The SEC 13F collector now compares recent institutional holdings filings for tracked managers and watchlist names.</li>
+      <li>News sentiment source: Google News RSS, scored through the same normalization and sentiment pipeline as other live events.</li>
+      <li>Money-flow sources: inferred tape anomalies from live market bars, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>
+      <li>The sentiment watchlist is sentiment-first. Fundamentals enrich those rows, but the full fundamentals universe lives in the Fundamentals dashboard and the Trade Setup Agent.</li>
+      <li>The Trade Setup Agent is the true combined decision layer: it blends sentiment, fundamentals, macro regime, recent documents, and alerts.</li>
+      <li>SQLite persistence is active for this deployment, and scheduled backups protect the Pi from accidental bad writes or local corruption.</li>
       ${backup?.last_error ? `<li>Latest backup warning: ${backup.last_error}</li>` : ""}
     </ul>
   `;
 }
 
-function render() {
+function renderOverviewView() {
   const pulse = state.snapshot.market_pulse;
   renderGauge(pulse);
   renderSectorStrip();
@@ -1605,10 +1777,28 @@ function render() {
   renderTradeSetups();
   renderFeed();
   renderDetail();
-  renderMarketsView();
-  renderWatchView();
-  renderAlertsView();
-  renderSystemView();
+}
+
+function renderActiveView() {
+  if (!state.snapshot) {
+    return;
+  }
+
+  if (state.activeView === "overview") {
+    renderOverviewView();
+  } else if (state.activeView === "markets") {
+    renderMarketsView();
+  } else if (state.activeView === "watch") {
+    renderWatchView();
+  } else if (state.activeView === "alerts") {
+    renderAlertsView();
+  } else if (state.activeView === "system") {
+    renderSystemView();
+  }
+}
+
+function render() {
+  renderActiveView();
   renderSignalDrawer();
   elements.alertCount.textContent = state.alerts.length;
   updateFilterButtons(elements.fundamentalFilterTabs, "screenFilter", state.screenFilter);
@@ -1636,6 +1826,13 @@ function setActiveView(view) {
   }
   for (const button of [...elements.topNavButtons, ...elements.sideNavButtons, ...elements.mobileNavButtons]) {
     button.classList.toggle("active", button.dataset.view === view);
+  }
+  if (state.snapshot) {
+    if (viewNeedsTickerDetail(view) && state.selectedTicker && state.tickerDetail?.ticker !== state.selectedTicker) {
+      ensureTickerDetail().then(render).catch(console.error);
+      return;
+    }
+    render();
   }
 }
 
@@ -1692,6 +1889,15 @@ function attachEvents() {
     });
   }
 
+  elements.topEntityGraph?.addEventListener("click", () => setActiveView("markets"));
+  elements.topSensors?.addEventListener("click", () => setActiveView("alerts"));
+  elements.topNotifications?.addEventListener("click", () => setActiveView("alerts"));
+  elements.topProfile?.addEventListener("click", () => setActiveView("system"));
+  elements.sideTerminal?.addEventListener("click", () => setActiveView("system"));
+  elements.sideHelp?.addEventListener("click", () => {
+    openSignalDrawer(buildHelpSignal());
+  });
+
   elements.signalBackdrop?.addEventListener("click", closeSignalDrawer);
   elements.signalDrawerClose?.addEventListener("click", closeSignalDrawer);
   elements.signalFocusButton?.addEventListener("click", async () => {
@@ -1717,6 +1923,7 @@ function attachEvents() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ interval_ms: 220 })
     });
+    scheduleRefresh(200);
   }
 
   elements.replayButton.addEventListener("click", triggerReplay);
@@ -1725,10 +1932,7 @@ function attachEvents() {
 
 function startEventStream() {
   const stream = new EventSource("/api/stream");
-  const refresh = async () => {
-    await loadHealth();
-    await loadSnapshot();
-  };
+  const refresh = () => scheduleRefresh(120);
 
   stream.addEventListener("snapshot", refresh);
   stream.addEventListener("document_scored", refresh);
