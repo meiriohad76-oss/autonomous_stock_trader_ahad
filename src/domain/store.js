@@ -24,6 +24,7 @@ export function createStore(config) {
     fundamentals: createEmptyFundamentalsState(),
     macroRegime: null,
     tradeSetups: [],
+    earningsCalendar: new Map(),
     health: {
       systemStatus: "green",
       queueDepth: 0,
@@ -58,6 +59,7 @@ export function resetStore(store) {
   store.fundamentals = createEmptyFundamentalsState();
   store.macroRegime = null;
   store.tradeSetups = [];
+  store.earningsCalendar = new Map();
   store.health = {
     ...store.health,
     queueDepth: 0,
