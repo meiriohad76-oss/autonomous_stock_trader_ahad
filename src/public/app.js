@@ -63,7 +63,12 @@ const state = {
   marketFlowSettings: {},
   marketFlowSaveState: "",
   selectedSignal: null,
-  selectedSector: null
+  selectedSector: null,
+  macroRegime: null,
+  tradeSetups: [],
+  setupFilter: "all",
+  setupProvisionalOnly: false,
+  selectedSetup: null
 };
 
 const elements = {
@@ -131,7 +136,21 @@ const elements = {
   signalDrawerExplanation: document.querySelector("#signal-drawer-explanation"),
   signalDrawerContext: document.querySelector("#signal-drawer-context"),
   signalFocusButton: document.querySelector("#signal-focus-button"),
-  signalSourceButton: document.querySelector("#signal-source-button")
+  signalSourceButton: document.querySelector("#signal-source-button"),
+  macroRegimeBar: document.querySelector("#macro-regime-bar"),
+  macroRegimeBadge: document.querySelector("#macro-regime-badge"),
+  macroRegimeBreadth: document.querySelector("#macro-regime-breadth"),
+  macroRegimeConfidence: document.querySelector("#macro-regime-confidence"),
+  macroRegimeStaleness: document.querySelector("#macro-regime-staleness"),
+  macroRegimeUpdated: document.querySelector("#macro-regime-updated"),
+  setupsSummary: document.querySelector("#setups-summary"),
+  setupsList: document.querySelector("#setups-list"),
+  setupsEmpty: document.querySelector("#setups-empty"),
+  setupDrawer: document.querySelector("#setup-drawer"),
+  setupDrawerClose: document.querySelector("#setup-drawer-close"),
+  setupDrawerContent: document.querySelector("#setup-drawer-content"),
+  setupFilterBtns: [...document.querySelectorAll(".setup-filter-btn")],
+  setupsProvisionalToggle: document.querySelector("#setups-provisional-toggle")
 };
 
 function formatNumber(value, digits = 2) {
@@ -1830,6 +1849,256 @@ function attachEvents() {
 
   elements.replayButton.addEventListener("click", triggerReplay);
   elements.mobileFab.addEventListener("click", triggerReplay);
+
+  for (const btn of (elements.setupFilterBtns || [])) {
+    btn.addEventListener("click", () => {
+      for (const b of elements.setupFilterBtns) b.classList.remove("active");
+      btn.classList.add("active");
+      state.setupFilter = btn.dataset.filter;
+      renderSetups();
+    });
+  }
+
+  elements.setupsProvisionalToggle?.addEventListener("change", (e) => {
+    state.setupProvisionalOnly = e.target.checked;
+    renderSetups();
+  });
+
+  elements.setupDrawerClose?.addEventListener("click", () => {
+    if (elements.setupDrawer) elements.setupDrawer.hidden = true;
+    state.selectedSetup = null;
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.selectedSetup) {
+      if (elements.setupDrawer) elements.setupDrawer.hidden = true;
+      state.selectedSetup = null;
+    }
+  });
+}
+
+function renderMacroRegimeBar() {
+  const r = state.macroRegime;
+  if (!r || !elements.macroRegimeBar) return;
+
+  elements.macroRegimeBar.dataset.regime = r.regime;
+
+  const arrow = r.bias === "bullish" ? " ▲" : r.bias === "bearish" ? " ▼" : "";
+  elements.macroRegimeBadge.textContent = r.regime.replace("_", "-").toUpperCase() + arrow;
+
+  const total = (r.breadth?.bullish_sectors ?? 0) + (r.breadth?.bearish_sectors ?? 0) + (r.breadth?.neutral_sectors ?? 0);
+  elements.macroRegimeBreadth.textContent = total > 0
+    ? `${r.breadth.bullish_sectors}/${total} bullish`
+    : "";
+
+  elements.macroRegimeConfidence.textContent = `conf ${Math.round((r.confidence ?? 0) * 100)}%`;
+
+  const updatedAt = new Date(r.as_of);
+  elements.macroRegimeUpdated.textContent = updatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  const staleMs = Date.now() - updatedAt.getTime();
+  const isStale = staleMs > 30 * 60 * 1000;
+  if (elements.macroRegimeStaleness) elements.macroRegimeStaleness.hidden = !isStale;
+  elements.macroRegimeBar.classList.toggle("is-stale", isStale);
+}
+
+function convictionDots(conviction) {
+  const filled = Math.round(conviction * 5);
+  return Array.from({ length: 5 }, (_, i) =>
+    `<span class="conviction-dot ${i < filled ? "filled" : ""}"></span>`
+  ).join("");
+}
+
+function evidenceBar(signal) {
+  // signal is -1..+1; center is 0
+  const pct = Math.abs(signal) * 50; // 0..50% width from center
+  const dir = signal >= 0 ? "bullish" : "bearish";
+  return `<div class="evidence-bar-track centered"><div class="evidence-bar-fill ${dir}" style="width:${pct}%"></div></div>`;
+}
+
+function getFilteredSetups() {
+  return state.tradeSetups.filter((s) => {
+    if (state.setupFilter !== "all" && s.action !== state.setupFilter) return false;
+    if (state.setupProvisionalOnly && !s.provisional) return false;
+    return true;
+  });
+}
+
+function renderSetups() {
+  if (!elements.setupsSummary || !elements.setupsList) return;
+
+  const counts = { long: 0, short: 0, watch: 0, no_trade: 0 };
+  for (const s of state.tradeSetups) counts[s.action] = (counts[s.action] || 0) + 1;
+
+  elements.setupsSummary.innerHTML = `
+    <span class="setup-count long">${counts.long} LONG</span>
+    <span class="setup-count short">${counts.short} SHORT</span>
+    <span class="setup-count watch">${counts.watch} WATCH</span>
+    <span class="setup-count no-trade">${counts.no_trade} NO TRADE</span>
+  `;
+
+  const setups = getFilteredSetups();
+  if (!setups.length) {
+    elements.setupsList.innerHTML = "";
+    if (elements.setupsEmpty) elements.setupsEmpty.hidden = false;
+    return;
+  }
+
+  if (elements.setupsEmpty) elements.setupsEmpty.hidden = true;
+  elements.setupsList.innerHTML = setups.map((s) => renderSetupCard(s)).join("");
+
+  elements.setupsList.querySelectorAll(".setup-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const ticker = card.dataset.ticker;
+      state.selectedSetup = state.tradeSetups.find((s) => s.ticker === ticker) || null;
+      renderSetupDrawer();
+    });
+  });
+}
+
+function renderSetupCard(s) {
+  const provisional = s.provisional
+    ? `<div class="setup-provisional-badge">PROVISIONAL · bootstrap fundamentals</div>`
+    : "";
+
+  const flags = s.risk_flags?.length
+    ? `<div class="setup-risk-flags">${s.risk_flags.map((f) => `<span class="risk-flag">${f.replace(/_/g, " ")}</span>`).join("")}</div>`
+    : "";
+
+  const mfNotional = (s.evidence.money_flow?.net_notional_usd ?? 0) > 0
+    ? ` <span class="mf-notional">$${((s.evidence.money_flow.net_notional_usd) / 1e6).toFixed(1)}M</span>`
+    : "";
+
+  const fundTag = s.evidence.fundamentals
+    ? `<span class="setup-tag">${s.evidence.fundamentals.regime_label?.replace(/_/g, " ") || ""}${s.evidence.fundamentals.valuation_label ? ` / ${s.evidence.fundamentals.valuation_label}` : ""}</span>`
+    : "";
+
+  const macroTag = s.macro_regime?.regime && s.macro_regime.regime !== "neutral"
+    ? `<span class="setup-tag macro">${s.macro_regime.regime.replace("_", "-")}</span>`
+    : "";
+
+  return `
+    <div class="setup-card action-${s.action}${s.provisional ? " provisional" : ""}" data-ticker="${s.ticker}" role="button" tabindex="0">
+      <div class="setup-card-header">
+        <div class="setup-ticker-block">
+          <span class="setup-ticker">${s.ticker}</span>
+          <span class="setup-timeframe">${s.timeframe}</span>
+        </div>
+        <div class="setup-action-block">
+          <span class="setup-action-badge action-${s.action}">${s.action.replace("_", " ").toUpperCase()}</span>
+          <div class="setup-conviction-row">
+            <div class="setup-conviction-meter">${convictionDots(s.conviction)}</div>
+            <span class="setup-conviction-value">${Math.round(s.conviction * 100)}</span>
+          </div>
+        </div>
+      </div>
+      ${provisional}
+      ${(fundTag || macroTag) ? `<div class="setup-tags">${fundTag}${macroTag}</div>` : ""}
+      <div class="setup-thesis">${s.thesis}</div>
+      <div class="setup-evidence-bars">
+        <div class="evidence-bar-row">
+          <span class="evidence-label">Sentiment</span>
+          ${evidenceBar(s.evidence.sentiment.signal)}
+          <span class="evidence-value">${s.evidence.sentiment.signal >= 0 ? "+" : ""}${s.evidence.sentiment.signal.toFixed(2)}</span>
+        </div>
+        <div class="evidence-bar-row">
+          <span class="evidence-label">Money Flow</span>
+          ${evidenceBar(s.evidence.money_flow.signal)}
+          <span class="evidence-value">${s.evidence.money_flow.signal >= 0 ? "+" : ""}${s.evidence.money_flow.signal.toFixed(2)}${mfNotional}</span>
+        </div>
+        <div class="evidence-bar-row">
+          <span class="evidence-label">Fundamentals</span>
+          ${s.evidence.fundamentals ? evidenceBar(s.evidence.fundamentals.signal) : `<div class="evidence-bar-track centered provisional"></div>`}
+          <span class="evidence-value ${!s.evidence.fundamentals ? "provisional-text" : ""}">${s.evidence.fundamentals ? (s.evidence.fundamentals.signal >= 0 ? "+" : "") + s.evidence.fundamentals.signal.toFixed(2) : "—"}</span>
+        </div>
+      </div>
+      <div class="setup-guidance-row">
+        <span class="guidance-label">ENTRY</span><span class="guidance-text">${s.entry_guidance}</span>
+      </div>
+      <div class="setup-guidance-row">
+        <span class="guidance-label">STOP</span><span class="guidance-text">${s.stop_guidance}</span>
+      </div>
+      <div class="setup-guidance-row">
+        <span class="guidance-label">SIZE</span><span class="guidance-text size-${s.position_size_guidance}">${s.position_size_guidance.toUpperCase()}</span>
+      </div>
+      ${flags}
+    </div>
+  `;
+}
+
+function renderSetupDrawer() {
+  const s = state.selectedSetup;
+  if (!s || !elements.setupDrawer) return;
+
+  const ev = s.evidence;
+  elements.setupDrawerContent.innerHTML = `
+    <div class="drawer-header">
+      <span class="setup-ticker" style="font-size:20px">${s.ticker}</span>
+      <span class="setup-action-badge action-${s.action}">${s.action.replace("_", " ").toUpperCase()}</span>
+      ${s.provisional ? `<span class="setup-provisional-badge">PROVISIONAL</span>` : ""}
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-label">CONVICTION</div>
+      <div class="drawer-conviction">
+        <div class="setup-conviction-meter">${convictionDots(s.conviction)}</div>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e2e8f0">${Math.round(s.conviction * 100)} / 100</span>
+      </div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-label">THESIS</div>
+      <div class="drawer-text">${s.thesis}</div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-label">EVIDENCE</div>
+      <table class="drawer-evidence-table">
+        <tr><td>Sentiment</td>
+          <td style="font-family:'IBM Plex Mono',monospace">${ev.sentiment.signal >= 0 ? "+" : ""}${ev.sentiment.signal.toFixed(3)}</td>
+          <td>conf ${Math.round(ev.sentiment.confidence * 100)}%</td>
+          <td>Δ ${ev.sentiment.momentum_delta >= 0 ? "+" : ""}${ev.sentiment.momentum_delta.toFixed(3)}</td></tr>
+        <tr><td>Money Flow</td>
+          <td style="font-family:'IBM Plex Mono',monospace">${ev.money_flow.signal >= 0 ? "+" : ""}${ev.money_flow.signal.toFixed(3)}</td>
+          <td>${ev.money_flow.event_count} events</td>
+          <td>${ev.money_flow.dominant_bucket}</td></tr>
+        ${ev.fundamentals
+          ? `<tr><td>Fundamentals</td>
+               <td style="font-family:'IBM Plex Mono',monospace">${ev.fundamentals.signal >= 0 ? "+" : ""}${ev.fundamentals.signal.toFixed(3)}</td>
+               <td>${ev.fundamentals.direction_label}</td>
+               <td>${ev.fundamentals.regime_label}</td></tr>`
+          : `<tr><td>Fundamentals</td><td colspan="3" style="color:#fb923c">provisional / missing</td></tr>`}
+        ${s.macro_regime ? `<tr><td>Macro</td><td>${s.macro_regime.regime}</td><td>${s.macro_regime.bias}</td><td>conf ${Math.round(s.macro_regime.confidence * 100)}%</td></tr>` : ""}
+      </table>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-label">GUIDANCE</div>
+      <div class="drawer-guidance"><strong>Entry:</strong> ${s.entry_guidance}</div>
+      <div class="drawer-guidance"><strong>Stop:</strong> ${s.stop_guidance}</div>
+      <div class="drawer-guidance"><strong>Target:</strong> ${s.target_guidance}</div>
+      <div class="drawer-guidance"><strong>Size:</strong> <span class="size-${s.position_size_guidance}">${s.position_size_guidance.toUpperCase()}</span> (conviction ${Math.round(s.conviction * 100)})</div>
+    </div>
+    ${s.risk_flags?.length ? `
+    <div class="drawer-section">
+      <div class="drawer-label">RISK FLAGS</div>
+      <div class="drawer-flags">${s.risk_flags.map((f) => `<span class="risk-flag">${f.replace(/_/g, " ")}</span>`).join("")}</div>
+    </div>` : ""}
+  `;
+
+  elements.setupDrawer.hidden = false;
+}
+
+async function fetchTradeSetups() {
+  try {
+    const res = await fetch("/api/trade-setups");
+    if (!res.ok) return;
+    const data = await res.json();
+    state.tradeSetups = data.setups || [];
+    if (data.macro_regime) {
+      state.macroRegime = data.macro_regime;
+      renderMacroRegimeBar();
+    }
+    renderSetups();
+  } catch {
+    // silently ignore — SSE will retry
+  }
 }
 
 function startEventStream() {
@@ -1839,11 +2108,31 @@ function startEventStream() {
     await loadSnapshot();
   };
 
-  stream.addEventListener("snapshot", refresh);
+  stream.addEventListener("snapshot", async (e) => {
+    await refresh();
+    // also seed from SSE payload if available (saves a round trip)
+    try {
+      const payload = JSON.parse(e.data);
+      if (payload.macro_regime) { state.macroRegime = payload.macro_regime; renderMacroRegimeBar(); }
+      if (payload.trade_setups) { state.tradeSetups = payload.trade_setups; renderSetups(); }
+    } catch { /* ignore parse failures */ }
+  });
   stream.addEventListener("document_scored", refresh);
   stream.addEventListener("ticker_update", refresh);
   stream.addEventListener("alert", refresh);
   stream.addEventListener("market_tick", refresh);
+
+  stream.addEventListener("macro_regime_update", (e) => {
+    try {
+      const payload = JSON.parse(e.data);
+      state.macroRegime = payload;
+      renderMacroRegimeBar();
+    } catch { /* ignore */ }
+  });
+
+  stream.addEventListener("trade_setup_refresh", () => {
+    fetchTradeSetups();
+  });
 }
 
 async function init() {
@@ -1851,6 +2140,7 @@ async function init() {
   await loadConfig();
   await loadHealth();
   await loadSnapshot();
+  await fetchTradeSetups();
   setActiveView(state.activeView);
   updateFilterButtons(elements.marketsFilterTabs, "marketFilter", state.marketFilter);
   updateFilterButtons(elements.alertsFilterTabs, "alertFilter", state.alertFilter);
