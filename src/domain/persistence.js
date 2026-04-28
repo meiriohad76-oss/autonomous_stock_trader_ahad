@@ -229,6 +229,11 @@ function hydrateStoreFromRows(store, rows) {
   if (persistedFundamentals) {
     store.fundamentals = reviveFundamentals(persistedFundamentals);
   }
+
+  const persistedEarningsCalendar = runtimeMap.get("earnings_calendar");
+  if (Array.isArray(persistedEarningsCalendar)) {
+    store.earningsCalendar = new Map(persistedEarningsCalendar);
+  }
 }
 
 function createDisabledPersistence() {
@@ -359,6 +364,7 @@ function createSqlitePersistence(config) {
         }
         insertRuntime.run("health", now, JSON.stringify(store.health));
         insertRuntime.run("fundamentals", now, JSON.stringify(buildRuntimeFundamentals(store)));
+        insertRuntime.run("earnings_calendar", now, JSON.stringify([...store.earningsCalendar.entries()]));
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -571,6 +577,14 @@ function createPostgresPersistence(config) {
            SET updated_at = EXCLUDED.updated_at,
                payload_json = EXCLUDED.payload_json`,
           ["fundamentals", now, JSON.stringify(buildRuntimeFundamentals(store))]
+        );
+        await client.query(
+          `INSERT INTO runtime_state (state_key, updated_at, payload_json)
+           VALUES ($1, $2, $3::jsonb)
+           ON CONFLICT (state_key) DO UPDATE
+           SET updated_at = EXCLUDED.updated_at,
+               payload_json = EXCLUDED.payload_json`,
+          ["earnings_calendar", now, JSON.stringify([...store.earningsCalendar.entries()])]
         );
 
         await client.query("COMMIT");
