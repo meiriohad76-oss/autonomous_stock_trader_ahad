@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SENTIMENT.AI | Dashboard</title>
+    <title>Ahad Trading | Autonomous Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     >
     <link
@@ -16,16 +16,23 @@
     >
     <link rel="stylesheet" href="/styles.css">
   </head>
-  <body>
+  <body class="ahad-theme">
     <div class="backdrop-orb orb-left"></div>
     <div class="backdrop-orb orb-right"></div>
 
     <header class="topbar">
       <div class="topbar-left">
-        <a class="brand" href="/">SENTIMENT.AI</a>
+        <a class="brand" href="/">
+          <span class="brand-mark">A</span>
+          <span>
+            <span class="brand-name">Ahad Trading</span>
+            <span class="brand-subtitle">Autonomous System</span>
+          </span>
+        </a>
         <nav class="topnav" aria-label="Primary">
           <button class="topnav-link active" data-view="overview" type="button">Dashboard</button>
-          <button class="topnav-link" data-view="markets" type="button">Analytics</button>
+          <button class="topnav-link" data-view="markets" type="button">Markets</button>
+          <button class="topnav-link" data-view="watch" type="button">Watchlist</button>
           <a class="topnav-link" href="/fundamentals.html">Fundamentals</a>
           <a class="topnav-link" href="/fundamentals-v2.html">Fundamentals V2</a>
           <button class="topnav-link" data-view="alerts" type="button">Signals</button>
@@ -51,10 +58,39 @@
       </div>
     </header>
 
+    <div class="market-ticker-bar" aria-label="Market status strip">
+      <div class="ticker-track">
+        <span><strong>Evidence Quality</strong> live trust weighting</span>
+        <span><strong>Sentiment</strong> real-time news and market flow</span>
+        <span><strong>Fundamentals</strong> screener-gated universe</span>
+        <span><strong>Trade Setup</strong> macro-aware signal ranking</span>
+        <span><strong>Risk</strong> confidence and source checks active</span>
+        <span><strong>Evidence Quality</strong> live trust weighting</span>
+        <span><strong>Sentiment</strong> real-time news and market flow</span>
+        <span><strong>Fundamentals</strong> screener-gated universe</span>
+      </div>
+    </div>
+
     <aside class="side-nav" aria-label="Sections">
+      <div class="side-brand">
+        <div class="side-brand-mark">A</div>
+        <div>
+          <strong>Ahad Trading</strong>
+          <span>Autonomous System</span>
+        </div>
+      </div>
+
+      <div class="side-status">
+        <span class="side-status-dot"></span>
+        <div>
+          <strong>System Running</strong>
+          <span>Live pipeline active</span>
+        </div>
+      </div>
+
       <button class="side-link active" data-view="overview" type="button">
         <span class="material-symbols-outlined">dashboard</span>
-        <span>Overview</span>
+        <span>Dashboard</span>
       </button>
       <button class="side-link" data-view="markets" type="button">
         <span class="material-symbols-outlined">show_chart</span>
@@ -62,11 +98,11 @@
       </button>
       <button class="side-link" data-view="watch" type="button">
         <span class="material-symbols-outlined">star</span>
-        <span>Watch</span>
+        <span>Watchlist</span>
       </button>
       <button class="side-link" data-view="alerts" type="button">
         <span class="material-symbols-outlined">crisis_alert</span>
-        <span>Alerts</span>
+        <span>Signals</span>
       </button>
       <button class="side-link" data-view="system" type="button">
         <span class="material-symbols-outlined">memory</span>

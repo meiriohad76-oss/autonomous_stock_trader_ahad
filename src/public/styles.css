@@ -1696,3 +1696,589 @@ input:focus-visible {
     justify-content: space-around;
   }
 }
+
+/* Ahad Trading theme ported from the supplied HTML mockup. */
+.ahad-theme {
+  --background: #080b12;
+  --surface: #111622;
+  --surface-elevated: #161c2d;
+  --surface-border: rgba(255, 255, 255, 0.07);
+  --surface-border-strong: rgba(255, 255, 255, 0.12);
+  --text: #e8eaf0;
+  --text-soft: #b7bfcd;
+  --text-muted: #8892a4;
+  --text-faint: #4e5a6e;
+  --blue: #448aff;
+  --green: #00e676;
+  --red: #ff4d6a;
+  --amber: #ffab40;
+  --purple: #b388ff;
+  --shadow: 0 22px 60px rgba(0, 0, 0, 0.38);
+  --radius-md: 12px;
+  --radius-xl: 18px;
+  --font-body: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(68, 138, 255, 0.14), transparent 34rem),
+    radial-gradient(circle at 78% 18%, rgba(0, 230, 118, 0.1), transparent 32rem),
+    linear-gradient(135deg, #080b12 0%, #0d1017 48%, #111622 100%);
+  font-family: var(--font-body);
+}
+
+.ahad-theme::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.72), transparent 72%);
+}
+
+.ahad-theme .backdrop-orb {
+  display: none;
+}
+
+.ahad-theme .topbar {
+  left: 220px;
+  height: 68px;
+  padding: 0 24px;
+  background: rgba(13, 16, 23, 0.88);
+  border-bottom: 1px solid var(--surface-border);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
+}
+
+.ahad-theme .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.ahad-theme .brand-mark,
+.ahad-theme .side-brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--green), #00b0ff);
+  color: #03110b;
+  font-weight: 800;
+  box-shadow: 0 0 28px rgba(0, 230, 118, 0.22);
+}
+
+.ahad-theme .brand-name,
+.ahad-theme .brand-subtitle {
+  display: block;
+}
+
+.ahad-theme .brand-name {
+  font-weight: 800;
+}
+
+.ahad-theme .brand-subtitle {
+  margin-top: 1px;
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ahad-theme .topnav {
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ahad-theme .topnav-link {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ahad-theme .topnav-link.active,
+.ahad-theme .topnav-link:hover {
+  color: var(--text);
+  background: var(--surface-elevated);
+  box-shadow: inset 0 0 0 1px var(--surface-border);
+}
+
+.ahad-theme .search-shell {
+  width: min(26vw, 340px);
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ahad-theme .icon-button,
+.ahad-theme .profile-avatar {
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.market-ticker-bar {
+  position: fixed;
+  z-index: 19;
+  top: 68px;
+  left: 220px;
+  right: 0;
+  height: 34px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--surface-border);
+  background: rgba(8, 11, 18, 0.92);
+  color: var(--text-muted);
+}
+
+.ticker-track {
+  display: inline-flex;
+  gap: 34px;
+  min-width: max-content;
+  padding-left: 24px;
+  animation: ahadTicker 42s linear infinite;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.ticker-track span {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.ticker-track strong {
+  color: var(--green);
+  font-weight: 700;
+}
+
+@keyframes ahadTicker {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.ahad-theme .side-nav {
+  top: 0;
+  width: 220px;
+  height: 100vh;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 10px 16px;
+  background: rgba(13, 16, 23, 0.96);
+  border-right: 1px solid var(--surface-border);
+}
+
+.side-brand {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.side-brand strong,
+.side-brand span,
+.side-status strong,
+.side-status span {
+  display: block;
+}
+
+.side-brand strong {
+  font-size: 0.95rem;
+  line-height: 1.1;
+}
+
+.side-brand span,
+.side-status span {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.side-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 0;
+  padding: 12px 10px;
+  border: 1px solid rgba(0, 230, 118, 0.1);
+  border-radius: 12px;
+  background: rgba(0, 230, 118, 0.055);
+}
+
+.side-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--green);
+  box-shadow: 0 0 14px rgba(0, 230, 118, 0.62);
+  animation: ahadPulse 2s ease-in-out infinite;
+}
+
+@keyframes ahadPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.48;
+    transform: scale(0.72);
+  }
+}
+
+.ahad-theme .side-link {
+  min-height: 42px;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ahad-theme .side-link.active {
+  color: var(--text);
+  background: var(--surface-elevated);
+  border-right: 0;
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.ahad-theme .side-link.active .material-symbols-outlined {
+  color: var(--green);
+}
+
+.ahad-theme .side-link.utility {
+  width: 42px;
+  justify-content: center;
+}
+
+.ahad-theme .side-nav-footer {
+  align-items: center;
+  gap: 10px;
+}
+
+.ahad-theme .app-stage {
+  margin-left: 220px;
+  padding: 124px 24px 28px;
+}
+
+.ahad-theme .dashboard-shell {
+  grid-template-columns: 320px minmax(520px, 1fr) 360px;
+  gap: 18px;
+}
+
+.ahad-theme .workspace-grid {
+  gap: 18px;
+}
+
+.ahad-theme .panel {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(17, 22, 34, 0.92), rgba(13, 16, 23, 0.92));
+  border-color: var(--surface-border);
+  box-shadow: var(--shadow);
+}
+
+.ahad-theme .panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  pointer-events: none;
+}
+
+.ahad-theme .pulse-panel,
+.ahad-theme .engine-panel,
+.ahad-theme .health-panel,
+.ahad-theme .leaderboard-panel,
+.ahad-theme .detail-panel,
+.ahad-theme .feed-panel,
+.ahad-theme .workspace-panel {
+  padding: 22px;
+}
+
+.ahad-theme .panel-head h2,
+.ahad-theme .panel-toolbar h2,
+.ahad-theme .health-header strong {
+  font-size: 1.05rem;
+  letter-spacing: -0.04em;
+}
+
+.ahad-theme .panel-head p,
+.ahad-theme .panel-toolbar p,
+.ahad-theme .section-kicker,
+.ahad-theme .health-stat span,
+.ahad-theme .mini-card span,
+.ahad-theme .workspace-card span,
+.ahad-theme .workspace-alert small,
+.ahad-theme .workspace-stat-card span,
+.ahad-theme .stock-cell span,
+.ahad-theme .feed-row span,
+.ahad-theme .feed-meta span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  letter-spacing: 0.12em;
+}
+
+.ahad-theme .live-pill {
+  background: rgba(0, 230, 118, 0.12);
+  color: var(--green);
+}
+
+.ahad-theme .pulse-gauge {
+  width: 210px;
+  height: 210px;
+}
+
+.ahad-theme .gauge-track {
+  stroke: rgba(255, 255, 255, 0.13);
+}
+
+.ahad-theme .gauge-fill {
+  stroke: var(--green);
+  filter: drop-shadow(0 0 16px rgba(0, 230, 118, 0.36));
+}
+
+.ahad-theme .gauge-center strong {
+  font-family: var(--font-mono);
+  font-size: 3.85rem;
+  letter-spacing: -0.08em;
+}
+
+.ahad-theme .mini-card,
+.ahad-theme .window-card,
+.ahad-theme .workspace-card,
+.ahad-theme .watch-card,
+.ahad-theme .workspace-alert,
+.ahad-theme .workspace-stat-card,
+.ahad-theme .source-card,
+.ahad-theme .summary-list,
+.ahad-theme .money-flow-card,
+.ahad-theme .money-flow-section,
+.ahad-theme .sector-focus-shell,
+.ahad-theme .chart-panel-shell,
+.ahad-theme .detail-chart-shell {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--surface-border);
+}
+
+.ahad-theme .mini-card strong,
+.ahad-theme .window-card strong,
+.ahad-theme .engine-stat strong,
+.ahad-theme .health-stat strong,
+.ahad-theme .workspace-card strong,
+.ahad-theme .watch-card strong,
+.ahad-theme .workspace-alert strong,
+.ahad-theme .workspace-stat-card strong,
+.ahad-theme .source-card strong,
+.ahad-theme .stock-cell strong,
+.ahad-theme .conf-cell,
+.ahad-theme .momentum {
+  font-family: var(--font-mono);
+}
+
+.ahad-theme .primary-action {
+  height: 46px;
+  color: #03110b;
+  background: linear-gradient(135deg, var(--green), #00b0ff);
+  box-shadow: 0 14px 28px rgba(0, 230, 118, 0.14);
+}
+
+.ahad-theme .secondary-action,
+.ahad-theme .panel-action,
+.ahad-theme .time-chip,
+.ahad-theme .sector-chip,
+.ahad-theme .sentiment-badge,
+.ahad-theme .gauge-label {
+  border-radius: 9px;
+}
+
+.ahad-theme .time-chip {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ahad-theme .time-chip.active {
+  background: rgba(68, 138, 255, 0.14);
+  color: var(--blue);
+  border-color: rgba(68, 138, 255, 0.32);
+}
+
+.ahad-theme .leaderboard-shell {
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.ahad-theme .leaderboard-table th {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.ahad-theme .leaderboard-table td {
+  padding: 16px 12px;
+}
+
+.ahad-theme .leaderboard-table tbody tr:hover,
+.ahad-theme .leaderboard-table tbody tr.selected {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.ahad-theme .detail-chart-shell {
+  background:
+    linear-gradient(180deg, rgba(0, 230, 118, 0.04), rgba(68, 138, 255, 0.02)),
+    rgba(255, 255, 255, 0.02);
+}
+
+.ahad-theme .price-line {
+  stroke: var(--blue);
+}
+
+.ahad-theme .sentiment-line {
+  stroke: var(--green);
+}
+
+.ahad-theme .feed-card,
+.ahad-theme .workspace-alert {
+  padding: 14px 16px;
+  border: 1px solid var(--surface-border);
+  border-left: 3px solid var(--surface-border-strong);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ahad-theme .feed-card.bullish,
+.ahad-theme .workspace-alert.high_confidence_positive,
+.ahad-theme .workspace-alert.polarity_reversal {
+  border-left-color: var(--green);
+}
+
+.ahad-theme .feed-card.bearish,
+.ahad-theme .workspace-alert.high_confidence_negative {
+  border-left-color: var(--red);
+}
+
+.ahad-theme .feed-card.neutral {
+  border-left-color: var(--blue);
+}
+
+.ahad-theme .workspace-list-button,
+.ahad-theme .watch-card,
+.ahad-theme .workspace-card,
+.ahad-theme .money-flow-card {
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.ahad-theme .workspace-list-button:hover,
+.ahad-theme .watch-card:hover,
+.ahad-theme .workspace-card:hover,
+.ahad-theme .money-flow-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--surface-border-strong);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.ahad-theme .signal-drawer {
+  top: 102px;
+  background: rgba(13, 16, 23, 0.98);
+}
+
+.ahad-theme .mobile-nav {
+  background: rgba(13, 16, 23, 0.94);
+}
+
+@media (max-width: 1380px) {
+  .ahad-theme .dashboard-shell {
+    grid-template-columns: 300px minmax(460px, 1fr) 320px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .ahad-theme .topbar {
+    left: 0;
+  }
+
+  .market-ticker-bar {
+    left: 0;
+  }
+
+  .ahad-theme .side-nav {
+    display: none;
+  }
+
+  .ahad-theme .app-stage {
+    margin-left: 0;
+  }
+
+  .ahad-theme .dashboard-shell {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .ahad-theme .topbar {
+    height: 64px;
+  }
+
+  .market-ticker-bar {
+    top: 64px;
+  }
+
+  .ahad-theme .brand-subtitle,
+  .ahad-theme .topnav {
+    display: none;
+  }
+
+  .ahad-theme .app-stage {
+    padding-top: 112px;
+  }
+
+  .ahad-theme .signal-drawer {
+    top: 98px;
+  }
+}
+
+@media (max-width: 560px) {
+  .market-ticker-bar {
+    display: none;
+  }
+
+  .ahad-theme .app-stage {
+    padding-top: 80px;
+  }
+
+  .ahad-theme .brand-mark {
+    width: 28px;
+    height: 28px;
+  }
+
+  .ahad-theme .signal-drawer {
+    top: 64px;
+  }
+}
