@@ -1,16 +1,6 @@
 import { WATCHLIST } from "./taxonomy.js";
 import { dedupeKey, normalizeWhitespace, round } from "../utils/helpers.js";
-
-function withTimeout(timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: controller.signal,
-    clear() {
-      clearTimeout(timer);
-    }
-  };
-}
+import { fetchJsonWithRetry, fetchTextWithRetry } from "../utils/http.js";
 
 function secHeaders(config) {
   return {
@@ -56,39 +46,21 @@ function buildArchiveUrl(cik, accessionNumber, primaryDocument) {
 }
 
 async function fetchJson(url, config) {
-  const request = withTimeout(config.secRequestTimeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: request.signal,
-      headers: secHeaders(config)
-    });
-
-    if (!response.ok) {
-      throw new Error(`SEC request failed with ${response.status}`);
-    }
-
-    return response.json();
-  } finally {
-    request.clear();
-  }
+  return fetchJsonWithRetry(url, {
+    timeoutMs: config.secRequestTimeoutMs,
+    retries: config.secRequestRetries,
+    label: "SEC Form 4 request",
+    headers: secHeaders(config)
+  });
 }
 
 async function fetchText(url, config) {
-  const request = withTimeout(config.secRequestTimeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: request.signal,
-      headers: secHeaders(config)
-    });
-
-    if (!response.ok) {
-      throw new Error(`SEC request failed with ${response.status}`);
-    }
-
-    return response.text();
-  } finally {
-    request.clear();
-  }
+  return fetchTextWithRetry(url, {
+    timeoutMs: config.secRequestTimeoutMs,
+    retries: config.secRequestRetries,
+    label: "SEC Form 4 document request",
+    headers: secHeaders(config)
+  });
 }
 
 async function loadTickerCikMap(config, store) {

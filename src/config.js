@@ -72,6 +72,7 @@ export const config = {
   liveNewsMaxItemsPerTicker: Number(process.env.LIVE_NEWS_MAX_ITEMS_PER_TICKER || 3),
   liveNewsLookbackHours: Number(process.env.LIVE_NEWS_LOOKBACK_HOURS || 24),
   liveNewsRequestTimeoutMs: Number(process.env.LIVE_NEWS_REQUEST_TIMEOUT_MS || 12000),
+  liveNewsRequestRetries: Number(process.env.LIVE_NEWS_REQUEST_RETRIES || 1),
   marketDataProvider: process.env.MARKET_DATA_PROVIDER || (process.env.TWELVE_DATA_API_KEY ? "twelvedata" : "synthetic"),
   marketDataInterval: process.env.MARKET_DATA_INTERVAL || "15min",
   marketDataHistoryPoints: Number(process.env.MARKET_DATA_HISTORY_POINTS || 18),
@@ -122,6 +123,7 @@ export const config = {
   sec13fPollMs: Number(process.env.SEC_13F_POLL_MS || 43200000),
   sec13fLookbackHours: Number(process.env.SEC_13F_LOOKBACK_HOURS || 2400),
   secRequestTimeoutMs: Number(process.env.SEC_REQUEST_TIMEOUT_MS || 15000),
+  secRequestRetries: Number(process.env.SEC_REQUEST_RETRIES || 1),
   secTickerMapCacheMs: Number(process.env.SEC_TICKER_MAP_CACHE_MS || 86400000),
   secUserAgent:
     process.env.SEC_USER_AGENT || "SentimentAnalyst/1.0 contact=local@example.com",

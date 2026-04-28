@@ -1,4 +1,5 @@
 import { round } from "../utils/helpers.js";
+import { fetchJsonWithRetry } from "../utils/http.js";
 
 const FUNDAMENTAL_FORMS = new Set(["10-Q", "10-Q/A", "10-K", "10-K/A", "20-F", "20-F/A", "40-F", "40-F/A", "6-K", "6-K/A"]);
 const TAXONOMY_ORDER = ["us-gaap", "ifrs-full", "dei"];
@@ -19,17 +20,6 @@ const SIC_SECTOR_RULES = [
   { sector: "Utilities", patterns: [/electric/i, /utility/i, /power/i, /water supply/i] },
   { sector: "Real Estate", patterns: [/reit/i, /real estate/i, /property/i] }
 ];
-
-function withTimeout(timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: controller.signal,
-    clear() {
-      clearTimeout(timer);
-    }
-  };
-}
 
 function secHeaders(config) {
   return {
@@ -124,21 +114,12 @@ async function mapWithConcurrency(items, limit, worker) {
 }
 
 async function fetchJson(url, config) {
-  const request = withTimeout(config.secRequestTimeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: request.signal,
-      headers: secHeaders(config)
-    });
-
-    if (!response.ok) {
-      throw new Error(`SEC request failed with ${response.status}`);
-    }
-
-    return response.json();
-  } finally {
-    request.clear();
-  }
+  return fetchJsonWithRetry(url, {
+    timeoutMs: config.secRequestTimeoutMs,
+    retries: config.secRequestRetries,
+    label: "SEC fundamentals request",
+    headers: secHeaders(config)
+  });
 }
 
 async function loadTickerCikMap(config, store) {

@@ -1,22 +1,12 @@
 import { WATCHLIST } from "./taxonomy.js";
 import { dedupeKey, normalizeWhitespace, round } from "../utils/helpers.js";
+import { fetchJsonWithRetry, fetchTextWithRetry } from "../utils/http.js";
 
 const TRACKED_FILERS = [
   { name: "BERKSHIRE HATHAWAY INC", cik: "0001067983" },
   { name: "VANGUARD GROUP INC", cik: "0000102909" },
   { name: "BLACKROCK, INC.", cik: "0002012383" }
 ];
-
-function withTimeout(timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: controller.signal,
-    clear() {
-      clearTimeout(timer);
-    }
-  };
-}
 
 function secHeaders(config) {
   return {
@@ -79,39 +69,21 @@ function filingArchiveRoot(cik, accessionNumber) {
 }
 
 async function fetchJson(url, config) {
-  const request = withTimeout(config.secRequestTimeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: request.signal,
-      headers: secHeaders(config)
-    });
-
-    if (!response.ok) {
-      throw new Error(`SEC request failed with ${response.status}`);
-    }
-
-    return response.json();
-  } finally {
-    request.clear();
-  }
+  return fetchJsonWithRetry(url, {
+    timeoutMs: config.secRequestTimeoutMs,
+    retries: config.secRequestRetries,
+    label: "SEC 13F request",
+    headers: secHeaders(config)
+  });
 }
 
 async function fetchText(url, config) {
-  const request = withTimeout(config.secRequestTimeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: request.signal,
-      headers: secHeaders(config)
-    });
-
-    if (!response.ok) {
-      throw new Error(`SEC request failed with ${response.status}`);
-    }
-
-    return response.text();
-  } finally {
-    request.clear();
-  }
+  return fetchTextWithRetry(url, {
+    timeoutMs: config.secRequestTimeoutMs,
+    retries: config.secRequestRetries,
+    label: "SEC 13F document request",
+    headers: secHeaders(config)
+  });
 }
 
 function findRecent13fFilings(submissions, lookbackHours) {

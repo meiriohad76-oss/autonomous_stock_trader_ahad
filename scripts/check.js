@@ -7,7 +7,7 @@ import {
   getFundamentalPersistenceFilings,
   materializeFundamentalPersistence
 } from "../src/domain/fundamental-persistence.js";
-import { parseGoogleNewsRss } from "../src/domain/live-news.js";
+import { createLiveNewsCollector, parseGoogleNewsRss } from "../src/domain/live-news.js";
 import { detectMarketFlowSignal } from "../src/domain/market-flow.js";
 import { computeLiveMetricsFromCompanyFacts } from "../src/domain/sec-fundamentals.js";
 import { parseInfoTable } from "../src/domain/sec-institutional.js";
@@ -49,6 +49,80 @@ const rssItems = parseGoogleNewsRss(`
 
 if (rssItems.length !== 1 || !rssItems[0].title || !rssItems[0].link) {
   throw new Error("RSS parser failed to extract a valid Google News item.");
+}
+
+const yahooRssItems = parseGoogleNewsRss(`
+  <rss>
+    <channel>
+      <item>
+        <title>Apple shares rise after services revenue improves</title>
+        <link>https://finance.yahoo.com/news/example-aapl</link>
+        <guid>example-yahoo-aapl</guid>
+        <description>Yahoo Finance market coverage for Apple.</description>
+        <pubDate>Sat, 25 Apr 2026 13:00:00 GMT</pubDate>
+      </item>
+    </channel>
+  </rss>
+`);
+
+if (yahooRssItems.length !== 1 || !yahooRssItems[0].title || !yahooRssItems[0].link) {
+  throw new Error("RSS parser failed to extract a valid Yahoo Finance fallback item.");
+}
+
+const originalFetch = globalThis.fetch;
+const fallbackDocuments = [];
+globalThis.fetch = async (url) => {
+  if (String(url).includes("news.google.com")) {
+    throw new Error("mock Google News outage");
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    async text() {
+      return `
+        <rss>
+          <channel>
+            <item>
+              <title>Fallback finance headline for AAPL</title>
+              <link>https://finance.yahoo.com/news/fallback-aapl</link>
+              <guid>${url}</guid>
+              <description>Fallback item from Yahoo Finance.</description>
+              <pubDate>Sat, 25 Apr 2026 13:00:00 GMT</pubDate>
+            </item>
+          </channel>
+        </rss>
+      `;
+    }
+  };
+};
+
+try {
+  const fallbackCollector = createLiveNewsCollector({
+    config: {
+      liveNewsEnabled: true,
+      liveNewsRequestTimeoutMs: 100,
+      liveNewsRequestRetries: 0,
+      liveNewsMaxItemsPerTicker: 1,
+      liveNewsLookbackHours: 100000,
+      liveNewsPollMs: 60000
+    },
+    store: {
+      health: { liveSources: {} },
+      seenExternalDocuments: new Set()
+    },
+    pipeline: {
+      async processRawDocument(raw) {
+        fallbackDocuments.push(raw);
+      }
+    }
+  });
+  const fallbackResult = await fallbackCollector.pollOnce();
+  if (!fallbackResult.ingested || !fallbackDocuments.every((item) => item.source_name === "yahoo_finance")) {
+    throw new Error("Live news fallback failed to ingest Yahoo Finance RSS items when Google News failed.");
+  }
+} finally {
+  globalThis.fetch = originalFetch;
 }
 
 const insiderForm = parseOwnershipXml(`
@@ -340,6 +414,8 @@ console.log(
     {
       parsed_files: filesToParse.length,
       rss_items_parsed: rssItems.length,
+      yahoo_rss_items_parsed: yahooRssItems.length,
+      yahoo_fallback_documents: fallbackDocuments.length,
       insider_transactions_parsed: insiderForm.transactions.length,
       institutional_rows_parsed: institutionalTable.length,
       market_flow_signal: flowSignal.eventType,

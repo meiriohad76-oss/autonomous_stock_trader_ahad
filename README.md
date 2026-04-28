@@ -168,6 +168,12 @@ npm run check:evidence-quality
 
 The detailed design and criteria are documented in [docs/evidence-quality-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/evidence-quality-agent.md).
 
+## Source Reliability
+
+Live news now uses Google News RSS first and Yahoo Finance RSS as a no-key fallback. SEC collectors use retry-aware requests so transient aborts/timeouts are reported clearly and retried before collector health is marked degraded.
+
+Details are documented in [docs/source-reliability.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/source-reliability.md).
+
 ## Macro Regime Agent
 
 The Macro Regime Agent summarizes the top-down backdrop by combining:
