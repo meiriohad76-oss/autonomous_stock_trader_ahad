@@ -1723,6 +1723,7 @@ input:focus-visible {
     radial-gradient(circle at 78% 18%, rgba(0, 230, 118, 0.1), transparent 32rem),
     linear-gradient(135deg, #080b12 0%, #0d1017 48%, #111622 100%);
   font-family: var(--font-body);
+  overflow-x: hidden;
 }
 
 .ahad-theme::before {
@@ -1744,11 +1745,22 @@ input:focus-visible {
 
 .ahad-theme .topbar {
   left: 220px;
+  right: 0;
   height: 68px;
   padding: 0 24px;
   background: rgba(13, 16, 23, 0.88);
   border-bottom: 1px solid var(--surface-border);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
+}
+
+.ahad-theme .topbar-left {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ahad-theme .topbar-right {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .ahad-theme .brand {
@@ -1798,6 +1810,13 @@ input:focus-visible {
   border: 1px solid var(--surface-border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ahad-theme .topnav::-webkit-scrollbar {
+  display: none;
 }
 
 .ahad-theme .topnav-link {
@@ -1986,11 +2005,15 @@ input:focus-visible {
 .ahad-theme .app-stage {
   margin-left: 220px;
   padding: 124px 24px 28px;
+  max-width: calc(100vw - 220px);
+  overflow-x: hidden;
 }
 
 .ahad-theme .dashboard-shell {
-  grid-template-columns: 320px minmax(520px, 1fr) 360px;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(280px, 360px);
   gap: 18px;
+  width: 100%;
+  min-width: 0;
 }
 
 .ahad-theme .workspace-grid {
@@ -2215,7 +2238,13 @@ input:focus-visible {
 
 @media (max-width: 1380px) {
   .ahad-theme .dashboard-shell {
-    grid-template-columns: 300px minmax(460px, 1fr) 320px;
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .ahad-theme .column-right {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2234,10 +2263,15 @@ input:focus-visible {
 
   .ahad-theme .app-stage {
     margin-left: 0;
+    max-width: 100vw;
   }
 
   .ahad-theme .dashboard-shell {
     grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .ahad-theme .column-right {
+    display: flex;
   }
 }
 
