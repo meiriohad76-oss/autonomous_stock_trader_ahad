@@ -22,6 +22,10 @@ export function createStore(config) {
     },
     alertHistory: [],
     eventOutcomes: [],
+    evidenceQuality: {
+      items: [],
+      summary: null
+    },
     fundamentals: createEmptyFundamentalsState(),
     fundamentalWarehouse: createEmptyFundamentalPersistence(),
     macroRegimeHistory: [],
@@ -58,6 +62,10 @@ export function resetStore(store) {
   };
   store.alertHistory = [];
   store.eventOutcomes = [];
+  store.evidenceQuality = {
+    items: [],
+    summary: null
+  };
   store.fundamentals = createEmptyFundamentalsState();
   store.fundamentalWarehouse = createEmptyFundamentalPersistence();
   store.macroRegimeHistory = [];

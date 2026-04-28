@@ -242,6 +242,15 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/evidence-quality" && request.method === "GET") {
+    sendJson(response, 200, app.getEvidenceQuality({
+      ticker: query.ticker ? String(query.ticker).toUpperCase() : null,
+      tier: query.tier || null,
+      limit: query.limit ? Number(query.limit) : 50
+    }));
+    return;
+  }
+
   if (pathname === "/api/macro-regime" && request.method === "GET") {
     sendJson(response, 200, app.getMacroRegime({
       window: query.window || app.config.defaultWindow

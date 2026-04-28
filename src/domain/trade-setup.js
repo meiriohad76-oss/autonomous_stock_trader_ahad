@@ -48,6 +48,9 @@ function buildRecentTickerDocuments(store, documentLookup, ticker, limit = 8) {
         event_type: score.event_type,
         label: score.bullish_bearish_label,
         confidence: score.final_confidence,
+        evidence_quality: score.evidence_quality || null,
+        display_tier: score.display_tier || score.evidence_quality?.display_tier || null,
+        downstream_weight: score.downstream_weight ?? score.evidence_quality?.downstream_weight ?? null,
         impact_score: score.impact_score,
         sentiment_score: score.sentiment_score,
         headline: normalized.headline,
@@ -59,6 +62,7 @@ function buildRecentTickerDocuments(store, documentLookup, ticker, limit = 8) {
       };
     })
     .filter(Boolean)
+    .filter((item) => item.display_tier !== "suppress")
     .sort((a, b) => new Date(b.published_at) - new Date(a.published_at))
     .slice(0, limit);
 }
@@ -184,6 +188,11 @@ function computeSetup({
   const bullishFlowCount = docs.filter((item) => BULLISH_FLOW_EVENT_TYPES.has(item.event_type)).length;
   const bearishFlowCount = docs.filter((item) => BEARISH_FLOW_EVENT_TYPES.has(item.event_type)).length;
   const flowBalance = bullishFlowCount - bearishFlowCount;
+  const qualityAverage = docs.length
+    ? docs.reduce((sum, item) => sum + Number(item.downstream_weight ?? item.evidence_quality?.downstream_weight ?? 0.5), 0) / docs.length
+    : 0.45;
+  const alertQualityCount = docs.filter((item) => item.display_tier === "alert").length;
+  const weakQualityCount = docs.filter((item) => ["context", "suppress"].includes(item.display_tier)).length;
 
   let longScore = 0;
   let shortScore = 0;
@@ -200,6 +209,18 @@ function computeSetup({
   shortScore += sentimentConfidence * 0.16;
   longScore += clamp(storyVelocity / 6, 0, 1) * 0.05;
   shortScore += clamp(storyVelocity / 6, 0, 1) * 0.05;
+  longScore *= clamp(0.72 + qualityAverage * 0.38, 0.72, 1.1);
+  shortScore *= clamp(0.72 + qualityAverage * 0.38, 0.72, 1.1);
+
+  if (qualityAverage < 0.45) {
+    riskFlags.push("supporting evidence quality is thin");
+  }
+  if (alertQualityCount > 0) {
+    positiveEvidence.push(`${alertQualityCount} high-quality evidence item${alertQualityCount === 1 ? "" : "s"}`);
+  }
+  if (weakQualityCount > 0) {
+    riskFlags.push(`${weakQualityCount} recent evidence item${weakQualityCount === 1 ? " is" : "s are"} low signal or context-only`);
+  }
 
   if (flowBalance > 0) {
     longScore += clamp(flowBalance / 4, 0, 0.18);
@@ -383,6 +404,11 @@ function computeSetup({
         }
       : null,
     recent_documents: docs.slice(0, 4),
+    evidence_quality: {
+      average_downstream_weight: round(qualityAverage, 3),
+      alert_quality_items: alertQualityCount,
+      weak_quality_items: weakQualityCount
+    },
     recent_alerts: alerts.slice(0, 3).map((item) => ({
       alert_type: item.alert_type,
       headline: item.headline,

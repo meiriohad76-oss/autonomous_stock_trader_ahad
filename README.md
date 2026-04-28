@@ -47,6 +47,7 @@ For the new fundamentals view, open `http://127.0.0.1:3000/fundamentals.html`.
 - The dashboard now also includes a Macro Regime Agent that scores top-down conditions and adjusts long/short thresholds and exposure.
 - The dashboard now also includes a Trade Setup Agent that turns sentiment, money flow, alerts, and fundamentals into ranked `long`, `short`, `watch`, and `no_trade` ideas.
 - Macro-regime snapshots and trade-setup decisions are now persisted in dedicated audit tables, so the system can inspect prior recommendations after restart.
+- The runtime now includes an Evidence Quality Agent that scores every document after classification and before aggregation, so dashboards and downstream agents share one trust layer for freshness, duplication, corroboration, source quality, and display tier.
 
 ## SQLite backup and retention
 
@@ -101,6 +102,7 @@ The Trade Setup Agent sits on top of the existing collectors and combines:
 - money-flow evidence
 - alert history
 - fundamentals and screener stage
+- Evidence Quality Agent weights for recent supporting documents
 
 It produces a ranked trade plan with:
 
@@ -128,6 +130,37 @@ GET /api/trade-setups/ticker/NVDA
 GET /api/trade-setups/storage/summary
 GET /api/trade-setups/storage/ticker/NVDA
 ```
+
+## Evidence Quality Agent
+
+The Evidence Quality Agent is the reusable trust layer in the data pipeline. It runs after document scoring and before sentiment aggregation, alerts, macro regime, trade setup generation, and dashboard display.
+
+For each scored document, it evaluates:
+
+- freshness
+- source reliability
+- classification confidence
+- duplicate risk
+- corroboration from other recent sources
+- extraction quality
+- ticker mapping confidence
+
+It produces:
+
+- `data_quality_label`: `high_quality`, `needs_confirmation`, `stale`, `duplicate`, `low_signal`, or `source_limited`
+- `display_tier`: `alert`, `watch`, `context`, or `suppress`
+- `downstream_weight`: a 0-1 multiplier used by downstream analysis
+- `explanation`: a human-readable reason for the quality verdict
+
+Useful endpoint:
+
+```bash
+GET /api/evidence-quality
+GET /api/evidence-quality?ticker=NVDA
+GET /api/evidence-quality?tier=alert
+```
+
+The detailed design and criteria are documented in [docs/evidence-quality-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/evidence-quality-agent.md).
 
 ## Macro Regime Agent
 

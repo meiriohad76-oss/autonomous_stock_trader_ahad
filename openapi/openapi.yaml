@@ -255,6 +255,32 @@ paths:
       responses:
         "200":
           description: Event list.
+  /api/evidence-quality:
+    get:
+      summary: Evidence Quality Agent snapshot and recent evidence verdicts.
+      parameters:
+        - in: query
+          name: ticker
+          schema:
+            type: string
+        - in: query
+          name: tier
+          schema:
+            type: string
+            enum: [alert, watch, context, suppress]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        "200":
+          description: Evidence quality summary and recent items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidenceQualitySnapshot"
   /api/replay:
     post:
       summary: Replay the local sample event set into the live pipeline.
@@ -269,6 +295,53 @@ paths:
           description: Event stream.
 components:
   schemas:
+    EvidenceQualityItem:
+      type: object
+      properties:
+        evidence_id:
+          type: string
+        doc_id:
+          type: string
+        score_id:
+          type: string
+        ticker:
+          type: string
+          nullable: true
+        source_type:
+          type: string
+        source_name:
+          type: string
+        event_type:
+          type: string
+        freshness_score:
+          type: number
+        source_reliability_score:
+          type: number
+        classification_confidence:
+          type: number
+        duplication_score:
+          type: number
+        corroboration_score:
+          type: number
+        data_quality_label:
+          type: string
+          enum: [high_quality, needs_confirmation, stale, duplicate, low_signal, source_limited]
+        display_tier:
+          type: string
+          enum: [alert, watch, context, suppress]
+        downstream_weight:
+          type: number
+        explanation:
+          type: string
+    EvidenceQualitySnapshot:
+      type: object
+      properties:
+        summary:
+          type: object
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceQualityItem"
     FundamentalChangeEvent:
       type: object
       properties:

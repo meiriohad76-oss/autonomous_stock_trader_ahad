@@ -531,6 +531,9 @@ async function buildTickerDetail(store, marketDataService, ticker) {
       event_type: score.event_type,
       label: score.bullish_bearish_label,
       confidence: score.final_confidence,
+      evidence_quality: score.evidence_quality || null,
+      display_tier: score.display_tier || score.evidence_quality?.display_tier || null,
+      downstream_weight: score.downstream_weight ?? score.evidence_quality?.downstream_weight ?? null,
       explanation_short: score.explanation_short,
       source_metadata: normalized.source_metadata || null,
       url: normalized.canonical_url
@@ -565,6 +568,9 @@ function buildRecentDocuments(store, { ticker = null, limit = 20 } = {}) {
         sentiment_score: score.sentiment_score,
         impact_score: score.impact_score,
         confidence: score.final_confidence,
+        evidence_quality: score.evidence_quality || null,
+        display_tier: score.display_tier || score.evidence_quality?.display_tier || null,
+        downstream_weight: score.downstream_weight ?? score.evidence_quality?.downstream_weight ?? null,
         explanation_short: score.explanation_short,
         url: normalized.canonical_url,
         source_metadata: normalized.source_metadata || null
@@ -724,7 +730,8 @@ export function createSentimentApp() {
         fundamental_sectors_covered: store.health.fundamentalSectorsCovered,
         active_sources: store.sourceStats.size,
         live_sources: store.health.liveSources,
-        database_backup: store.health.databaseBackup
+        database_backup: store.health.databaseBackup,
+        evidence_quality: store.evidenceQuality.summary || null
       };
     },
     getWatchlistSnapshot(windowKey, filters) {
@@ -835,7 +842,11 @@ export function createSentimentApp() {
     getHighImpactEvents(limit = 10) {
       return buildRecentDocuments(store, { limit: 100 })
         .filter((item) => item.confidence >= 0.7 && Math.abs(item.sentiment_score) >= 0.4)
+        .filter((item) => item.display_tier !== "suppress")
         .slice(0, limit);
+    },
+    getEvidenceQuality(options = {}) {
+      return pipeline.evidenceQualityAgent.getSnapshot(options);
     },
     getFundamentalsSnapshot(filters) {
       return fundamentals.getSnapshot(filters);

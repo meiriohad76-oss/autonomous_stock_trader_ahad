@@ -258,6 +258,13 @@ function eventTypeLabel(value) {
   return value === "monitor_item" ? "monitor item" : prettyLabel(value);
 }
 
+function evidenceQualityLabel(value) {
+  if (!value) {
+    return "quality n/a";
+  }
+  return prettyLabel(value.data_quality_label || value.display_tier || "quality n/a");
+}
+
 function screenBadgeClass(row) {
   if (row?.screen_stage === "eligible") {
     return "bullish";
@@ -507,7 +514,9 @@ function buildSignalFromFeed(item, sourceLabel = "Live Feed") {
     explanation: item.explanation_short || item.headline || "No additional analyst explanation is available for this signal yet.",
     eventType: item.event_type || "signal",
     url: item.url || null,
-    sourceMetadata: item.source_metadata || null
+    sourceMetadata: item.source_metadata || null,
+    evidenceQuality: item.evidence_quality || null,
+    downstreamWeight: item.downstream_weight ?? item.evidence_quality?.downstream_weight ?? null
   };
 }
 
@@ -549,7 +558,9 @@ function buildSignalFromDocument(doc, ticker = null) {
     explanation: doc.explanation_short || doc.headline || "No short explanation is available for this document yet.",
     eventType: doc.event_type || "document",
     url: doc.url || null,
-    sourceMetadata: doc.source_metadata || null
+    sourceMetadata: doc.source_metadata || null,
+    evidenceQuality: doc.evidence_quality || null,
+    downstreamWeight: doc.downstream_weight ?? doc.evidence_quality?.downstream_weight ?? null
   };
 }
 
@@ -968,6 +979,7 @@ function renderFeed() {
       <div class="feed-meta">
         <span class="sentiment-badge ${badgeClass(item.label)}">${item.label}</span>
         <span>${formatNumber(item.confidence * 100, 0)}% Conf</span>
+        <span>${evidenceQualityLabel(item.evidence_quality)}</span>
       </div>
     `;
     article.addEventListener("click", () => {
@@ -1497,6 +1509,7 @@ function renderWatchView() {
               <div class="feed-meta">
                 <span class="sentiment-badge ${badgeClass(item.label)}">${item.label}</span>
                 <span>${formatNumber(item.confidence * 100, 0)}% Conf</span>
+                <span>${evidenceQualityLabel(item.evidence_quality)}</span>
                 <span>${item.source_name || "Source n/a"}</span>
               </div>
             </article>
@@ -1608,6 +1621,7 @@ function renderAlertsView() {
               <div class="feed-meta">
                 <span class="sentiment-badge ${badgeClass(item.label)}">${item.label}</span>
                 <span>${formatNumber(item.confidence * 100, 0)}% Conf</span>
+                <span>${evidenceQualityLabel(item.evidence_quality)}</span>
               </div>
             </article>
           `
@@ -1782,12 +1796,15 @@ function renderSignalDrawer() {
     <div class="workspace-stat-card"><span>Ticker</span><strong>${signal.ticker || "Market"}</strong></div>
     <div class="workspace-stat-card"><span>Event Type</span><strong>${prettyLabel(signal.eventType)}</strong></div>
     <div class="workspace-stat-card"><span>Confidence</span><strong>${formatNumber(signal.confidence * 100, 0)}%</strong></div>
+    <div class="workspace-stat-card"><span>Evidence Quality</span><strong>${evidenceQualityLabel(signal.evidenceQuality)}</strong></div>
+    <div class="workspace-stat-card"><span>Downstream Weight</span><strong>${signal.downstreamWeight !== null && signal.downstreamWeight !== undefined ? formatNumber(signal.downstreamWeight, 2) : "n/a"}</strong></div>
     <div class="workspace-stat-card"><span>Source</span><strong>${signal.sourceName || signal.subtitle}</strong></div>
   `;
   elements.signalDrawerExplanation.textContent = signal.explanation;
   elements.signalDrawerContext.innerHTML = [
     signal.timestamp ? `<li>Observed ${relativeTime(signal.timestamp)} at ${formatTime(signal.timestamp)}.</li>` : null,
     signal.sourceName ? `<li>Source: ${signal.sourceName}.</li>` : null,
+    signal.evidenceQuality?.explanation ? `<li>Evidence quality: ${signal.evidenceQuality.explanation}</li>` : null,
     signal.ticker ? `<li>Related ticker: ${signal.ticker}.</li>` : "<li>This signal is market-level rather than ticker-specific.</li>",
     `<li>Current classification: ${signal.label.toLowerCase()}.</li>`,
     signal.sourceMetadata?.volume_spike ? `<li>Tape signature: ${formatNumber(signal.sourceMetadata.volume_spike, 1)}x normal volume.</li>` : null,
@@ -1810,6 +1827,7 @@ function renderSystemView() {
   const marketFlow = state.health?.live_sources?.market_flow || null;
   const secForm4 = state.health?.live_sources?.sec_form4 || null;
   const sec13f = state.health?.live_sources?.sec_13f || null;
+  const evidenceQuality = state.health?.evidence_quality || null;
   const backup = state.health?.database_backup || state.config?.database_backup || null;
   elements.systemOverview.innerHTML = `
     <div class="workspace-stat-card"><span>Status</span><strong>${elements.healthStatus.textContent}</strong></div>
@@ -1820,6 +1838,8 @@ function renderSystemView() {
     <div class="workspace-stat-card"><span>DB Target</span><strong>${state.config?.database_target || "local file"}</strong></div>
     <div class="workspace-stat-card"><span>Backups</span><strong>${backup?.enabled ? "Enabled" : backup?.supported ? "Disabled" : "n/a"}</strong></div>
     <div class="workspace-stat-card"><span>Last Backup</span><strong>${backup?.last_backup_at ? relativeTime(backup.last_backup_at) : "n/a"}</strong></div>
+    <div class="workspace-stat-card"><span>Evidence Items</span><strong>${evidenceQuality?.total_evidence_items || 0}</strong></div>
+    <div class="workspace-stat-card"><span>Avg Evidence Weight</span><strong>${evidenceQuality ? formatNumber(evidenceQuality.average_downstream_weight, 2) : "n/a"}</strong></div>
   `;
 
   elements.systemSourceQuality.innerHTML = state.snapshot.source_quality.length

@@ -3,6 +3,7 @@ import { assignDedupeCluster } from "./dedupe.js";
 import { classifyWithRules } from "./rules.js";
 import { buildDocumentScore, simulateLlmScore } from "./score.js";
 import { recomputeStates } from "./aggregate.js";
+import { createEvidenceQualityAgent } from "./evidence-quality.js";
 import { makeId, round } from "../utils/helpers.js";
 
 function updateSourceStats(store, normalized, score) {
@@ -36,6 +37,11 @@ function updateSourceStats(store, normalized, score) {
 
 function buildAlerts(store, normalized, score, latestStates) {
   const alerts = [];
+  const evidenceQuality = score.evidence_quality || null;
+
+  if (evidenceQuality?.display_tier === "suppress") {
+    return alerts;
+  }
 
   if (score.final_confidence >= store.config.alertConfidenceThreshold && score.sentiment_score <= -0.6) {
     alerts.push({
@@ -46,7 +52,7 @@ function buildAlerts(store, normalized, score, latestStates) {
       headline: normalized.headline,
       severity: "high",
       confidence: score.final_confidence,
-      payload: { score_id: score.score_id, sentiment_score: score.sentiment_score },
+      payload: { score_id: score.score_id, sentiment_score: score.sentiment_score, evidence_quality: evidenceQuality },
       created_at: new Date().toISOString()
     });
   }
@@ -60,7 +66,7 @@ function buildAlerts(store, normalized, score, latestStates) {
       headline: normalized.headline,
       severity: "high",
       confidence: score.final_confidence,
-      payload: { score_id: score.score_id, sentiment_score: score.sentiment_score },
+      payload: { score_id: score.score_id, sentiment_score: score.sentiment_score, evidence_quality: evidenceQuality },
       created_at: new Date().toISOString()
     });
   }
@@ -77,7 +83,8 @@ function buildAlerts(store, normalized, score, latestStates) {
       confidence: tickerState.weighted_confidence,
       payload: {
         weighted_sentiment: tickerState.weighted_sentiment,
-        momentum_delta: tickerState.momentum_delta
+        momentum_delta: tickerState.momentum_delta,
+        evidence_quality: evidenceQuality
       },
       created_at: new Date().toISOString()
     });
@@ -91,6 +98,8 @@ function buildAlerts(store, normalized, score, latestStates) {
 }
 
 export function createPipeline(store) {
+  const evidenceQualityAgent = createEvidenceQualityAgent({ store });
+
   async function processRawDocument(rawDocument) {
     const raw = {
       raw_id: rawDocument.raw_id || makeId(),
@@ -115,6 +124,10 @@ export function createPipeline(store) {
     const ruleResult = classifyWithRules(normalized);
     const llmResult = simulateLlmScore(normalized, ruleResult);
     const score = buildDocumentScore(normalized, ruleResult, llmResult);
+    const evidenceQuality = evidenceQualityAgent.evaluate({ normalized, score, cluster });
+    score.evidence_quality = evidenceQuality;
+    score.downstream_weight = evidenceQuality.downstream_weight;
+    score.display_tier = evidenceQuality.display_tier;
     store.documentScores.push(score);
 
     updateSourceStats(store, normalized, score);
@@ -137,7 +150,8 @@ export function createPipeline(store) {
       sentiment_score: score.sentiment_score,
       impact_score: score.impact_score,
       confidence: score.final_confidence,
-      explanation_short: score.explanation_short
+      explanation_short: score.explanation_short,
+      evidence_quality: evidenceQuality
     };
 
     const tickerUpdate = normalized.primary_ticker
@@ -171,8 +185,8 @@ export function createPipeline(store) {
 
     store.persistence?.saveStoreSnapshot(store);
 
-    return { raw, normalized, score };
+    return { raw, normalized, score, evidence_quality: evidenceQuality };
   }
 
-  return { processRawDocument };
+  return { processRawDocument, evidenceQualityAgent };
 }

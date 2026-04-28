@@ -13,13 +13,23 @@ function buildState(entityType, entityKey, entityName, window, rows, previousSta
   const sourceNames = new Set(rows.map((row) => row.normalized.source_name));
   const weightSum = rows.reduce((sum, row) => {
     const decay = row.decay;
-    const weight = Math.max(0.05, row.score.impact_score * row.score.relevance_score * row.score.final_confidence * decay);
+    const evidenceWeight = Number(row.score.downstream_weight ?? row.score.evidence_quality?.downstream_weight ?? 1);
+    const displayTier = row.score.display_tier || row.score.evidence_quality?.display_tier || null;
+    const tierWeight = displayTier === "suppress" ? 0.1 : displayTier === "context" ? 0.45 : 1;
+    const weight = Math.max(0.03, row.score.impact_score * row.score.relevance_score * row.score.final_confidence * evidenceWeight * tierWeight * decay);
     return sum + weight;
   }, 0);
-  const alphaSum = rows.reduce((sum, row) => sum + row.score.document_alpha * row.decay, 0);
+  const alphaSum = rows.reduce((sum, row) => {
+    const evidenceWeight = Number(row.score.downstream_weight ?? row.score.evidence_quality?.downstream_weight ?? 1);
+    const displayTier = row.score.display_tier || row.score.evidence_quality?.display_tier || null;
+    const tierWeight = displayTier === "suppress" ? 0.1 : displayTier === "context" ? 0.45 : 1;
+    return sum + row.score.document_alpha * evidenceWeight * tierWeight * row.decay;
+  }, 0);
   const weightedSentiment = weightSum ? alphaSum / weightSum : 0;
   const weightedImpact = rows.length ? rows.reduce((sum, row) => sum + row.score.impact_score, 0) / rows.length : 0;
-  const weightedConfidence = rows.length ? rows.reduce((sum, row) => sum + row.score.final_confidence, 0) / rows.length : 0;
+  const weightedConfidence = rows.length
+    ? rows.reduce((sum, row) => sum + row.score.final_confidence * Number(row.score.downstream_weight ?? row.score.evidence_quality?.downstream_weight ?? 1), 0) / rows.length
+    : 0;
   const eventCounts = Object.create(null);
   const reasonCounts = Object.create(null);
   const clusterCounts = Object.create(null);

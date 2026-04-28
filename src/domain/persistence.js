@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { buildInitialScreenerSnapshot, createEmptyFundamentalsState } from "./fundamentals.js";
 import { createEmptyFundamentalPersistence } from "./fundamental-persistence.js";
+import { summarizeEvidenceQuality } from "./evidence-quality.js";
 import { buildMacroRegimeSnapshot } from "./macro-regime.js";
 import { buildTradeSetupsSnapshot } from "./trade-setup.js";
 
@@ -934,6 +935,11 @@ function hydrateStoreFromRows(store, rows) {
   store.normalizedDocuments = rows.normalizedDocuments.map((row) => parsePayload(row.payload_json, null)).filter(Boolean);
   store.documentEntities = rows.documentEntities.map((row) => parsePayload(row.payload_json, null)).filter(Boolean);
   store.documentScores = rows.documentScores.map((row) => parsePayload(row.payload_json, null)).filter(Boolean);
+  const evidenceItems = store.documentScores.map((score) => score.evidence_quality).filter(Boolean);
+  store.evidenceQuality = {
+    items: evidenceItems.slice(0, 1000),
+    summary: summarizeEvidenceQuality(evidenceItems)
+  };
   store.sentimentStates = rows.sentimentStates.map((row) => parsePayload(row.payload_json, null)).filter(Boolean);
   store.sourceStats = new Map(
     rows.sourceStats
