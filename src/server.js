@@ -13,7 +13,7 @@ const server = createServer((request, response) => {
 server.listen(app.config.port, app.config.host, async () => {
   await app.initialize();
   if (!(await app.hasPersistedData())) {
-    await app.replay({ reset: true, intervalMs: 180, skipFundamentals: true });
+    await app.replay({ reset: false, intervalMs: 180, skipFundamentals: true });
   }
   await app.startLiveSources();
   const databaseTarget =

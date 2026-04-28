@@ -317,7 +317,11 @@ export async function routeRequest(app, request, response) {
 
     request.on("end", async () => {
       options = parseJsonBody(body) || {};
-      app.replay({ reset: true, intervalMs: options.interval_ms ?? 350 }).catch(() => undefined);
+      app.replay({
+        reset: true,
+        intervalMs: options.interval_ms ?? 350,
+        preserveFundamentals: true
+      }).catch(() => undefined);
       sendJson(response, 202, { status: "accepted" });
     });
     return;

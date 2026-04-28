@@ -746,13 +746,26 @@ export function createSentimentApp() {
       resetStore(store);
       await persistence.clearAll();
     },
-    async replay(options) {
+    async replay(options = {}) {
+      const trackedCompaniesBeforeReplay =
+        options.preserveFundamentals === false ? [] : fundamentals.getTrackedCompanies();
+      const shouldPreserveFundamentalUniverse = trackedCompaniesBeforeReplay.length >= 25;
       const sentimentCount = await replaySampleEvents(this, options);
-      const fundamentalCount = options?.skipFundamentals
-        ? store.fundamentals.leaderboard.length
-        : await fundamentals.replaySample({
-            intervalMs: options?.intervalMs ? Math.max(0, Math.floor(options.intervalMs / 2)) : 0
+      let fundamentalCount = store.fundamentals.leaderboard.length;
+
+      if (shouldPreserveFundamentalUniverse) {
+        if (options.reset || fundamentalCount < trackedCompaniesBeforeReplay.length) {
+          fundamentalCount = await fundamentals.replaceCompanies(trackedCompaniesBeforeReplay, {
+            asOf: new Date().toISOString(),
+            emitDiff: false
           });
+        }
+      } else if (!options.skipFundamentals) {
+        fundamentalCount = await fundamentals.replaySample({
+          intervalMs: options.intervalMs ? Math.max(0, Math.floor(options.intervalMs / 2)) : 0
+        });
+      }
+
       await persistence.saveStoreSnapshot(store);
       return { sentimentCount, fundamentalCount };
     },
