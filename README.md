@@ -186,6 +186,17 @@ This lowers polling frequency, SEC concurrency, retry pressure, autosave frequen
 
 Explicit `.env` values always win. For example, if `SQLITE_BACKUP_RETENTION_COUNT=6` is already set, Pi mode will keep using `6`.
 
+In Pi mode, heavy collectors do not auto-start unless explicitly enabled:
+
+```bash
+AUTO_START_MARKET_FLOW=false
+AUTO_START_SEC_13F=false
+AUTO_START_SEC_FUNDAMENTALS=false
+AUTO_START_FUNDAMENTAL_MARKET_DATA=false
+```
+
+Manual endpoints and scripts can still refresh data when needed; the goal is to keep normal dashboard serving lightweight.
+
 Useful endpoint:
 
 ```bash

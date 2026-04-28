@@ -253,8 +253,12 @@ function buildPerformanceSnapshot(currentConfig, store) {
       live_news_max_items_per_ticker: currentConfig.liveNewsMaxItemsPerTicker,
       market_data_refresh_ms: currentConfig.marketDataRefreshMs,
       market_flow_poll_ms: currentConfig.marketFlowPollMs,
+      auto_start_market_flow: currentConfig.autoStartMarketFlow,
       fundamental_market_data_refresh_ms: currentConfig.fundamentalMarketDataRefreshMs,
+      auto_start_fundamental_market_data: currentConfig.autoStartFundamentalMarketData,
       fundamental_sec_concurrency: currentConfig.fundamentalSecConcurrency,
+      auto_start_sec_fundamentals: currentConfig.autoStartSecFundamentals,
+      auto_start_sec_13f: currentConfig.autoStartSec13f,
       sec_request_retries: currentConfig.secRequestRetries,
       sqlite_backup_interval_ms: currentConfig.sqliteBackupIntervalMs,
       sqlite_backup_retention_count: currentConfig.sqliteBackupRetentionCount,
@@ -771,12 +775,16 @@ export function createSentimentApp() {
         live_news_enabled: config.liveNewsEnabled,
         market_data_provider: config.marketDataProvider,
         market_flow_enabled: config.marketFlowEnabled,
+        auto_start_market_flow: config.autoStartMarketFlow,
         market_flow_settings: readMarketFlowSettings(config),
         screener_settings: readScreenerSettings(config),
         fundamental_market_data_provider: config.fundamentalMarketDataProvider,
+        auto_start_fundamental_market_data: config.autoStartFundamentalMarketData,
         fundamental_sec_enabled: config.fundamentalSecEnabled,
+        auto_start_sec_fundamentals: config.autoStartSecFundamentals,
         sec_form4_enabled: config.secForm4Enabled,
         sec_13f_enabled: config.sec13fEnabled,
+        auto_start_sec_13f: config.autoStartSec13f,
         fundamentals_enabled: true
       };
     },
@@ -1012,18 +1020,32 @@ export function createSentimentApp() {
   app.startLiveSources = async function startLiveSources() {
     await persistenceReady;
     await ensureFundamentalCoverage();
-    await Promise.all([
+    const starts = [
       liveNewsCollector.start(),
       marketDataService.start(),
-      secInsiderCollector.start(),
-      secInstitutionalCollector.start(),
-      fundamentalMarketDataService.start({
+      secInsiderCollector.start()
+    ];
+
+    if (config.autoStartSec13f) {
+      starts.push(secInstitutionalCollector.start());
+    }
+
+    if (config.autoStartFundamentalMarketData) {
+      starts.push(fundamentalMarketDataService.start({
         getCompanies: () => fundamentals.getTrackedCompanies(),
         onUpdate: async (referenceMap) => fundamentals.refreshMarketReference(referenceMap)
-      }),
-      secFundamentalsCollector.start()
-    ]);
-    await marketFlowMonitor.start();
+      }));
+    }
+
+    if (config.autoStartSecFundamentals) {
+      starts.push(secFundamentalsCollector.start());
+    }
+
+    await Promise.all(starts);
+
+    if (config.autoStartMarketFlow) {
+      await marketFlowMonitor.start();
+    }
 
     if (config.databaseEnabled && !autosaveTimer) {
       autosaveTimer = setInterval(() => {
