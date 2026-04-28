@@ -117,6 +117,23 @@ GET /api/evidence-quality?tier=alert
 GET /api/evidence-quality?limit=100
 ```
 
+## Engine Contract Check
+
+Use the dedicated check whenever this layer or a downstream consumer changes:
+
+```bash
+npm run check:evidence-quality
+```
+
+The check replays local sample events and verifies that:
+
+- The Evidence Quality Agent produced item-level verdicts.
+- Health exposes the evidence-quality summary.
+- Recent documents expose `evidence_quality`, `display_tier`, and `downstream_weight`.
+- Trade setups expose evidence-quality context.
+- Every quality score remains finite and bounded from `0` to `1`.
+- Document scores retain reusable `downstream_weight` values for non-UI consumers.
+
 The endpoint returns:
 
 ```json

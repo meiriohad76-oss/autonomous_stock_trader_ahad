@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js",
     "replay": "node scripts/replay.js",
     "check": "node scripts/check.js",
+    "check:evidence-quality": "node scripts/check-evidence-quality.js",
     "sqlite:backup": "node scripts/sqlite-backup.js"
   },
   "engines": {

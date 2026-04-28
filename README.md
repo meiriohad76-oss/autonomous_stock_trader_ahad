@@ -160,6 +160,12 @@ GET /api/evidence-quality?ticker=NVDA
 GET /api/evidence-quality?tier=alert
 ```
 
+Engine contract check:
+
+```bash
+npm run check:evidence-quality
+```
+
 The detailed design and criteria are documented in [docs/evidence-quality-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/evidence-quality-agent.md).
 
 ## Macro Regime Agent
