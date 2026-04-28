@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import {
   getFundamentalPersistenceFactSeries,
@@ -202,6 +203,65 @@ const FUNDAMENTAL_SCREENER_FIELDS = {
     help: "Minimum fraction of passed checks required for the watch stage."
   }
 };
+
+function directorySizeBytes(dirPath) {
+  if (!dirPath || !existsSync(dirPath)) {
+    return 0;
+  }
+
+  return readdirSync(dirPath, { withFileTypes: true }).reduce((sum, entry) => {
+    const entryPath = `${dirPath}/${entry.name}`;
+    if (entry.isDirectory()) {
+      return sum + directorySizeBytes(entryPath);
+    }
+    return sum + statSync(entryPath).size;
+  }, 0);
+}
+
+function fileSizeBytes(filePath) {
+  return filePath && existsSync(filePath) ? statSync(filePath).size : 0;
+}
+
+function buildPerformanceSnapshot(currentConfig, store) {
+  const memory = process.memoryUsage();
+  return {
+    as_of: new Date().toISOString(),
+    pi_performance_mode: currentConfig.piPerformanceMode,
+    process: {
+      uptime_seconds: Math.round(process.uptime()),
+      rss_bytes: memory.rss,
+      heap_used_bytes: memory.heapUsed,
+      heap_total_bytes: memory.heapTotal,
+      external_bytes: memory.external
+    },
+    data: {
+      database_path: currentConfig.databaseProvider === "sqlite" ? currentConfig.databasePath : null,
+      database_size_bytes: currentConfig.databaseProvider === "sqlite" ? fileSizeBytes(currentConfig.databasePath) : null,
+      data_dir_size_bytes: directorySizeBytes(currentConfig.dataDir),
+      backup_dir_size_bytes: directorySizeBytes(currentConfig.sqliteBackupDir)
+    },
+    workload: {
+      raw_documents: store.rawDocuments.length,
+      normalized_documents: store.normalizedDocuments.length,
+      document_scores: store.documentScores.length,
+      sentiment_states: store.sentimentStates.length,
+      evidence_items: store.evidenceQuality?.summary?.total_evidence_items || 0
+    },
+    tuned_settings: {
+      database_autosave_ms: currentConfig.databaseAutosaveMs,
+      live_news_poll_ms: currentConfig.liveNewsPollMs,
+      live_news_max_items_per_ticker: currentConfig.liveNewsMaxItemsPerTicker,
+      market_data_refresh_ms: currentConfig.marketDataRefreshMs,
+      market_flow_poll_ms: currentConfig.marketFlowPollMs,
+      fundamental_market_data_refresh_ms: currentConfig.fundamentalMarketDataRefreshMs,
+      fundamental_sec_concurrency: currentConfig.fundamentalSecConcurrency,
+      sec_request_retries: currentConfig.secRequestRetries,
+      sqlite_backup_interval_ms: currentConfig.sqliteBackupIntervalMs,
+      sqlite_backup_retention_count: currentConfig.sqliteBackupRetentionCount,
+      sqlite_backup_on_startup: currentConfig.sqliteBackupOnStartup
+    }
+  };
+}
 
 function readMarketFlowSettings(currentConfig) {
   return Object.keys(MARKET_FLOW_SETTINGS_FIELDS).reduce((acc, key) => {
@@ -700,6 +760,7 @@ export function createSentimentApp() {
       return {
         app_name: "Sentiment Analyst",
         companion_dashboard: "/fundamentals.html",
+        pi_performance_mode: config.piPerformanceMode,
         database_enabled: config.databaseEnabled,
         database_provider: config.databaseProvider,
         database_target: databaseTargetLabel(config),
@@ -733,6 +794,9 @@ export function createSentimentApp() {
         database_backup: store.health.databaseBackup,
         evidence_quality: store.evidenceQuality.summary || null
       };
+    },
+    getPerformance() {
+      return buildPerformanceSnapshot(config, store);
     },
     getWatchlistSnapshot(windowKey, filters) {
       return buildWatchlistSnapshot(store, windowKey, filters);

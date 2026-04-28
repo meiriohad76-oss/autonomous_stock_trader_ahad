@@ -46,6 +46,11 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/performance" && request.method === "GET") {
+    sendJson(response, 200, app.getPerformance());
+    return;
+  }
+
   if (pathname === "/api/config" && request.method === "GET") {
     sendJson(response, 200, app.getConfig());
     return;

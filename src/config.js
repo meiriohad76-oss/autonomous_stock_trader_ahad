@@ -49,39 +49,51 @@ function loadDotEnv(filePath) {
 
 loadDotEnv(envPath);
 
+const piPerformanceMode = String(process.env.PI_PERFORMANCE_MODE || "false").toLowerCase() === "true";
+
+function envNumber(name, fallback, piFallback = fallback) {
+  return Number(process.env[name] || (piPerformanceMode ? piFallback : fallback));
+}
+
+function envBoolean(name, fallback, piFallback = fallback) {
+  const value = process.env[name] ?? (piPerformanceMode ? piFallback : fallback);
+  return String(value).toLowerCase() !== "false";
+}
+
 export const config = {
+  piPerformanceMode,
   host: process.env.HOST || "127.0.0.1",
   port: Number(process.env.PORT || 3000),
   databaseEnabled: String(process.env.DATABASE_ENABLED || "true").toLowerCase() !== "false",
   databaseProvider: process.env.DATABASE_PROVIDER || "sqlite",
   databasePath: resolveFromRoot(process.env.DATABASE_PATH, path.join("data", "sentiment-analyst.sqlite")),
   databaseUrl: process.env.DATABASE_URL || "",
-  databaseAutosaveMs: Number(process.env.DATABASE_AUTOSAVE_MS || 15000),
+  databaseAutosaveMs: envNumber("DATABASE_AUTOSAVE_MS", 15000, 60000),
   sqliteBackupEnabled:
     String(process.env.SQLITE_BACKUP_ENABLED || "true").toLowerCase() !== "false",
   sqliteBackupDir: resolveFromRoot(process.env.SQLITE_BACKUP_DIR, path.join("data", "backups")),
-  sqliteBackupIntervalMs: Number(process.env.SQLITE_BACKUP_INTERVAL_MS || 21600000),
-  sqliteBackupRetentionCount: Number(process.env.SQLITE_BACKUP_RETENTION_COUNT || 28),
-  sqliteBackupRetentionDays: Number(process.env.SQLITE_BACKUP_RETENTION_DAYS || 14),
-  sqliteBackupOnStartup: String(process.env.SQLITE_BACKUP_ON_STARTUP || "true").toLowerCase() !== "false",
+  sqliteBackupIntervalMs: envNumber("SQLITE_BACKUP_INTERVAL_MS", 21600000, 43200000),
+  sqliteBackupRetentionCount: envNumber("SQLITE_BACKUP_RETENTION_COUNT", 28, 6),
+  sqliteBackupRetentionDays: envNumber("SQLITE_BACKUP_RETENTION_DAYS", 14, 3),
+  sqliteBackupOnStartup: envBoolean("SQLITE_BACKUP_ON_STARTUP", "true", "false"),
   universeName: process.env.UNIVERSE_NAME || "S&P 100 + QQQ Holdings",
   defaultWindow: process.env.DEFAULT_WINDOW || "1h",
   alertConfidenceThreshold: Number(process.env.ALERT_CONFIDENCE_THRESHOLD || 0.85),
   liveNewsEnabled: String(process.env.LIVE_NEWS_ENABLED || "true").toLowerCase() !== "false",
-  liveNewsPollMs: Number(process.env.LIVE_NEWS_POLL_MS || 300000),
-  liveNewsMaxItemsPerTicker: Number(process.env.LIVE_NEWS_MAX_ITEMS_PER_TICKER || 3),
+  liveNewsPollMs: envNumber("LIVE_NEWS_POLL_MS", 300000, 900000),
+  liveNewsMaxItemsPerTicker: envNumber("LIVE_NEWS_MAX_ITEMS_PER_TICKER", 3, 2),
   liveNewsLookbackHours: Number(process.env.LIVE_NEWS_LOOKBACK_HOURS || 24),
   liveNewsRequestTimeoutMs: Number(process.env.LIVE_NEWS_REQUEST_TIMEOUT_MS || 12000),
-  liveNewsRequestRetries: Number(process.env.LIVE_NEWS_REQUEST_RETRIES || 1),
+  liveNewsRequestRetries: envNumber("LIVE_NEWS_REQUEST_RETRIES", 1, 0),
   marketDataProvider: process.env.MARKET_DATA_PROVIDER || (process.env.TWELVE_DATA_API_KEY ? "twelvedata" : "synthetic"),
   marketDataInterval: process.env.MARKET_DATA_INTERVAL || "15min",
   marketDataHistoryPoints: Number(process.env.MARKET_DATA_HISTORY_POINTS || 18),
   marketDataCacheMs: Number(process.env.MARKET_DATA_CACHE_MS || 60000),
-  marketDataRefreshMs: Number(process.env.MARKET_DATA_REFRESH_MS || 60000),
+  marketDataRefreshMs: envNumber("MARKET_DATA_REFRESH_MS", 60000, 300000),
   marketDataRequestTimeoutMs: Number(process.env.MARKET_DATA_REQUEST_TIMEOUT_MS || 12000),
   twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || "",
   marketFlowEnabled: String(process.env.MARKET_FLOW_ENABLED || "true").toLowerCase() !== "false",
-  marketFlowPollMs: Number(process.env.MARKET_FLOW_POLL_MS || 60000),
+  marketFlowPollMs: envNumber("MARKET_FLOW_POLL_MS", 60000, 300000),
   marketFlowVolumeSpikeThreshold: Number(process.env.MARKET_FLOW_VOLUME_SPIKE_THRESHOLD || 2.2),
   marketFlowMinPriceMoveThreshold: Number(process.env.MARKET_FLOW_MIN_PRICE_MOVE_THRESHOLD || 0.01),
   marketFlowBlockTradeSpikeThreshold: Number(process.env.MARKET_FLOW_BLOCK_TRADE_SPIKE_THRESHOLD || 3.8),
@@ -92,12 +104,12 @@ export const config = {
   fundamentalMarketDataProvider:
     process.env.FUNDAMENTAL_MARKET_DATA_PROVIDER || (process.env.TWELVE_DATA_API_KEY ? "twelvedata" : "synthetic"),
   fundamentalMarketDataCacheMs: Number(process.env.FUNDAMENTAL_MARKET_DATA_CACHE_MS || 900000),
-  fundamentalMarketDataRefreshMs: Number(process.env.FUNDAMENTAL_MARKET_DATA_REFRESH_MS || 900000),
+  fundamentalMarketDataRefreshMs: envNumber("FUNDAMENTAL_MARKET_DATA_REFRESH_MS", 900000, 1800000),
   fundamentalMarketDataRequestTimeoutMs: Number(process.env.FUNDAMENTAL_MARKET_DATA_REQUEST_TIMEOUT_MS || 12000),
   fundamentalSecEnabled: String(process.env.FUNDAMENTAL_SEC_ENABLED || "true").toLowerCase() !== "false",
   fundamentalSecPollMs: Number(process.env.FUNDAMENTAL_SEC_POLL_MS || 21600000),
   fundamentalSecLookbackHours: Number(process.env.FUNDAMENTAL_SEC_LOOKBACK_HOURS || 10800),
-  fundamentalSecConcurrency: Number(process.env.FUNDAMENTAL_SEC_CONCURRENCY || 4),
+  fundamentalSecConcurrency: envNumber("FUNDAMENTAL_SEC_CONCURRENCY", 4, 1),
   screenerRequireLiveSecForEligible:
     String(process.env.SCREENER_REQUIRE_LIVE_SEC_FOR_ELIGIBLE || "false").toLowerCase() === "true",
   screenerMinReportingConfidence: Number(process.env.SCREENER_MIN_REPORTING_CONFIDENCE || 0.85),
@@ -123,7 +135,7 @@ export const config = {
   sec13fPollMs: Number(process.env.SEC_13F_POLL_MS || 43200000),
   sec13fLookbackHours: Number(process.env.SEC_13F_LOOKBACK_HOURS || 2400),
   secRequestTimeoutMs: Number(process.env.SEC_REQUEST_TIMEOUT_MS || 15000),
-  secRequestRetries: Number(process.env.SEC_REQUEST_RETRIES || 1),
+  secRequestRetries: envNumber("SEC_REQUEST_RETRIES", 1, 0),
   secTickerMapCacheMs: Number(process.env.SEC_TICKER_MAP_CACHE_MS || 86400000),
   secUserAgent:
     process.env.SEC_USER_AGENT || "SentimentAnalyst/1.0 contact=local@example.com",

@@ -174,6 +174,24 @@ Live news now uses Google News RSS first and Yahoo Finance RSS as a no-key fallb
 
 Details are documented in [docs/source-reliability.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/source-reliability.md).
 
+## Pi Performance Mode
+
+Set this on Raspberry Pi deployments:
+
+```bash
+PI_PERFORMANCE_MODE=true
+```
+
+This lowers polling frequency, SEC concurrency, retry pressure, autosave frequency, and SQLite backup churn unless those values are explicitly overridden in `.env`.
+
+Explicit `.env` values always win. For example, if `SQLITE_BACKUP_RETENTION_COUNT=6` is already set, Pi mode will keep using `6`.
+
+Useful endpoint:
+
+```bash
+GET /api/performance
+```
+
 ## Macro Regime Agent
 
 The Macro Regime Agent summarizes the top-down backdrop by combining:
