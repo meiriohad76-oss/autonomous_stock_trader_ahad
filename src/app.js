@@ -694,6 +694,9 @@ export function createSentimentApp() {
     getTradeSetupDetail(ticker) {
       return store.tradeSetups.find((s) => s.ticker === ticker) || null;
     },
+    runTradeSetups() {
+      tradeSetupAgent.run();
+    },
     getTrackedFundamentalCompanies() {
       return fundamentals.getTrackedCompanies();
     },

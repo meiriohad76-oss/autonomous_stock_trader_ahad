@@ -420,6 +420,7 @@ export function createTradeSetupAgent(app) {
   }
 
   return {
+    run,
     start() {
       store.bus.on("event", onBusEvent);
     },

@@ -293,49 +293,52 @@ if (!fundamentalDetail?.factor_cards?.length || !fundamentalDetail?.score_histor
   throw new Error("Fundamental detail is missing factor cards or score history.");
 }
 
-await new Promise(r => setTimeout(r, 600)); // allow debounced agent to fire
+app.runTradeSetups();
 
-const macroRegime = typeof app.getMacroRegime === "function" ? app.getMacroRegime() : null;
-const tradeSetups = typeof app.getTradeSetups === "function" ? app.getTradeSetups() : [];
-const longSetups = typeof app.getTradeSetups === "function" ? app.getTradeSetups({ action: "long" }) : [];
-const provisionalSetups = typeof app.getTradeSetups === "function" ? app.getTradeSetups({ provisional: true }) : [];
+if (typeof app.getMacroRegime !== "function")
+  throw new Error("app.getMacroRegime is not a function — method missing from app.");
+if (typeof app.getTradeSetups !== "function")
+  throw new Error("app.getTradeSetups is not a function — method missing from app.");
 
-if (typeof app.getMacroRegime === "function" && macroRegime !== null) {
-  if (!macroRegime || typeof macroRegime.regime !== "string") {
-    throw new Error("macroRegime is missing or has no regime after replay.");
+const macroRegime = app.getMacroRegime();
+const tradeSetups = app.getTradeSetups();
+const longSetups = app.getTradeSetups({ action: "long" });
+const provisionalSetups = app.getTradeSetups({ provisional: true });
+
+if (macroRegime === null)
+  throw new Error("macroRegime is null after 1500ms — trade setup agent did not fire.");
+if (typeof macroRegime.regime !== "string")
+  throw new Error("macroRegime is missing .regime string field.");
+
+if (!Array.isArray(tradeSetups))
+  throw new Error("getTradeSetups() did not return an array.");
+
+// Validate shape of first setup if any exist
+const firstSetup = tradeSetups[0];
+if (firstSetup) {
+  for (const key of ["setup_id", "ticker", "action", "conviction", "provisional",
+    "thesis", "risk_flags", "evidence", "direction_score"]) {
+    if (!(key in firstSetup)) throw new Error(`Trade setup missing field: ${key}`);
   }
-
-  if (!Array.isArray(tradeSetups)) {
-    throw new Error("getTradeSetups() did not return an array.");
+  if (!["long", "short", "watch", "no_trade"].includes(firstSetup.action)) {
+    throw new Error(`Invalid action: ${firstSetup.action}`);
   }
-
-  // Validate shape of first setup if any exist
-  const firstSetup = tradeSetups[0];
-  if (firstSetup) {
-    for (const key of ["setup_id", "ticker", "action", "conviction", "provisional",
-      "thesis", "risk_flags", "evidence", "direction_score"]) {
-      if (!(key in firstSetup)) throw new Error(`Trade setup missing field: ${key}`);
-    }
-    if (!["long", "short", "watch", "no_trade"].includes(firstSetup.action)) {
-      throw new Error(`Invalid action: ${firstSetup.action}`);
-    }
-    if (firstSetup.conviction < 0 || firstSetup.conviction > 1) {
-      throw new Error(`Conviction out of range: ${firstSetup.conviction}`);
-    }
+  if (firstSetup.conviction < 0 || firstSetup.conviction > 1) {
+    throw new Error(`Conviction out of range: ${firstSetup.conviction}`);
   }
+}
 
-  // Provisional setups must have conviction <= 0.55
-  for (const s of provisionalSetups) {
-    if (s.conviction > 0.55) {
-      throw new Error(`Provisional setup ${s.ticker} has conviction ${s.conviction} > 0.55`);
-    }
+// Provisional setups must have conviction <= 0.55
+for (const s of provisionalSetups) {
+  if (s.conviction > 0.55) {
+    throw new Error(`Provisional setup ${s.ticker} has conviction ${s.conviction} > 0.55`);
   }
+}
 
-  // Long setups must have positive direction score
-  for (const s of longSetups) {
-    if (s.direction_score <= 0) {
-      throw new Error(`Long setup ${s.ticker} has non-positive direction_score ${s.direction_score}`);
-    }
+// Long setups must have positive direction score
+for (const s of longSetups) {
+  if (s.direction_score <= 0) {
+    throw new Error(`Long setup ${s.ticker} has non-positive direction_score ${s.direction_score}`);
   }
 }
 
