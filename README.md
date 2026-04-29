@@ -190,6 +190,8 @@ The compact summary is also embedded in `/api/health` as `runtime_reliability`.
 
 The action endpoint supports guarded one-shot operations such as `poll_once` for a single source, `refresh_universe`, and `backup_now`. It does not enable permanent background polling or rewrite `.env`.
 
+It also exposes runtime profile previews for `emergency`, `live_news_only`, `pi_light`, and `full_live`. Profile application requires an explicit `apply=true` payload and a service restart afterward.
+
 The full design is documented in [docs/runtime-reliability-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/runtime-reliability-agent.md).
 
 ## Pi Performance Mode

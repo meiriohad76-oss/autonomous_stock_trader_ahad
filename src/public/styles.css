@@ -1129,6 +1129,13 @@ input:focus-visible {
   margin-top: 12px;
 }
 
+.runtime-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
 .runtime-action-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;

@@ -1832,6 +1832,8 @@ function renderSystemView() {
   const runtimePressure = runtimeReliability?.pressure || null;
   const collectorPlan = runtimeReliability?.collector_plan || {};
   const runtimeActions = runtimeReliability?.available_actions || [];
+  const runtimeProfiles = runtimeReliability?.runtime_profiles || {};
+  const recommendedProfile = runtimeProfiles.profiles?.find((profile) => profile.key === runtimeProfiles.recommended) || null;
   const liveNews = state.health?.live_sources?.google_news_rss || null;
   const marketData = state.health?.live_sources?.market_data || null;
   const marketFlow = state.health?.live_sources?.market_flow || null;
@@ -1912,6 +1914,8 @@ function renderSystemView() {
       <div class="workspace-stat-card"><span>Keep Manual</span><strong>${collectorPlan.keep_manual?.length ?? 0}</strong></div>
       <div class="workspace-stat-card"><span>Investigate</span><strong>${collectorPlan.investigate?.length ?? 0}</strong></div>
       <div class="workspace-stat-card"><span>Disabled</span><strong>${collectorPlan.disabled?.length ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>Current Profile</span><strong>${runtimeProfiles.current ? prettyLabel(runtimeProfiles.current) : "Custom"}</strong></div>
+      <div class="workspace-stat-card"><span>Recommended</span><strong>${recommendedProfile?.label || "n/a"}</strong></div>
     </div>
     ${
       collectorPlan.recommendations?.length
@@ -1945,6 +1949,30 @@ function renderSystemView() {
           : ""
       }
     </div>
+    ${
+      runtimeProfiles.profiles?.length
+        ? `<div class="runtime-action-panel">
+            <div class="section-kicker">Runtime Profiles</div>
+            <p class="workspace-copy">Preview exact .env changes before applying a runtime mode. Applying writes .env; restart the service afterward.</p>
+            <div class="runtime-profile-grid">
+              ${runtimeProfiles.profiles
+                .map(
+                  (profile) => `
+                    <div class="source-card">
+                      <strong>${profile.label}${profile.key === runtimeProfiles.recommended ? " - Recommended" : ""}</strong>
+                      <span>${profile.description}</span>
+                      <span>${profile.matches_current ? "Matches current config" : `${profile.change_count} change${profile.change_count === 1 ? "" : "s"}`}</span>
+                      <button type="button" class="panel-action runtime-action-button" data-runtime-action="apply_profile" data-runtime-profile="${profile.key}">
+                        Preview
+                      </button>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>
+          </div>`
+        : ""
+    }
     <ul class="workspace-list">
       <li>News sentiment source: Google News RSS with Yahoo Finance RSS fallback, scored through the same normalization and sentiment pipeline as other live events.</li>
       <li>Money-flow sources: inferred tape anomalies from live market bars, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>
@@ -2068,6 +2096,32 @@ async function runRuntimeAction(action, source) {
   }
 }
 
+async function runRuntimeProfilePreview(profile) {
+  state.runtimeActionState = "running";
+  renderSystemView();
+
+  try {
+    const response = await fetch("/api/runtime-reliability/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "apply_profile", profile, apply: false })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || "Runtime profile preview failed");
+    }
+
+    state.runtimeReliability = payload.runtime_reliability || state.runtimeReliability;
+    state.health = payload.health || state.health;
+    const updateCount = Object.keys(payload.result?.env_updates || {}).length;
+    state.runtimeActionState = `${prettyLabel(profile)} profile preview ready: ${updateCount} .env values. Use the API with apply=true when you are ready to write it.`;
+    renderSystemView();
+  } catch (error) {
+    state.runtimeActionState = error.message;
+    renderSystemView();
+  }
+}
+
 function attachEvents() {
   elements.windowTabs.addEventListener("click", async (event) => {
     const button = event.target.closest(".time-chip");
@@ -2133,6 +2187,11 @@ function attachEvents() {
   elements.systemNotes?.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-runtime-action]");
     if (!button || button.disabled) {
+      return;
+    }
+
+    if (button.dataset.runtimeAction === "apply_profile") {
+      await runRuntimeProfilePreview(button.dataset.runtimeProfile);
       return;
     }
 

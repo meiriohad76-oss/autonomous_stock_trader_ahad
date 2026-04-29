@@ -3,6 +3,127 @@ import { differenceInHours, round } from "../utils/helpers.js";
 
 const HOUR_MS = 3_600_000;
 
+export const RUNTIME_PROFILES = {
+  emergency: {
+    label: "Emergency",
+    description: "Lowest-load mode for recovering the Pi. Keeps the dashboard and bootstrap universe online without live collectors or SQLite writes.",
+    env: {
+      PI_PERFORMANCE_MODE: "true",
+      DATABASE_ENABLED: "false",
+      SQLITE_BACKUP_ENABLED: "false",
+      SQLITE_BACKUP_ON_STARTUP: "false",
+      LIVE_NEWS_ENABLED: "false",
+      MARKET_DATA_PROVIDER: "synthetic",
+      MARKET_FLOW_ENABLED: "false",
+      AUTO_START_MARKET_FLOW: "false",
+      FUNDAMENTAL_MARKET_DATA_PROVIDER: "synthetic",
+      AUTO_START_FUNDAMENTAL_MARKET_DATA: "false",
+      FUNDAMENTAL_SEC_ENABLED: "false",
+      AUTO_START_SEC_FUNDAMENTALS: "false",
+      SEC_FORM4_ENABLED: "false",
+      SEC_13F_ENABLED: "false",
+      AUTO_START_SEC_13F: "false"
+    }
+  },
+  live_news_only: {
+    label: "Live News Only",
+    description: "Safe first live-data step. Enables RSS news while keeping heavier SEC and market-flow collectors manual/off.",
+    env: {
+      PI_PERFORMANCE_MODE: "true",
+      DATABASE_ENABLED: "false",
+      SQLITE_BACKUP_ENABLED: "false",
+      SQLITE_BACKUP_ON_STARTUP: "false",
+      LIVE_NEWS_ENABLED: "true",
+      LIVE_NEWS_POLL_MS: "900000",
+      LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
+      MARKET_DATA_PROVIDER: "synthetic",
+      MARKET_FLOW_ENABLED: "false",
+      AUTO_START_MARKET_FLOW: "false",
+      FUNDAMENTAL_MARKET_DATA_PROVIDER: "synthetic",
+      AUTO_START_FUNDAMENTAL_MARKET_DATA: "false",
+      FUNDAMENTAL_SEC_ENABLED: "false",
+      AUTO_START_SEC_FUNDAMENTALS: "false",
+      SEC_FORM4_ENABLED: "false",
+      SEC_13F_ENABLED: "false",
+      AUTO_START_SEC_13F: "false"
+    }
+  },
+  pi_light: {
+    label: "Pi Light",
+    description: "Balanced Pi mode. Allows news and light market refreshes while keeping expensive SEC fundamentals and 13F manual.",
+    env: {
+      PI_PERFORMANCE_MODE: "true",
+      DATABASE_ENABLED: "false",
+      SQLITE_BACKUP_ENABLED: "false",
+      SQLITE_BACKUP_ON_STARTUP: "false",
+      LIVE_NEWS_ENABLED: "true",
+      LIVE_NEWS_POLL_MS: "900000",
+      LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
+      MARKET_DATA_PROVIDER: "synthetic",
+      MARKET_DATA_REFRESH_MS: "300000",
+      MARKET_FLOW_ENABLED: "true",
+      AUTO_START_MARKET_FLOW: "false",
+      FUNDAMENTAL_MARKET_DATA_PROVIDER: "synthetic",
+      AUTO_START_FUNDAMENTAL_MARKET_DATA: "false",
+      FUNDAMENTAL_SEC_ENABLED: "true",
+      AUTO_START_SEC_FUNDAMENTALS: "false",
+      FUNDAMENTAL_SEC_CONCURRENCY: "1",
+      SEC_FORM4_ENABLED: "true",
+      SEC_13F_ENABLED: "true",
+      AUTO_START_SEC_13F: "false",
+      SEC_REQUEST_RETRIES: "0"
+    }
+  },
+  full_live: {
+    label: "Full Live",
+    description: "Maximum live coverage. Use only after the Pi is stable or persistence/collectors are moved off-Pi.",
+    env: {
+      PI_PERFORMANCE_MODE: "false",
+      DATABASE_ENABLED: "true",
+      SQLITE_BACKUP_ENABLED: "true",
+      SQLITE_BACKUP_ON_STARTUP: "false",
+      LIVE_NEWS_ENABLED: "true",
+      LIVE_NEWS_POLL_MS: "300000",
+      MARKET_DATA_PROVIDER: "twelvedata",
+      MARKET_DATA_REFRESH_MS: "60000",
+      MARKET_FLOW_ENABLED: "true",
+      AUTO_START_MARKET_FLOW: "true",
+      FUNDAMENTAL_MARKET_DATA_PROVIDER: "twelvedata",
+      AUTO_START_FUNDAMENTAL_MARKET_DATA: "true",
+      FUNDAMENTAL_SEC_ENABLED: "true",
+      AUTO_START_SEC_FUNDAMENTALS: "true",
+      FUNDAMENTAL_SEC_CONCURRENCY: "2",
+      SEC_FORM4_ENABLED: "true",
+      SEC_13F_ENABLED: "true",
+      AUTO_START_SEC_13F: "true",
+      SEC_REQUEST_RETRIES: "1"
+    }
+  }
+};
+
+const PROFILE_CONFIG_READERS = {
+  PI_PERFORMANCE_MODE: (config) => config.piPerformanceMode,
+  DATABASE_ENABLED: (config) => config.databaseEnabled,
+  SQLITE_BACKUP_ENABLED: (config) => config.sqliteBackupEnabled,
+  SQLITE_BACKUP_ON_STARTUP: (config) => config.sqliteBackupOnStartup,
+  LIVE_NEWS_ENABLED: (config) => config.liveNewsEnabled,
+  LIVE_NEWS_POLL_MS: (config) => config.liveNewsPollMs,
+  LIVE_NEWS_MAX_ITEMS_PER_TICKER: (config) => config.liveNewsMaxItemsPerTicker,
+  MARKET_DATA_PROVIDER: (config) => config.marketDataProvider,
+  MARKET_DATA_REFRESH_MS: (config) => config.marketDataRefreshMs,
+  MARKET_FLOW_ENABLED: (config) => config.marketFlowEnabled,
+  AUTO_START_MARKET_FLOW: (config) => config.autoStartMarketFlow,
+  FUNDAMENTAL_MARKET_DATA_PROVIDER: (config) => config.fundamentalMarketDataProvider,
+  AUTO_START_FUNDAMENTAL_MARKET_DATA: (config) => config.autoStartFundamentalMarketData,
+  FUNDAMENTAL_SEC_ENABLED: (config) => config.fundamentalSecEnabled,
+  AUTO_START_SEC_FUNDAMENTALS: (config) => config.autoStartSecFundamentals,
+  FUNDAMENTAL_SEC_CONCURRENCY: (config) => config.fundamentalSecConcurrency,
+  SEC_FORM4_ENABLED: (config) => config.secForm4Enabled,
+  SEC_13F_ENABLED: (config) => config.sec13fEnabled,
+  AUTO_START_SEC_13F: (config) => config.autoStartSec13f,
+  SEC_REQUEST_RETRIES: (config) => config.secRequestRetries
+};
+
 function enabledLabel(enabled) {
   return enabled ? "enabled" : "disabled";
 }
@@ -368,6 +489,14 @@ function buildAvailableActions(sources, config) {
       safe: false,
       enabled: Boolean(config.databaseEnabled && config.databaseProvider === "sqlite" && config.sqliteBackupEnabled),
       description: "Create one SQLite backup now. Avoid during high disk pressure."
+    },
+    {
+      action: "apply_profile",
+      label: "Preview Runtime Profile",
+      source: null,
+      safe: true,
+      enabled: true,
+      description: "Preview or apply one of the predefined runtime .env profiles."
     }
   ];
 
@@ -375,6 +504,58 @@ function buildAvailableActions(sources, config) {
     ...item,
     disabled_reason: item.enabled ? null : `${item.source || item.action} is disabled by current configuration.`
   }));
+}
+
+function normalizeProfileValue(value) {
+  if (typeof value === "boolean") {
+    return String(value);
+  }
+  return String(value ?? "");
+}
+
+function profileDiff(config, profile) {
+  return Object.entries(profile.env).map(([key, desired]) => {
+    const reader = PROFILE_CONFIG_READERS[key];
+    const current = reader ? normalizeProfileValue(reader(config)) : null;
+    return {
+      key,
+      current,
+      desired: String(desired),
+      matches: current === String(desired)
+    };
+  });
+}
+
+function buildRuntimeProfiles(config, pressure) {
+  const profiles = Object.entries(RUNTIME_PROFILES).map(([key, profile]) => {
+    const changes = profileDiff(config, profile);
+    const changed = changes.filter((item) => !item.matches);
+    return {
+      key,
+      label: profile.label,
+      description: profile.description,
+      matches_current: changed.length === 0,
+      change_count: changed.length,
+      env: profile.env,
+      changes: changed
+    };
+  });
+
+  const current = profiles.find((profile) => profile.matches_current)?.key || null;
+  let recommended = "pi_light";
+  if (!config.databaseEnabled && !config.liveNewsEnabled) {
+    recommended = "emergency";
+  } else if (!config.databaseEnabled && config.liveNewsEnabled && !config.marketFlowEnabled && !config.secForm4Enabled) {
+    recommended = "live_news_only";
+  } else if (!pressure.isConstrained && config.databaseEnabled) {
+    recommended = "full_live";
+  }
+
+  return {
+    current,
+    recommended,
+    profiles
+  };
 }
 
 function overallStatus(sources, pressure) {
@@ -448,6 +629,7 @@ export function createRuntimeReliabilityAgent({ config, store }) {
       },
       collector_plan: buildPlan(sources, pressure, config),
       available_actions: buildAvailableActions(sources, config),
+      runtime_profiles: buildRuntimeProfiles(config, pressure),
       sources
     };
   }

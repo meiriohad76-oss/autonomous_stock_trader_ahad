@@ -23,7 +23,7 @@ import { createStore, resetStore } from "./domain/store.js";
 import { TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { createMacroRegimeAgent } from "./domain/macro-regime.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
-import { createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
+import { RUNTIME_PROFILES, createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
 import { scoreToLabel } from "./utils/helpers.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
@@ -346,6 +346,39 @@ function normalizeScreenerSettingValue(value, spec) {
   }
 
   return clampSettingValue(value, spec);
+}
+
+const RUNTIME_PROFILE_CONFIG_FIELDS = {
+  PI_PERFORMANCE_MODE: { key: "piPerformanceMode", type: "boolean" },
+  DATABASE_ENABLED: { key: "databaseEnabled", type: "boolean" },
+  SQLITE_BACKUP_ENABLED: { key: "sqliteBackupEnabled", type: "boolean" },
+  SQLITE_BACKUP_ON_STARTUP: { key: "sqliteBackupOnStartup", type: "boolean" },
+  LIVE_NEWS_ENABLED: { key: "liveNewsEnabled", type: "boolean" },
+  LIVE_NEWS_POLL_MS: { key: "liveNewsPollMs", type: "number" },
+  LIVE_NEWS_MAX_ITEMS_PER_TICKER: { key: "liveNewsMaxItemsPerTicker", type: "number" },
+  MARKET_DATA_PROVIDER: { key: "marketDataProvider", type: "string" },
+  MARKET_DATA_REFRESH_MS: { key: "marketDataRefreshMs", type: "number" },
+  MARKET_FLOW_ENABLED: { key: "marketFlowEnabled", type: "boolean" },
+  AUTO_START_MARKET_FLOW: { key: "autoStartMarketFlow", type: "boolean" },
+  FUNDAMENTAL_MARKET_DATA_PROVIDER: { key: "fundamentalMarketDataProvider", type: "string" },
+  AUTO_START_FUNDAMENTAL_MARKET_DATA: { key: "autoStartFundamentalMarketData", type: "boolean" },
+  FUNDAMENTAL_SEC_ENABLED: { key: "fundamentalSecEnabled", type: "boolean" },
+  AUTO_START_SEC_FUNDAMENTALS: { key: "autoStartSecFundamentals", type: "boolean" },
+  FUNDAMENTAL_SEC_CONCURRENCY: { key: "fundamentalSecConcurrency", type: "number" },
+  SEC_FORM4_ENABLED: { key: "secForm4Enabled", type: "boolean" },
+  SEC_13F_ENABLED: { key: "sec13fEnabled", type: "boolean" },
+  AUTO_START_SEC_13F: { key: "autoStartSec13f", type: "boolean" },
+  SEC_REQUEST_RETRIES: { key: "secRequestRetries", type: "number" }
+};
+
+function coerceRuntimeProfileValue(value, type) {
+  if (type === "boolean") {
+    return String(value).toLowerCase() === "true";
+  }
+  if (type === "number") {
+    return Number(value);
+  }
+  return String(value);
 }
 
 async function persistEnvUpdates(filePath, updates) {
@@ -837,6 +870,8 @@ export function createSentimentApp() {
       const action = String(payload.action || "snapshot").trim();
       const source = String(payload.source || "").trim();
       const forceUniverse = Boolean(payload.forceUniverse || payload.force_universe);
+      const profileKey = String(payload.profile || "").trim();
+      const applyProfile = Boolean(payload.apply);
 
       const disabledSources = {
         live_news: !config.liveNewsEnabled,
@@ -857,6 +892,30 @@ export function createSentimentApp() {
 
       if (action === "snapshot") {
         result = { message: "Runtime reliability snapshot refreshed." };
+      } else if (action === "apply_profile") {
+        const profile = RUNTIME_PROFILES[profileKey];
+        if (!profile) {
+          throw new Error(`Unsupported runtime profile: ${profileKey}`);
+        }
+
+        if (applyProfile) {
+          await persistEnvUpdates(config.envPath, profile.env);
+          for (const [envKey, envValue] of Object.entries(profile.env)) {
+            const spec = RUNTIME_PROFILE_CONFIG_FIELDS[envKey];
+            if (spec) {
+              config[spec.key] = coerceRuntimeProfileValue(envValue, spec.type);
+            }
+          }
+        }
+
+        result = {
+          profile: profileKey,
+          applied: applyProfile,
+          env_updates: profile.env,
+          message: applyProfile
+            ? `${profile.label} profile was written to .env. Restart the service for timers and startup policy to fully reload.`
+            : `${profile.label} profile preview only. Send apply=true to write these values to .env.`
+        };
       } else if (action === "refresh_universe") {
         result = await ensureFundamentalCoverage({ force: true });
       } else if (action === "backup_now") {

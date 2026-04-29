@@ -88,6 +88,8 @@ Supported payloads:
 { "action": "snapshot" }
 { "action": "refresh_universe" }
 { "action": "backup_now" }
+{ "action": "apply_profile", "profile": "emergency", "apply": false }
+{ "action": "apply_profile", "profile": "live_news_only", "apply": true }
 { "action": "poll_once", "source": "live_news" }
 { "action": "poll_once", "source": "market_flow" }
 { "action": "poll_once", "source": "sec_form4" }
@@ -97,6 +99,17 @@ Supported payloads:
 ```
 
 Disabled sources are blocked by default and return a clear error. Enable the relevant `.env` flag before running that source.
+
+## Runtime profiles
+
+Profiles are predefined `.env` operating modes:
+
+- `emergency`: lowest-load recovery mode
+- `live_news_only`: first live-data step using RSS news only
+- `pi_light`: balanced Pi mode with expensive collectors manual
+- `full_live`: maximum live coverage for a stable machine or off-Pi deployment
+
+Profile actions are preview-only unless `apply=true` is included. Applying a profile writes `.env`, updates in-process config where possible, and returns a message reminding the operator to restart the service so timers and startup behavior fully reload.
 
 ## Current limits
 
