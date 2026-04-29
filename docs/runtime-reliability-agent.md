@@ -100,6 +100,25 @@ Supported payloads:
 
 Disabled sources are blocked by default and return a clear error. Enable the relevant `.env` flag before running that source.
 
+## SEC fundamentals batching
+
+SEC fundamentals is intentionally treated as a heavy source. The collector uses `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL` to cap each poll:
+
+- `0` means refresh the full tracked universe in one poll.
+- In `pi_light`, the profile sets `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL=8`.
+- In `full_live`, the profile sets `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL=24`.
+
+Each bounded poll prioritizes bootstrap placeholders before already SEC-live companies, then rotates through the remaining list on later polls. The full 168-stock universe is preserved while the batch refresh is running; unprocessed names remain visible as bootstrap placeholders instead of disappearing from the dashboard.
+
+Health fields exposed under `live_sources.sec_fundamentals`:
+
+- `tracked_companies`: full fundamentals universe size.
+- `refresh_limit`: configured max names per SEC poll.
+- `refresh_batch_size`: number selected for the current poll.
+- `refresh_cursor`: retry cursor used when a batch cannot advance because all selected names failed.
+- `live_companies`: total SEC-backed companies after the poll.
+- `pending_bootstrap_companies`: names still waiting for live SEC refresh.
+
 ## Runtime profiles
 
 Profiles are predefined `.env` operating modes:

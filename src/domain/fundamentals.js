@@ -1144,7 +1144,10 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
       ...company,
       as_of: company.as_of || asOf
     }));
-    persistenceArtifactsByTicker = nextArtifactsByTicker instanceof Map ? nextArtifactsByTicker : new Map();
+    persistenceArtifactsByTicker =
+      nextArtifactsByTicker instanceof Map
+        ? new Map([...persistenceArtifactsByTicker, ...nextArtifactsByTicker])
+        : new Map();
 
     if (marketReferenceService && baseCompanies.length) {
       marketReferenceMap = await marketReferenceService.getReferenceBatch(baseCompanies);

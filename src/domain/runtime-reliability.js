@@ -68,6 +68,7 @@ export const RUNTIME_PROFILES = {
       FUNDAMENTAL_SEC_ENABLED: "true",
       AUTO_START_SEC_FUNDAMENTALS: "false",
       FUNDAMENTAL_SEC_CONCURRENCY: "1",
+      FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL: "8",
       SEC_FORM4_ENABLED: "true",
       SEC_13F_ENABLED: "true",
       AUTO_START_SEC_13F: "false",
@@ -93,6 +94,7 @@ export const RUNTIME_PROFILES = {
       FUNDAMENTAL_SEC_ENABLED: "true",
       AUTO_START_SEC_FUNDAMENTALS: "true",
       FUNDAMENTAL_SEC_CONCURRENCY: "2",
+      FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL: "24",
       SEC_FORM4_ENABLED: "true",
       SEC_13F_ENABLED: "true",
       AUTO_START_SEC_13F: "true",
@@ -118,6 +120,7 @@ const PROFILE_CONFIG_READERS = {
   FUNDAMENTAL_SEC_ENABLED: (config) => config.fundamentalSecEnabled,
   AUTO_START_SEC_FUNDAMENTALS: (config) => config.autoStartSecFundamentals,
   FUNDAMENTAL_SEC_CONCURRENCY: (config) => config.fundamentalSecConcurrency,
+  FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL: (config) => config.fundamentalSecMaxCompaniesPerPoll,
   SEC_FORM4_ENABLED: (config) => config.secForm4Enabled,
   SEC_13F_ENABLED: (config) => config.sec13fEnabled,
   AUTO_START_SEC_13F: (config) => config.autoStartSec13f,
@@ -189,7 +192,7 @@ function sourceSpecs(config) {
       autoStart: config.autoStartSecFundamentals,
       intervalMs: config.fundamentalSecPollMs,
       criticality: "high",
-      notes: "Refreshes company fundamentals from SEC submissions and Company Facts."
+      notes: `Refreshes company fundamentals from SEC submissions and Company Facts in batches of ${config.fundamentalSecMaxCompaniesPerPoll || "all"}.`
     },
     {
       key: "sec_form4",

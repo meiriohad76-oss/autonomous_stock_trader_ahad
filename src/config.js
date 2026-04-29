@@ -113,6 +113,7 @@ export const config = {
   fundamentalSecPollMs: Number(process.env.FUNDAMENTAL_SEC_POLL_MS || 21600000),
   fundamentalSecLookbackHours: Number(process.env.FUNDAMENTAL_SEC_LOOKBACK_HOURS || 10800),
   fundamentalSecConcurrency: envNumber("FUNDAMENTAL_SEC_CONCURRENCY", 4, 1),
+  fundamentalSecMaxCompaniesPerPoll: envNumber("FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL", 0, 8),
   screenerRequireLiveSecForEligible:
     String(process.env.SCREENER_REQUIRE_LIVE_SEC_FOR_ELIGIBLE || "false").toLowerCase() === "true",
   screenerMinReportingConfidence: Number(process.env.SCREENER_MIN_REPORTING_CONFIDENCE || 0.85),

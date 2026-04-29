@@ -12,7 +12,10 @@ const {
 } = await import("../src/domain/fundamental-persistence.js");
 const { createLiveNewsCollector, parseGoogleNewsRss } = await import("../src/domain/live-news.js");
 const { detectMarketFlowSignal } = await import("../src/domain/market-flow.js");
-const { computeLiveMetricsFromCompanyFacts } = await import("../src/domain/sec-fundamentals.js");
+const {
+  computeLiveMetricsFromCompanyFacts,
+  selectSecFundamentalsRefreshBatch
+} = await import("../src/domain/sec-fundamentals.js");
 const { parseInfoTable } = await import("../src/domain/sec-institutional.js");
 const { parseOwnershipXml } = await import("../src/domain/sec-insider.js");
 
@@ -335,6 +338,35 @@ if (
   throw new Error("SEC fundamentals mapper failed to derive the expected live metric set.");
 }
 
+const secBatchOne = selectSecFundamentalsRefreshBatch(
+  [
+    { ticker: "LIVE1", data_source: "live_sec_filing" },
+    { ticker: "BOOT1", data_source: "bootstrap_placeholder" },
+    { ticker: "BOOT2", data_source: "bootstrap_placeholder" },
+    { ticker: "BOOT3", data_source: "bootstrap_placeholder" }
+  ],
+  { fundamentalSecMaxCompaniesPerPoll: 2 },
+  0
+);
+const secBatchTwo = selectSecFundamentalsRefreshBatch(
+  [
+    { ticker: "LIVE1", data_source: "live_sec_filing" },
+    { ticker: "BOOT1", data_source: "bootstrap_placeholder" },
+    { ticker: "BOOT2", data_source: "bootstrap_placeholder" },
+    { ticker: "BOOT3", data_source: "bootstrap_placeholder" }
+  ],
+  { fundamentalSecMaxCompaniesPerPoll: 2 },
+  2
+);
+
+if (secBatchOne.map((item) => item.ticker).join(",") !== "BOOT1,BOOT2") {
+  throw new Error("SEC fundamentals batch selector should prioritize bootstrap placeholders.");
+}
+
+if (secBatchTwo.length !== 2 || secBatchTwo[0].ticker === secBatchOne[0].ticker) {
+  throw new Error("SEC fundamentals batch selector should rotate bounded refresh batches.");
+}
+
 const app = createSentimentApp();
 await app.replay({ reset: true, intervalMs: 0 });
 const snapshot = app.getWatchlistSnapshot("1h");
@@ -423,6 +455,7 @@ console.log(
       institutional_rows_parsed: institutionalTable.length,
       market_flow_signal: flowSignal.eventType,
       sec_live_metric_keys: Object.keys(liveMetrics).length,
+      sec_fundamentals_batch_size: secBatchOne.length,
       leaderboard_count: snapshot.leaderboard.length,
       recent_documents: app.getRecentDocuments({ limit: 5 }).length,
       alerts: app.store.alertHistory.length,

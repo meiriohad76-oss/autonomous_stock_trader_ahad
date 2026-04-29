@@ -57,8 +57,38 @@ function buildEmptyResult() {
   return {
     ingested: 0,
     liveCompanies: 0,
-    errors: 0
+    errors: 0,
+    trackedCompanies: 0,
+    refreshBatchSize: 0,
+    refreshLimit: null,
+    pendingBootstrapCompanies: 0
   };
+}
+
+function maxCompaniesPerPoll(config, totalCompanies) {
+  const configured = Number(config.fundamentalSecMaxCompaniesPerPoll || 0);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return totalCompanies;
+  }
+  return Math.max(1, Math.min(Math.floor(configured), totalCompanies));
+}
+
+export function selectSecFundamentalsRefreshBatch(companies, config, cursor = 0) {
+  const limit = maxCompaniesPerPoll(config, companies.length);
+  if (limit >= companies.length) {
+    return companies;
+  }
+
+  const pending = companies.filter((company) => company.data_source !== "live_sec_filing");
+  const refreshed = companies.filter((company) => company.data_source === "live_sec_filing");
+  if (pending.length) {
+    const pendingOffset = Math.max(0, Math.floor(Number(cursor) || 0)) % pending.length;
+    const pendingQueue = [...pending.slice(pendingOffset), ...pending.slice(0, pendingOffset)];
+    return [...pendingQueue, ...refreshed].slice(0, limit);
+  }
+
+  const refreshedOffset = Math.max(0, Math.floor(Number(cursor) || 0)) % refreshed.length;
+  return [...refreshed.slice(refreshedOffset), ...refreshed.slice(0, refreshedOffset)].slice(0, limit);
 }
 
 function inferSectorFromSicDescription(sicDescription, fallbackSector = "Unknown") {
@@ -577,7 +607,11 @@ export function createSecFundamentalsCollector(app) {
         last_error: null,
         polls: 0,
         tracked_companies: 0,
-        live_companies: 0
+        live_companies: 0,
+        refresh_limit: null,
+        refresh_batch_size: 0,
+        refresh_cursor: 0,
+        pending_bootstrap_companies: 0
       };
     }
     return store.health.liveSources.sec_fundamentals;
@@ -599,16 +633,26 @@ export function createSecFundamentalsCollector(app) {
     try {
       const trackedCompanies = app.getTrackedFundamentalCompanies ? app.getTrackedFundamentalCompanies() : [];
       health.tracked_companies = trackedCompanies.length;
+      result.trackedCompanies = trackedCompanies.length;
       if (!trackedCompanies.length) {
         health.last_error = null;
         return result;
       }
 
+      const refreshBatch = selectSecFundamentalsRefreshBatch(trackedCompanies, config, health.refresh_cursor);
+      const refreshLimit = maxCompaniesPerPoll(config, trackedCompanies.length);
+      health.refresh_limit = refreshLimit;
+      health.refresh_batch_size = refreshBatch.length;
+      health.pending_bootstrap_companies = trackedCompanies.filter((company) => company.data_source !== "live_sec_filing").length;
+      result.refreshLimit = refreshLimit;
+      result.refreshBatchSize = refreshBatch.length;
+      result.pendingBootstrapCompanies = health.pending_bootstrap_companies;
+
       const tickerMap = await loadTickerCikMap(config, store);
       const persistenceArtifactsByTicker = new Map();
-      let liveCompanyCount = 0;
+      let refreshedLiveCompanyCount = 0;
 
-      const processed = await mapWithConcurrency(trackedCompanies, config.fundamentalSecConcurrency || 4, async (company) => {
+      const processed = await mapWithConcurrency(refreshBatch, config.fundamentalSecConcurrency || 4, async (company) => {
         const cik = company.cik ? cikToPaddedString(company.cik) : tickerMap.get(company.ticker);
         if (!cik) {
           return {
@@ -669,14 +713,15 @@ export function createSecFundamentalsCollector(app) {
         }
       });
 
-      const nextCompanies = processed.map((entry) => entry.company);
+      const processedByTicker = new Map(processed.map((entry) => [entry.company.ticker, entry]));
+      const nextCompanies = trackedCompanies.map((company) => processedByTicker.get(company.ticker)?.company || company);
       for (const entry of processed) {
         if (entry.error) {
           result.errors += 1;
           health.last_error = typeof entry.error === "string" ? entry.error : health.last_error;
         }
         if (entry.live) {
-          liveCompanyCount += 1;
+          refreshedLiveCompanyCount += 1;
           if (entry.artifact) {
             persistenceArtifactsByTicker.set(entry.company.ticker, entry.artifact);
           }
@@ -687,11 +732,19 @@ export function createSecFundamentalsCollector(app) {
         await app.replaceFundamentalCompanies(nextCompanies, { persistenceArtifactsByTicker });
       }
 
-      result.ingested = liveCompanyCount;
-      result.liveCompanies = liveCompanyCount;
-      health.live_companies = liveCompanyCount;
+      const totalLiveCompanyCount = nextCompanies.filter((company) => company.data_source === "live_sec_filing").length;
+      const pendingBootstrapCompanies = nextCompanies.filter((company) => company.data_source !== "live_sec_filing").length;
+      result.ingested = refreshedLiveCompanyCount;
+      result.liveCompanies = totalLiveCompanyCount;
+      result.pendingBootstrapCompanies = pendingBootstrapCompanies;
+      health.live_companies = totalLiveCompanyCount;
+      health.pending_bootstrap_companies = pendingBootstrapCompanies;
+      health.refresh_cursor =
+        pendingBootstrapCompanies === 0 || refreshedLiveCompanyCount > 0
+          ? 0
+          : (Number(health.refresh_cursor || 0) + refreshBatch.length) % pendingBootstrapCompanies;
       health.last_success_at = new Date().toISOString();
-      if (liveCompanyCount || !result.errors) {
+      if (refreshedLiveCompanyCount || !result.errors) {
         health.last_error = null;
       }
       return result;
