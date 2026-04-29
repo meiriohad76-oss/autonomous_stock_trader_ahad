@@ -65,6 +65,10 @@ assert(
 const watchlist = app.getWatchlistSnapshot("1h");
 assert(watchlist.screener_overview?.full_universe?.tracked === 168, "Full fundamentals universe should remain at 168.");
 assert(
+  new Set((watchlist.sectors || []).map((sector) => sector.entity_key)).size === (watchlist.sectors || []).length,
+  "Sector sentiment rows should be de-duplicated by sector."
+);
+assert(
   watchlist.screener_overview?.all_universe?.tracked >= watchlist.screener_overview.full_universe.tracked,
   "Sentiment watchlist should expose the full universe plus any sentiment-only rows."
 );
@@ -124,6 +128,7 @@ console.log(
       full_universe_tracked: watchlist.screener_overview.full_universe.tracked,
       all_universe_rows: watchlist.screener_overview.all_universe.tracked,
       eligible_filter_rows: eligibleWatchlist.screener_overview.visible_universe.tracked,
+      sector_count: watchlist.sectors.length,
       blocked_disabled_source: Boolean(disabledError)
     },
     null,

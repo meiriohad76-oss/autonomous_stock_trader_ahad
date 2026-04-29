@@ -65,18 +65,24 @@ function uniqueList(items, limit = 5) {
   return [...new Set(items.filter(Boolean))].slice(0, limit);
 }
 
-export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 24 } = {}) {
-  const marketPulse =
-    store.sentimentStates.find(
-      (state) => state.entity_type === "market" && state.entity_key === "market" && state.window === window
-    ) || null;
+function latestStatesForWindow(store, entityType, window) {
+  const byKey = new Map();
+  for (const state of store.sentimentStates) {
+    if (state.entity_type !== entityType || state.window !== window) {
+      continue;
+    }
+    const previous = byKey.get(state.entity_key);
+    if (!previous || new Date(state.as_of || 0) >= new Date(previous.as_of || 0)) {
+      byKey.set(state.entity_key, state);
+    }
+  }
+  return [...byKey.values()];
+}
 
-  const sectorStates = store.sentimentStates.filter(
-    (state) => state.entity_type === "sector" && state.window === window
-  );
-  const tickerStates = store.sentimentStates.filter(
-    (state) => state.entity_type === "ticker" && state.window === window
-  );
+export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 24 } = {}) {
+  const marketPulse = latestStatesForWindow(store, "market", window).find((state) => state.entity_key === "market") || null;
+  const sectorStates = latestStatesForWindow(store, "sector", window);
+  const tickerStates = latestStatesForWindow(store, "ticker", window);
   const fundamentals = store.fundamentals?.leaderboard || [];
   const screener = store.fundamentals?.screener || null;
   const recentRows = buildRecentScores(store, recentHours);

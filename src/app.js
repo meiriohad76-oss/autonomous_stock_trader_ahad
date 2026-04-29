@@ -413,6 +413,19 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
   const fullFundamentalRows = store.fundamentals?.leaderboard || [];
   const fundamentalsByTicker = new Map(fullFundamentalRows.map((row) => [row.ticker, row]));
   const dedupedStates = new Map();
+  const dedupedSectorStates = new Map();
+  let latestMarketState = null;
+
+  function isAtLeastAsFresh(current, previous) {
+    return new Date(current?.as_of || 0).getTime() >= new Date(previous?.as_of || 0).getTime();
+  }
+
+  function rememberLatest(map, key, state) {
+    const previous = map.get(key);
+    if (!previous || isAtLeastAsFresh(state, previous)) {
+      map.set(key, state);
+    }
+  }
 
   function resolveTickerMetadata(ticker, fundamentalsRow, sentimentState) {
     const watchlistEntry = TICKER_LOOKUP.get(ticker);
@@ -424,14 +437,17 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
   }
 
   for (const state of store.sentimentStates) {
-    if (state.entity_type !== "ticker" || state.window !== windowKey) {
+    if (state.window !== windowKey) {
       continue;
     }
-    const previous = dedupedStates.get(state.entity_key);
-    const currentAsOf = new Date(state.as_of || 0).getTime();
-    const previousAsOf = new Date(previous?.as_of || 0).getTime();
-    if (!previous || currentAsOf >= previousAsOf) {
-      dedupedStates.set(state.entity_key, state);
+    if (state.entity_type === "ticker") {
+      rememberLatest(dedupedStates, state.entity_key, state);
+    } else if (state.entity_type === "sector") {
+      rememberLatest(dedupedSectorStates, state.entity_key, state);
+    } else if (state.entity_type === "market" && state.entity_key === "market") {
+      if (!latestMarketState || isAtLeastAsFresh(state, latestMarketState)) {
+        latestMarketState = state;
+      }
     }
   }
 
@@ -527,18 +543,13 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
   const sentimentVisibleScreening = summarizeScreenStages(allUniverseRows.filter((row) => row.sentiment_visible));
   const filteredSentimentVisibleScreening = summarizeScreenStages(states.filter((row) => row.sentiment_visible));
 
-  const sectors = store.sentimentStates
-    .filter((state) => state.entity_type === "sector" && state.window === windowKey)
+  const sectors = [...dedupedSectorStates.values()]
     .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
-
-  const market = store.sentimentStates.find(
-    (state) => state.entity_type === "market" && state.entity_key === "market" && state.window === windowKey
-  );
 
     return {
       as_of: store.health.lastUpdate,
       window: windowKey,
-    market_pulse: market || {
+    market_pulse: latestMarketState || {
       weighted_sentiment: 0,
       weighted_confidence: 0,
       story_velocity: 0,
@@ -1067,9 +1078,9 @@ export function createSentimentApp() {
     },
     getSectorDetail(sector) {
       const windows = ["15m", "1h", "4h", "1d", "7d"].reduce((acc, windowKey) => {
-        const state = store.sentimentStates.find(
-          (item) => item.entity_type === "sector" && item.entity_key === sector && item.window === windowKey
-        );
+        const state = store.sentimentStates
+          .filter((item) => item.entity_type === "sector" && item.entity_key === sector && item.window === windowKey)
+          .sort((a, b) => new Date(b.as_of || 0) - new Date(a.as_of || 0))[0];
         acc[windowKey] = state || null;
         return acc;
       }, {});

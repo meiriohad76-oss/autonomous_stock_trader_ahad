@@ -1289,32 +1289,30 @@ function renderMarketsView() {
         </div>
       `;
 
+  function activeConvictionScore(row) {
+    return (
+      Math.abs(Number(row.momentum_delta || 0)) * 3 +
+      Math.abs(Number(row.weighted_sentiment || 0)) * 2 +
+      Number(row.weighted_confidence || 0) +
+      Math.min(1.5, Number(row.story_velocity || 0) * 0.25)
+    );
+  }
+
   const comparisonRows = rows
     .slice()
-    .sort((a, b) => {
-      const scoreA =
-        Math.abs(Number(a.momentum_delta || 0)) * 3 +
-        Math.abs(Number(a.weighted_sentiment || 0)) * 2 +
-        Number(a.weighted_confidence || 0) +
-        Math.min(1.5, Number(a.story_velocity || 0) * 0.25);
-      const scoreB =
-        Math.abs(Number(b.momentum_delta || 0)) * 3 +
-        Math.abs(Number(b.weighted_sentiment || 0)) * 2 +
-        Number(b.weighted_confidence || 0) +
-        Math.min(1.5, Number(b.story_velocity || 0) * 0.25);
-      return scoreB - scoreA;
-    })
+    .map((row) => ({ row, activeScore: activeConvictionScore(row) }))
+    .sort((a, b) => b.activeScore - a.activeScore)
     .slice(0, 4);
 
   elements.marketsComparisonStrip.innerHTML = comparisonRows.length
     ? comparisonRows
         .map(
-          (row) => `
+          ({ row, activeScore }) => `
             <button type="button" class="workspace-card comparison-card ${state.selectedTicker === row.entity_key ? "selected" : ""}" data-compare-ticker="${row.entity_key}">
               <span>${row.entity_key}</span>
-              <strong>${formatNumber(row.weighted_sentiment)}</strong>
-              <small>${formatSignedPercent(row.momentum_delta)} momentum - ${formatNumber(row.weighted_confidence * 100, 0)}% conf</small>
-              <div class="mini-bar-track"><div class="mini-bar-fill ${sentimentClass(row.sentiment_regime)}" style="width:${Math.max(10, Math.round(row.weighted_confidence * 100))}%"></div></div>
+              <strong>${formatNumber(activeScore)}</strong>
+              <small>active conviction - ${formatSignedPercent(row.momentum_delta)} momentum - ${formatNumber(row.weighted_confidence * 100, 0)}% conf</small>
+              <div class="mini-bar-track"><div class="mini-bar-fill ${sentimentClass(row.sentiment_regime)}" style="width:${Math.max(10, Math.round(Math.min(1, activeScore) * 100))}%"></div></div>
             </button>
           `
         )
