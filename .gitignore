@@ -6,4 +6,9 @@ coverage/
 data/runtime/
 data/_backup-*.sqlite
 data/sentiment-analyst-*.sqlite.gz
+data/sentiment-analyst.sqlite
+data/sentiment-analyst.sqlite-shm
+data/sentiment-analyst.sqlite-wal
 logs/
+.claude/
+.vscode/
