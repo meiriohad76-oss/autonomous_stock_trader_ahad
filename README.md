@@ -25,6 +25,8 @@ node scripts/sqlite-backup.js
 node src/server.js
 ```
 
+`node scripts/check.js` defaults to `DATABASE_ENABLED=false` so local contract checks do not depend on a healthy SQLite file.
+
 Then open `http://127.0.0.1:3000`.
 
 For the new fundamentals view, open `http://127.0.0.1:3000/fundamentals.html`.
@@ -191,6 +193,12 @@ The compact summary is also embedded in `/api/health` as `runtime_reliability`.
 The action endpoint supports guarded one-shot operations such as `poll_once` for a single source, `refresh_universe`, and `backup_now`. It does not enable permanent background polling or rewrite `.env`.
 
 It also exposes runtime profile previews for `emergency`, `live_news_only`, `pi_light`, and `full_live`. Profile application requires an explicit `apply=true` payload and a service restart afterward.
+
+Contract check:
+
+```bash
+npm run check:runtime-reliability
+```
 
 Terminal helper:
 

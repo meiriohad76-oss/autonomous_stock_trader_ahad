@@ -122,6 +122,16 @@ sudo systemctl restart sentiment-analyst.service
 
 The CLI creates an `.env` backup under `data/env-backups/` before writing.
 
+## Contract check
+
+The runtime reliability contract check verifies the offline Pi-safe path:
+
+```bash
+npm run check:runtime-reliability
+```
+
+It confirms source coverage, profile availability, guarded action behavior, health embedding, and the 168-stock fundamentals universe.
+
 ## Current limits
 
 The agent still does not automatically rewrite `.env`, restart collectors, or pause collectors. That is intentional: the Pi should not be surprised by hidden automation.

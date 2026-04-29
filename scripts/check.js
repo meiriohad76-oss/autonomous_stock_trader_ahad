@@ -1,17 +1,20 @@
+process.env.DATABASE_ENABLED = process.env.DATABASE_ENABLED || "false";
+
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { createSentimentApp } from "../src/app.js";
-import { config } from "../src/config.js";
-import {
+
+const { createSentimentApp } = await import("../src/app.js");
+const { config } = await import("../src/config.js");
+const {
   getFundamentalPersistenceFactSeries,
   getFundamentalPersistenceFilings,
   materializeFundamentalPersistence
-} from "../src/domain/fundamental-persistence.js";
-import { createLiveNewsCollector, parseGoogleNewsRss } from "../src/domain/live-news.js";
-import { detectMarketFlowSignal } from "../src/domain/market-flow.js";
-import { computeLiveMetricsFromCompanyFacts } from "../src/domain/sec-fundamentals.js";
-import { parseInfoTable } from "../src/domain/sec-institutional.js";
-import { parseOwnershipXml } from "../src/domain/sec-insider.js";
+} = await import("../src/domain/fundamental-persistence.js");
+const { createLiveNewsCollector, parseGoogleNewsRss } = await import("../src/domain/live-news.js");
+const { detectMarketFlowSignal } = await import("../src/domain/market-flow.js");
+const { computeLiveMetricsFromCompanyFacts } = await import("../src/domain/sec-fundamentals.js");
+const { parseInfoTable } = await import("../src/domain/sec-institutional.js");
+const { parseOwnershipXml } = await import("../src/domain/sec-insider.js");
 
 const filesToParse = [
   path.join(config.rootDir, "schemas", "raw-document.schema.json"),
