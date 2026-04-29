@@ -1143,6 +1143,110 @@ input:focus-visible {
   margin-top: 12px;
 }
 
+.runtime-console h3 {
+  margin: 6px 0 6px;
+  font-size: 1.1rem;
+  letter-spacing: -0.03em;
+}
+
+.runtime-control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.runtime-control-card {
+  display: grid;
+  gap: 12px;
+  min-height: 210px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--surface-border);
+}
+
+.runtime-control-card.primary {
+  background:
+    radial-gradient(circle at 18% 10%, rgba(0, 122, 255, 0.16), transparent 34%),
+    rgba(255, 255, 255, 0.045);
+  border-color: rgba(0, 122, 255, 0.26);
+}
+
+.runtime-control-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.runtime-control-head strong {
+  display: block;
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.runtime-control-head span,
+.runtime-source-card small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.runtime-control-head b {
+  font-size: 1.35rem;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+.runtime-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.runtime-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+}
+
+.runtime-source-card {
+  border-left: 3px solid rgba(173, 198, 255, 0.42);
+}
+
+.runtime-source-card.bearish {
+  border-left-color: rgba(255, 84, 75, 0.55);
+}
+
+.runtime-source-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-source-head strong {
+  margin-top: 0;
+}
+
+.runtime-source-head .sentiment-badge {
+  flex: 0 0 auto;
+}
+
+.runtime-action-result {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: var(--green);
+  background: rgba(19, 255, 67, 0.09);
+  border: 1px solid rgba(19, 255, 67, 0.18);
+  font-weight: 800;
+}
+
 .runtime-profile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1153,6 +1257,18 @@ input:focus-visible {
 .runtime-action-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.runtime-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.runtime-action-button .material-symbols-outlined {
+  margin-right: 6px;
+  font-size: 17px;
+  line-height: 1;
 }
 
 .sector-focus-shell {

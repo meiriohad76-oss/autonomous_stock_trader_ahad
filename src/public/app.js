@@ -54,6 +54,7 @@ const state = {
   marketFlowSettings: {},
   marketFlowSaveState: "",
   runtimeActionState: "",
+  runtimeActionResult: null,
   selectedSignal: null,
   selectedSector: null
 };
@@ -265,6 +266,94 @@ function evidenceQualityLabel(value) {
     return "quality n/a";
   }
   return prettyLabel(value.data_quality_label || value.display_tier || "quality n/a");
+}
+
+function getRuntimeAction(action, source = null) {
+  return (state.runtimeReliability?.available_actions || []).find(
+    (item) => item.action === action && (source === null || item.source === source)
+  );
+}
+
+function sourceStatusClass(status) {
+  if (["healthy", "fallback", "manual", "pending", "polling"].includes(status)) {
+    return "neutral";
+  }
+  if (["degraded", "error", "stale"].includes(status)) {
+    return "bearish";
+  }
+  return "neutral";
+}
+
+function sourceStatusMeaning(status) {
+  const meanings = {
+    healthy: "Fresh enough to trust for normal decisions.",
+    fallback: "Using fallback or synthetic data; useful for continuity, not live confirmation.",
+    manual: "Enabled, but intentionally not running in the background. Use one-shot actions when needed.",
+    pending: "Enabled and waiting for its first successful refresh.",
+    polling: "Currently running a refresh.",
+    stale: "Usable data exists, but it is older than the freshness target.",
+    degraded: "Usable data exists, but recent errors lower confidence.",
+    error: "No usable successful refresh yet.",
+    disabled: "Off by configuration."
+  };
+  return meanings[status] || "Status unavailable.";
+}
+
+function runtimeActionSummary(action, result = {}) {
+  if (action === "poll_once" && result.refreshBatchSize !== undefined) {
+    return `SEC batch refreshed ${result.ingested || 0}/${result.refreshBatchSize} names. ${result.liveCompanies || 0} live SEC-backed, ${result.pendingBootstrapCompanies || 0} still bootstrap.`;
+  }
+  if (action === "poll_once" && result.ingested_documents !== undefined) {
+    return `Poll completed with ${result.ingested_documents} ingested document${result.ingested_documents === 1 ? "" : "s"}.`;
+  }
+  if (action === "poll_once" && result.refreshed_companies !== undefined) {
+    return `Fundamental market reference refreshed for ${result.refreshed_companies} companies.`;
+  }
+  if (action === "refresh_universe") {
+    return `Universe refreshed: ${result?.counts?.combined || 0} tracked companies.`;
+  }
+  if (action === "save_lightweight_state") {
+    return `Lightweight state saved to ${result.status?.last_backup_path || "runtime-state.json"}.`;
+  }
+  if (action === "backup_now") {
+    return `SQLite backup completed: ${result.last_backup_path || "backup file"}.`;
+  }
+  return `${prettyLabel(action)} completed.`;
+}
+
+function runtimeActionButton(action, source, label, icon = "play_arrow") {
+  const runtimeAction = getRuntimeAction(action, source);
+  const disabled = !runtimeAction?.enabled || state.runtimeActionState === "running";
+  return `
+    <button
+      type="button"
+      class="panel-action runtime-action-button"
+      data-runtime-action="${action}"
+      data-runtime-source="${source || ""}"
+      ${disabled ? "disabled" : ""}
+      title="${runtimeAction?.disabled_reason || runtimeAction?.description || ""}"
+    >
+      <span class="material-symbols-outlined">${icon}</span>
+      ${label}
+    </button>
+  `;
+}
+
+function runtimeActionCard({ title, body, metric, submetric, action, source, label, icon = "play_arrow", progress = null, emphasis = false }) {
+  return `
+    <div class="runtime-control-card${emphasis ? " primary" : ""}">
+      <div class="runtime-control-head">
+        <div>
+          <strong>${title}</strong>
+          <span>${body}</span>
+        </div>
+        ${metric ? `<b>${metric}</b>` : ""}
+      </div>
+      ${progress !== null ? `<div class="runtime-progress"><span style="width: ${Math.min(100, Math.max(0, progress))}%"></span></div>` : ""}
+      ${submetric ? `<p class="workspace-copy">${submetric}</p>` : ""}
+      ${runtimeActionButton(action, source, label, icon)}
+    </div>
+  `;
 }
 
 function screenBadgeClass(row) {
@@ -1853,22 +1942,44 @@ function renderSystemView() {
   const runtimeActions = runtimeReliability?.available_actions || [];
   const runtimeProfiles = runtimeReliability?.runtime_profiles || {};
   const recommendedProfile = runtimeProfiles.profiles?.find((profile) => profile.key === runtimeProfiles.recommended) || null;
+  const screenerOverview = state.snapshot?.screener_overview || {};
+  const fullUniverse = screenerOverview.full_universe || {};
+  const allUniverse = screenerOverview.all_universe || fullUniverse || {};
+  const totalUniverse = allUniverse.tracked || fullUniverse.tracked || state.health?.fundamental_companies_scored || 0;
   const liveNews = state.health?.live_sources?.google_news_rss || null;
   const marketData = state.health?.live_sources?.market_data || null;
   const marketFlow = state.health?.live_sources?.market_flow || null;
+  const secFundamentals = state.health?.live_sources?.sec_fundamentals || null;
   const secForm4 = state.health?.live_sources?.sec_form4 || null;
   const sec13f = state.health?.live_sources?.sec_13f || null;
+  const lightweightState = state.health?.live_sources?.lightweight_state || null;
   const evidenceQuality = state.health?.evidence_quality || null;
   const backup = state.health?.database_backup || state.config?.database_backup || null;
+  const secLiveCount = secFundamentals?.live_companies ?? screenerOverview.fundamental_sec_live ?? 0;
+  const pendingBootstrap = secFundamentals?.pending_bootstrap_companies ?? screenerOverview.bootstrap ?? 0;
+  const secProgress = totalUniverse ? Math.round((secLiveCount / totalUniverse) * 100) : 0;
+  const persistenceMode = state.config?.database_enabled
+    ? `${state.config.database_provider || "database"} persistent`
+    : state.config?.lightweight_state_enabled
+      ? "Lightweight JSON"
+      : "Disabled";
+  const persistenceNote = state.config?.database_enabled
+    ? "Database persistence is active. Runtime data survives restart through the configured database backend."
+    : state.config?.lightweight_state_enabled
+      ? "Lightweight JSON state is active. It preserves the compact dashboard state without heavy SQLite writes."
+      : "Persistence is disabled. Runtime data will reset on service restart.";
+
   elements.systemOverview.innerHTML = `
     <div class="workspace-stat-card"><span>Status</span><strong>${elements.healthStatus.textContent}</strong></div>
     <div class="workspace-stat-card"><span>Queue Depth</span><strong>${elements.healthQueue.textContent}</strong></div>
     <div class="workspace-stat-card"><span>Latency</span><strong>${elements.healthLatency.textContent}</strong></div>
     <div class="workspace-stat-card"><span>Market Regime</span><strong>${pulse.sentiment_regime || "neutral"}</strong></div>
-    <div class="workspace-stat-card"><span>Database</span><strong>${state.config?.database_provider || "sqlite"}</strong></div>
-    <div class="workspace-stat-card"><span>DB Target</span><strong>${state.config?.database_target || "local file"}</strong></div>
-    <div class="workspace-stat-card"><span>Backups</span><strong>${backup?.enabled ? "Enabled" : backup?.supported ? "Disabled" : "n/a"}</strong></div>
-    <div class="workspace-stat-card"><span>Last Backup</span><strong>${backup?.last_backup_at ? relativeTime(backup.last_backup_at) : "n/a"}</strong></div>
+    <div class="workspace-stat-card"><span>Persistence</span><strong>${persistenceMode}</strong></div>
+    <div class="workspace-stat-card"><span>State Target</span><strong>${backup?.last_backup_path || state.config?.lightweight_state_path || state.config?.database_target || "n/a"}</strong></div>
+    <div class="workspace-stat-card"><span>Last State Save</span><strong>${backup?.last_backup_at ? relativeTime(backup.last_backup_at) : "n/a"}</strong></div>
+    <div class="workspace-stat-card"><span>SEC Live Coverage</span><strong>${secLiveCount}/${totalUniverse || 0}</strong></div>
+    <div class="workspace-stat-card"><span>SEC Progress</span><strong>${secProgress}%</strong></div>
+    <div class="workspace-stat-card"><span>Bootstrap Pending</span><strong>${pendingBootstrap}</strong></div>
     <div class="workspace-stat-card"><span>Evidence Items</span><strong>${evidenceQuality?.total_evidence_items || 0}</strong></div>
     <div class="workspace-stat-card"><span>Avg Evidence Weight</span><strong>${evidenceQuality ? formatNumber(evidenceQuality.average_downstream_weight, 2) : "n/a"}</strong></div>
     <div class="workspace-stat-card"><span>Runtime Reliability</span><strong>${prettyLabel(runtimeReliability?.status || "unknown")}</strong></div>
@@ -1882,12 +1993,15 @@ function renderSystemView() {
     ? reliabilitySources
         .map(
           (source) => `
-            <div class="source-card">
-              <strong>${source.label}</strong>
-              <span>Status ${prettyLabel(source.status)}</span>
-              <span>Action ${prettyLabel(source.action)}</span>
+            <div class="source-card runtime-source-card ${sourceStatusClass(source.status)}">
+              <div class="runtime-source-head">
+                <strong>${source.label}</strong>
+                <span class="sentiment-badge ${sourceStatusClass(source.status)}">${prettyLabel(source.status)}</span>
+              </div>
+              <span>${sourceStatusMeaning(source.status)}</span>
               <span>${source.reason}</span>
-              <span>Last success ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}</span>
+              <span>${source.notes}</span>
+              <small>Action: ${prettyLabel(source.action)} · Last success: ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}</small>
             </div>
           `
         )
@@ -1908,15 +2022,67 @@ function renderSystemView() {
       : `<div class="workspace-empty">No source telemetry available.</div>`;
 
   elements.systemNotes.innerHTML = `
+    <div class="runtime-action-panel runtime-console">
+      <div class="section-kicker">Runtime Control Console</div>
+      <h3>Safe one-shot operations</h3>
+      <p class="workspace-copy">Use this panel to advance live coverage without turning on heavy background loops. On the Pi, this is the control room: one batch, observe pressure, save state.</p>
+      <div class="runtime-control-grid">
+        ${runtimeActionCard({
+          title: "SEC fundamentals batch",
+          body: "Refresh the next slice of companies from SEC submissions and Company Facts.",
+          metric: `${secLiveCount}/${totalUniverse || 0}`,
+          submetric: `${pendingBootstrap} names still bootstrap. Current batch size: ${secFundamentals?.refresh_batch_size || state.config?.fundamental_sec_max_companies_per_poll || 8}.`,
+          action: "poll_once",
+          source: "sec_fundamentals",
+          label: "Poll SEC Batch",
+          icon: "request_quote",
+          progress: secProgress,
+          emphasis: true
+        })}
+        ${runtimeActionCard({
+          title: "Save lightweight state",
+          body: "Write the compact JSON snapshot so current runtime data survives restart.",
+          metric: backup?.last_backup_at ? relativeTime(backup.last_backup_at) : "Not saved",
+          submetric: lightweightState?.last_success_at ? `Runtime source saved ${relativeTime(lightweightState.last_success_at)}.` : "Best after every manual SEC batch while SQLite is off.",
+          action: "save_lightweight_state",
+          source: "lightweight_state",
+          label: "Save State",
+          icon: "save"
+        })}
+        ${runtimeActionCard({
+          title: "Market flow scan",
+          body: "Run one abnormal volume and flow pass without starting the timer.",
+          metric: marketFlow?.last_success_at ? relativeTime(marketFlow.last_success_at) : "Manual",
+          submetric: "Use after market-data freshness is acceptable.",
+          action: "poll_once",
+          source: "market_flow",
+          label: "Scan Flow",
+          icon: "monitoring"
+        })}
+        ${runtimeActionCard({
+          title: "SEC 13F scan",
+          body: "Slow institutional-flow check. Useful for context, not intraday urgency.",
+          metric: sec13f?.last_success_at ? relativeTime(sec13f.last_success_at) : "Manual",
+          submetric: "Keep occasional on the Pi; this is deliberately not autostarted.",
+          action: "poll_once",
+          source: "sec_13f",
+          label: "Poll 13F",
+          icon: "account_balance"
+        })}
+      </div>
+      ${
+        state.runtimeActionState
+          ? `<div class="runtime-action-result">${state.runtimeActionState === "running" ? "Running selected runtime action..." : state.runtimeActionState}</div>`
+          : ""
+      }
+    </div>
     <div class="workspace-detail-grid">
       <div class="workspace-stat-card"><span>Runtime</span><strong>Local MVP</strong></div>
       <div class="workspace-stat-card"><span>Streaming</span><strong>SSE</strong></div>
-      <div class="workspace-stat-card"><span>Database</span><strong>${state.config?.database_provider || "sqlite"}</strong></div>
-      <div class="workspace-stat-card"><span>DB Mode</span><strong>${state.config?.database_enabled ? "Persistent" : "Disabled"}</strong></div>
-      <div class="workspace-stat-card"><span>Backup Dir</span><strong>${backup?.backup_dir || "n/a"}</strong></div>
-      <div class="workspace-stat-card"><span>Backup Count</span><strong>${backup?.backup_count ?? 0}</strong></div>
-      <div class="workspace-stat-card"><span>Backup Interval</span><strong>${backup?.interval_ms ? `${Math.round(backup.interval_ms / 3600000)}h` : "n/a"}</strong></div>
-      <div class="workspace-stat-card"><span>Retention</span><strong>${backup?.retention_count ? `${backup.retention_count} files / ${backup.retention_days}d` : "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>Persistence</span><strong>${persistenceMode}</strong></div>
+      <div class="workspace-stat-card"><span>State Path</span><strong>${backup?.last_backup_path || state.config?.lightweight_state_path || "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>Snapshot Count</span><strong>${backup?.backup_count ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>State Size</span><strong>${backup?.last_backup_size_bytes ? `${formatNumber(backup.last_backup_size_bytes / 1024, 0)} KB` : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Price Adapter</span><strong>${state.config?.market_data_provider || "synthetic"}</strong></div>
       <div class="workspace-stat-card"><span>Scorer</span><strong>Hybrid Mock</strong></div>
       <div class="workspace-stat-card"><span>Live News</span><strong>${state.config?.live_news_enabled ? "Enabled" : "Disabled"}</strong></div>
@@ -1929,6 +2095,8 @@ function renderSystemView() {
       <div class="workspace-stat-card"><span>Insider Poll</span><strong>${secForm4?.last_success_at ? formatTime(secForm4.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>SEC 13F</span><strong>${state.config?.sec_13f_enabled ? "Enabled" : "Disabled"}</strong></div>
       <div class="workspace-stat-card"><span>Institutional Poll</span><strong>${sec13f?.last_success_at ? formatTime(sec13f.last_success_at) : "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>SEC Fundamentals</span><strong>${state.config?.fundamental_sec_enabled ? "Enabled" : "Disabled"}</strong></div>
+      <div class="workspace-stat-card"><span>SEC Batch</span><strong>${secFundamentals?.refresh_batch_size || state.config?.fundamental_sec_max_companies_per_poll || 0}</strong></div>
       <div class="workspace-stat-card"><span>Safe Autostart</span><strong>${collectorPlan.safe_to_autostart?.length ?? 0}</strong></div>
       <div class="workspace-stat-card"><span>Keep Manual</span><strong>${collectorPlan.keep_manual?.length ?? 0}</strong></div>
       <div class="workspace-stat-card"><span>Investigate</span><strong>${collectorPlan.investigate?.length ?? 0}</strong></div>
@@ -1943,7 +2111,7 @@ function renderSystemView() {
     }
     <div class="runtime-action-panel">
       <div class="section-kicker">Runtime Actions</div>
-      <p class="workspace-copy">One-shot operations only. These do not enable permanent background polling.</p>
+      <p class="workspace-copy">Complete action list. These are still one-shot operations; they do not enable permanent background polling.</p>
       <div class="runtime-action-grid">
         ${runtimeActions
           .map(
@@ -1956,6 +2124,7 @@ function renderSystemView() {
                 ${!item.enabled || state.runtimeActionState === "running" ? "disabled" : ""}
                 title="${item.disabled_reason || item.description}"
               >
+                <span class="material-symbols-outlined">${item.safe ? "bolt" : "warning"}</span>
                 ${item.label}
               </button>
             `
@@ -1997,7 +2166,7 @@ function renderSystemView() {
       <li>Money-flow sources: inferred tape anomalies from live market bars, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>
       <li>The sentiment watchlist is sentiment-first. Fundamentals enrich those rows, but the full fundamentals universe lives in the Fundamentals dashboard and the Trade Setup Agent.</li>
       <li>The Trade Setup Agent is the true combined decision layer: it blends sentiment, fundamentals, macro regime, recent documents, and alerts.</li>
-      <li>SQLite persistence is active for this deployment, and scheduled backups protect the Pi from accidental bad writes or local corruption.</li>
+      <li>${persistenceNote}</li>
       ${backup?.last_error ? `<li>Latest backup warning: ${backup.last_error}</li>` : ""}
     </ul>
   `;
@@ -2092,6 +2261,7 @@ function setActiveView(view) {
 
 async function runRuntimeAction(action, source) {
   state.runtimeActionState = "running";
+  state.runtimeActionResult = null;
   renderSystemView();
 
   try {
@@ -2107,9 +2277,11 @@ async function runRuntimeAction(action, source) {
 
     state.runtimeReliability = payload.runtime_reliability || state.runtimeReliability;
     state.health = payload.health || state.health;
-    state.runtimeActionState = `${prettyLabel(action)} completed${source ? ` for ${prettyLabel(source)}` : ""}.`;
+    state.runtimeActionResult = payload.result || null;
+    state.runtimeActionState = runtimeActionSummary(action, payload.result || {});
     await loadSnapshot();
   } catch (error) {
+    state.runtimeActionResult = null;
     state.runtimeActionState = error.message;
     renderSystemView();
   }
@@ -2117,6 +2289,7 @@ async function runRuntimeAction(action, source) {
 
 async function runRuntimeProfilePreview(profile) {
   state.runtimeActionState = "running";
+  state.runtimeActionResult = null;
   renderSystemView();
 
   try {

@@ -501,6 +501,14 @@ function buildAvailableActions(sources, config) {
       description: "Refresh valuation/reference fields once using the configured provider."
     },
     {
+      action: "save_lightweight_state",
+      label: "Save Lightweight State",
+      source: "lightweight_state",
+      safe: true,
+      enabled: Boolean(config.lightweightStateEnabled && !config.databaseEnabled),
+      description: "Persist the current compact JSON runtime snapshot now."
+    },
+    {
       action: "backup_now",
       label: "Backup SQLite Now",
       source: "database_backup",

@@ -23,7 +23,7 @@ Collectors and persistence
 -> Runtime Reliability Agent
 -> /api/runtime-reliability
 -> /api/health.runtime_reliability
--> dashboard/system panels
+-> dashboard/system panels and runtime control console
 -> deploy scripts and future orchestrator controls
 ```
 
@@ -88,6 +88,7 @@ Supported payloads:
 ```json
 { "action": "snapshot" }
 { "action": "refresh_universe" }
+{ "action": "save_lightweight_state" }
 { "action": "backup_now" }
 { "action": "apply_profile", "profile": "emergency", "apply": false }
 { "action": "apply_profile", "profile": "live_news_only", "apply": true }
@@ -100,6 +101,25 @@ Supported payloads:
 ```
 
 Disabled sources are blocked by default and return a clear error. Enable the relevant `.env` flag before running that source.
+
+## System tab control console
+
+The dashboard System tab is the operator surface for the agent. It separates passive telemetry from actions:
+
+- SEC fundamentals batch: advances the live SEC coverage by the configured batch size.
+- Save lightweight state: writes the compact JSON runtime snapshot immediately.
+- Market flow scan: runs one flow pass without enabling background polling.
+- SEC 13F scan: runs one slower institutional-flow pass.
+
+The expected Pi workflow is:
+
+1. Keep `pi_light` active.
+2. Run one SEC fundamentals batch.
+3. Watch runtime pressure and live SEC coverage.
+4. Save lightweight state.
+5. Repeat later until bootstrap names are replaced by SEC-backed fundamentals.
+
+This gives the system forward progress without returning to the heavy SQLite backup loop that overloaded the Pi.
 
 ## SEC fundamentals batching
 

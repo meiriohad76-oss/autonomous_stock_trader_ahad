@@ -910,6 +910,7 @@ export function createSentimentApp() {
         sec_form4: !config.secForm4Enabled,
         sec_13f: !config.sec13fEnabled,
         sec_fundamentals: !config.fundamentalSecEnabled,
+        lightweight_state: config.databaseEnabled || !config.lightweightStateEnabled,
         database_backup: !config.databaseEnabled || config.databaseProvider !== "sqlite" || !config.sqliteBackupEnabled
       };
 
@@ -949,6 +950,14 @@ export function createSentimentApp() {
         };
       } else if (action === "refresh_universe") {
         result = await ensureFundamentalCoverage({ force: true });
+      } else if (action === "save_lightweight_state") {
+        assertSourceEnabled("lightweight_state");
+        await persistence.saveStoreSnapshot(store);
+        await refreshBackupStatus();
+        result = {
+          saved: true,
+          status: store.health.databaseBackup
+        };
       } else if (action === "backup_now") {
         assertSourceEnabled("database_backup");
         result = await persistence.backupNow({ reason: "runtime_reliability_manual" });

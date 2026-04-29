@@ -119,6 +119,10 @@ const snapshotAction = await app.runRuntimeReliabilityAction({ action: "snapshot
 assert(snapshotAction.ok, "Snapshot action failed.");
 assertRuntimeSnapshot(snapshotAction.runtime_reliability);
 
+const saveStateAction = await app.runRuntimeReliabilityAction({ action: "save_lightweight_state" });
+assert(saveStateAction.ok, "Lightweight state save action failed.");
+assert(saveStateAction.result?.status?.provider === "json", "Lightweight state action should return JSON state status.");
+
 const profilePreview = await app.runRuntimeReliabilityAction({
   action: "apply_profile",
   profile: "live_news_only",
