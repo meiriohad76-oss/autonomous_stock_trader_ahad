@@ -479,7 +479,8 @@ function visibleScreenerOverview() {
 function buildHelpSignal() {
   const overview = state.snapshot?.screener_overview || {};
   const fullUniverse = overview.full_universe || {};
-  const visible = overview.visible_universe || visibleScreenerOverview();
+  const allUniverse = overview.all_universe || overview.visible_universe || visibleScreenerOverview();
+  const visible = overview.filtered_universe || overview.visible_universe || visibleScreenerOverview();
   const sentimentVisible = overview.sentiment_visible_universe || visible;
   return {
     ticker: null,
@@ -492,7 +493,7 @@ function buildHelpSignal() {
     headline:
       "Overview is sentiment-first, Screen shows the stage-one fundamentals gate, and Trade Setups are the combined decision layer.",
     explanation:
-      `This table now merges the full screened fundamentals universe with currently active sentiment names. Full fundamentals universe: ${fullUniverse.tracked || 0} tracked, ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. Current visible table rows: ${visible.tracked} tracked, ${visible.eligible} eligible, ${visible.watch} watch, ${visible.reject} reject. Names with active sentiment right now: ${sentimentVisible.tracked} tracked, ${sentimentVisible.eligible} eligible, ${sentimentVisible.watch} watch, ${sentimentVisible.reject} reject.`,
+      `This table now merges the full screened fundamentals universe with currently active sentiment names. Full fundamentals universe: ${fullUniverse.tracked || 0} tracked, ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. All table rows before filters: ${allUniverse.tracked || 0}. Current visible rows after search/filter: ${visible.tracked} tracked, ${visible.eligible} eligible, ${visible.watch} watch, ${visible.reject} reject. Names with active sentiment right now: ${sentimentVisible.tracked} tracked, ${sentimentVisible.eligible} eligible, ${sentimentVisible.watch} watch, ${sentimentVisible.reject} reject.`,
     eventType: "dashboard_help",
     url: null,
     sourceMetadata: null
@@ -902,14 +903,16 @@ function renderLeaderboard() {
   elements.leaderboardBody.innerHTML = "";
   const overview = state.snapshot?.screener_overview || {};
   const fullUniverse = overview.full_universe || {};
-  const visibleUniverse = overview.visible_universe || visibleScreenerOverview();
+  const allUniverse = overview.all_universe || overview.visible_universe || visibleScreenerOverview();
+  const visibleUniverse = overview.filtered_universe || overview.visible_universe || visibleScreenerOverview();
   const sentimentVisibleUniverse = overview.sentiment_visible_universe || visibleUniverse;
-  elements.leaderboardExplainer.textContent = `The table now blends the full screened fundamentals universe with names that already have active sentiment. Screen shows the stage-one gate, Composite shows the full fundamentals score, and Sentiment controls the ordering when there is live signal. Full screened universe: ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. Visible rows right now: ${visibleUniverse.eligible} eligible, ${visibleUniverse.watch} watch, ${visibleUniverse.reject} reject. Active sentiment subset: ${sentimentVisibleUniverse.eligible || 0} eligible, ${sentimentVisibleUniverse.watch || 0} watch, ${sentimentVisibleUniverse.reject || 0} reject.`;
+  const extraRows = Math.max(0, (allUniverse.tracked || 0) - (fullUniverse.tracked || 0));
+  elements.leaderboardExplainer.textContent = `This is the universe bridge: ${fullUniverse.tracked || 0} fundamentals stocks feed this table, plus ${extraRows} sentiment-only rows such as ETFs when present. Screen is the stage-one fundamentals gate. Composite is the fundamentals score. Sentiment and momentum only reorder names when live signal exists. Current filter shows ${rows.length} rows; active sentiment subset has ${sentimentVisibleUniverse.tracked || 0} rows.`;
 
   if (!rows.length) {
     elements.leaderboardBody.innerHTML = `
       <tr class="empty-row">
-        <td colspan="6">No tickers match the current search and screen filter.</td>
+        <td colspan="6">No tickers match the current search and screen filter. The full universe is still ${fullUniverse.tracked || 0} stocks; clear search or choose All Rows to restore it.</td>
       </tr>
     `;
     return;
@@ -2041,12 +2044,12 @@ function renderScreenFilterTabLabels() {
   }
   const overview = state.snapshot?.screener_overview || {};
   const fullUniverse = overview.full_universe || {};
-  const visibleUniverse = overview.visible_universe || {};
+  const allUniverse = overview.all_universe || overview.visible_universe || {};
   const labels = {
-    all: `All Screens (${visibleUniverse.tracked || fullUniverse.tracked || 0})`,
-    eligible: `Eligible (${fullUniverse.eligible || 0})`,
-    watch: `Watch (${fullUniverse.watch || 0})`,
-    reject: `Reject (${fullUniverse.reject || 0})`
+    all: `All Rows (${allUniverse.tracked || fullUniverse.tracked || 0})`,
+    eligible: `Eligible (${allUniverse.eligible || fullUniverse.eligible || 0})`,
+    watch: `Watch (${allUniverse.watch || fullUniverse.watch || 0})`,
+    reject: `Reject (${allUniverse.reject || fullUniverse.reject || 0})`
   };
 
   for (const button of elements.fundamentalFilterTabs.querySelectorAll("[data-screen-filter]")) {

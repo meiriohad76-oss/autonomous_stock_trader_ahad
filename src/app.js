@@ -435,7 +435,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
     }
   }
 
-  const states = fullFundamentalRows
+  const allUniverseRows = fullFundamentalRows
     .map((fundamentalsRow) => {
       const sentimentState = dedupedStates.get(fundamentalsRow.ticker) || null;
       const metadata = resolveTickerMetadata(fundamentalsRow.ticker, fundamentalsRow, sentimentState);
@@ -492,7 +492,9 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
             sentiment_visible: true
           };
         })
-    )
+    );
+
+  const states = allUniverseRows
     .filter((state) => (filters.label ? state.sentiment_regime === filters.label : true))
     .filter((state) => (filters.minConfidence ? state.weighted_confidence >= filters.minConfidence : true))
     .filter((state) => (filters.screenStage ? state.screen_stage === filters.screenStage : true))
@@ -520,8 +522,10 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
   });
 
   const fullUniverseScreening = summarizeScreenStages(fullFundamentalRows);
+  const allUniverseScreening = summarizeScreenStages(allUniverseRows);
   const visibleScreening = summarizeScreenStages(states);
-  const sentimentVisibleScreening = summarizeScreenStages(states.filter((row) => row.sentiment_visible));
+  const sentimentVisibleScreening = summarizeScreenStages(allUniverseRows.filter((row) => row.sentiment_visible));
+  const filteredSentimentVisibleScreening = summarizeScreenStages(states.filter((row) => row.sentiment_visible));
 
   const sectors = store.sentimentStates
     .filter((state) => state.entity_type === "sector" && state.window === windowKey)
@@ -545,9 +549,17 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         eligible: visibleScreening.eligible,
         watch: visibleScreening.watch,
         reject: visibleScreening.reject,
+        filter: {
+          label: filters.label || null,
+          min_confidence: filters.minConfidence || null,
+          screen_stage: filters.screenStage || null
+        },
         full_universe: fullUniverseScreening,
+        all_universe: allUniverseScreening,
         visible_universe: visibleScreening,
+        filtered_universe: visibleScreening,
         sentiment_visible_universe: sentimentVisibleScreening,
+        filtered_sentiment_visible_universe: filteredSentimentVisibleScreening,
         fundamental_sec_live: fullFundamentalRows.filter((row) => row.data_source === "live_sec_filing").length,
         bootstrap: fullFundamentalRows.filter((row) => row.data_source === "bootstrap_placeholder").length
       },

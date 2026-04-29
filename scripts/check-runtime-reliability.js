@@ -64,6 +64,28 @@ assert(
 
 const watchlist = app.getWatchlistSnapshot("1h");
 assert(watchlist.screener_overview?.full_universe?.tracked === 168, "Full fundamentals universe should remain at 168.");
+assert(
+  watchlist.screener_overview?.all_universe?.tracked >= watchlist.screener_overview.full_universe.tracked,
+  "Sentiment watchlist should expose the full universe plus any sentiment-only rows."
+);
+
+const eligibleWatchlist = app.getWatchlistSnapshot("1h", { screenStage: "eligible" });
+assert(
+  eligibleWatchlist.screener_overview?.full_universe?.tracked === watchlist.screener_overview.full_universe.tracked,
+  "Screen-stage filters must not shrink the full universe count."
+);
+assert(
+  eligibleWatchlist.screener_overview?.all_universe?.tracked === watchlist.screener_overview.all_universe.tracked,
+  "Screen-stage filters must not shrink the all-row count labels."
+);
+assert(
+  eligibleWatchlist.screener_overview?.visible_universe?.tracked === watchlist.screener_overview.all_universe.eligible,
+  "Eligible filter visible count should match the unfiltered eligible count."
+);
+assert(
+  eligibleWatchlist.leaderboard.every((row) => row.screen_stage === "eligible"),
+  "Eligible filter should return only eligible rows."
+);
 
 const snapshotAction = await app.runRuntimeReliabilityAction({ action: "snapshot" });
 assert(snapshotAction.ok, "Snapshot action failed.");
@@ -100,6 +122,8 @@ console.log(
       recommended_profile: runtime.runtime_profiles.recommended,
       available_actions: runtime.available_actions.length,
       full_universe_tracked: watchlist.screener_overview.full_universe.tracked,
+      all_universe_rows: watchlist.screener_overview.all_universe.tracked,
+      eligible_filter_rows: eligibleWatchlist.screener_overview.visible_universe.tracked,
       blocked_disabled_source: Boolean(disabledError)
     },
     null,
