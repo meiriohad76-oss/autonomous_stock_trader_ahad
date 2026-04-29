@@ -11,6 +11,9 @@ import { replaySampleEvents } from "./domain/replay.js";
 import { createSecFundamentalsCollector } from "./domain/sec-fundamentals.js";
 import { createSecInstitutionalCollector } from "./domain/sec-institutional.js";
 import { createSecInsiderCollector } from "./domain/sec-insider.js";
+import { createCorporateEventsCollector } from "./domain/corporate-events.js";
+import { createSocialSentimentCollector } from "./domain/social-sentiment.js";
+import { createTradePrintsCollector } from "./domain/trade-prints.js";
 import { createStore, resetStore } from "./domain/store.js";
 import { TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
@@ -532,6 +535,9 @@ export function createSentimentApp() {
   const marketFlowMonitor = createMarketFlowMonitor({ config, store, pipeline, marketDataService });
   const secInsiderCollector = createSecInsiderCollector({ config, store, pipeline });
   const secInstitutionalCollector = createSecInstitutionalCollector({ config, store, pipeline });
+  const corporateEventsCollector = createCorporateEventsCollector({ config, store, pipeline });
+  const socialSentimentCollector = createSocialSentimentCollector({ config, store, pipeline });
+  const tradePrintsCollector = createTradePrintsCollector({ config, store, pipeline });
 
   const app = {
     config,
@@ -582,6 +588,10 @@ export function createSentimentApp() {
         fundamental_sec_enabled: config.fundamentalSecEnabled,
         sec_form4_enabled: config.secForm4Enabled,
         sec_13f_enabled: config.sec13fEnabled,
+        earnings_enabled: config.earningsEnabled,
+        stocktwits_enabled: config.stocktwitsEnabled,
+        trade_prints_enabled: config.tradePrintsEnabled,
+        trade_prints_provider: config.tradePrintsProvider,
         fundamentals_enabled: true
       };
     },
@@ -697,6 +707,9 @@ export function createSentimentApp() {
     runTradeSetups() {
       tradeSetupAgent.run();
     },
+    getEarningsCalendar() {
+      return Object.fromEntries(store.earningsCalendar);
+    },
     getTrackedFundamentalCompanies() {
       return fundamentals.getTrackedCompanies();
     },
@@ -738,7 +751,10 @@ export function createSentimentApp() {
         onUpdate: async (referenceMap) => fundamentals.refreshMarketReference(referenceMap)
       }),
       secFundamentalsCollector.start(),
-      tradeSetupAgent.start()
+      tradeSetupAgent.start(),
+      corporateEventsCollector.start(),
+      socialSentimentCollector.start(),
+      tradePrintsCollector.start()
     ]);
     await marketFlowMonitor.start();
 
@@ -758,6 +774,9 @@ export function createSentimentApp() {
     marketFlowMonitor.stop();
     secInsiderCollector.stop();
     secInstitutionalCollector.stop();
+    corporateEventsCollector.stop();
+    socialSentimentCollector.stop();
+    tradePrintsCollector.stop();
     fundamentalMarketDataService.stop();
     secFundamentalsCollector.stop();
     if (autosaveTimer) {
