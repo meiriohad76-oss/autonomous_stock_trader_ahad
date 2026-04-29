@@ -56,6 +56,25 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/runtime-reliability/actions" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", async () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        const result = await app.runRuntimeReliabilityAction(payload);
+        sendJson(response, 200, result);
+      } catch (error) {
+        sendJson(response, 400, { ok: false, error: error.message });
+      }
+    });
+    return;
+  }
+
   if (pathname === "/api/config" && request.method === "GET") {
     sendJson(response, 200, app.getConfig());
     return;

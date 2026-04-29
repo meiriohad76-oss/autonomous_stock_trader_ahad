@@ -1114,6 +1114,26 @@ input:focus-visible {
   text-align: left;
 }
 
+.runtime-action-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--surface-border);
+}
+
+.runtime-action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.runtime-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .sector-focus-shell {
   padding: 16px;
   border-radius: var(--radius-md);

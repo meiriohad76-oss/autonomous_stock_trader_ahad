@@ -73,17 +73,37 @@ When the system is constrained, the collector plan recommends keeping expensive 
 ```bash
 GET /api/runtime-reliability
 GET /api/health
+POST /api/runtime-reliability/actions
 ```
 
 `/api/health` includes a compact `runtime_reliability` section. `/api/runtime-reliability` returns the complete source-by-source view.
 
+## Operator actions
+
+The action endpoint is intentionally one-shot. It does not turn on permanent background polling and it does not rewrite `.env`.
+
+Supported payloads:
+
+```json
+{ "action": "snapshot" }
+{ "action": "refresh_universe" }
+{ "action": "backup_now" }
+{ "action": "poll_once", "source": "live_news" }
+{ "action": "poll_once", "source": "market_flow" }
+{ "action": "poll_once", "source": "sec_form4" }
+{ "action": "poll_once", "source": "sec_13f" }
+{ "action": "poll_once", "source": "sec_fundamentals" }
+{ "action": "poll_once", "source": "fundamental_market_data" }
+```
+
+Disabled sources are blocked by default and return a clear error. Enable the relevant `.env` flag before running that source.
+
 ## Current limits
 
-This first version is advisory. It does not automatically rewrite `.env`, restart collectors, or pause collectors. That is intentional: the Pi should not be surprised by hidden automation.
+The agent still does not automatically rewrite `.env`, restart collectors, or pause collectors. That is intentional: the Pi should not be surprised by hidden automation.
 
 The next safe step is to add explicit operator actions:
 
-- apply a recommended `.env` profile
-- run one collector once
 - pause or resume a collector
 - require confirmation before enabling high-cost sources
+- apply a recommended `.env` profile

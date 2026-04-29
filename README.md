@@ -183,9 +183,12 @@ Useful endpoint:
 
 ```bash
 GET /api/runtime-reliability
+POST /api/runtime-reliability/actions
 ```
 
 The compact summary is also embedded in `/api/health` as `runtime_reliability`.
+
+The action endpoint supports guarded one-shot operations such as `poll_once` for a single source, `refresh_universe`, and `backup_now`. It does not enable permanent background polling or rewrite `.env`.
 
 The full design is documented in [docs/runtime-reliability-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/runtime-reliability-agent.md).
 

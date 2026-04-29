@@ -294,6 +294,89 @@ function buildPlan(sources, pressure, config) {
   };
 }
 
+function buildAvailableActions(sources, config) {
+  const byKey = new Map(sources.map((source) => [source.key, source]));
+  const actions = [
+    {
+      action: "snapshot",
+      label: "Refresh Runtime Snapshot",
+      source: null,
+      safe: true,
+      enabled: true,
+      description: "Re-read current runtime reliability without polling live sources."
+    },
+    {
+      action: "refresh_universe",
+      label: "Refresh Universe",
+      source: "fundamental_universe",
+      safe: true,
+      enabled: true,
+      description: "Rebuild the tracked S&P 100 + QQQ coverage universe."
+    },
+    {
+      action: "poll_once",
+      label: "Poll News Once",
+      source: "live_news",
+      safe: true,
+      enabled: Boolean(byKey.get("live_news")?.enabled),
+      description: "Fetch one batch of Google/Yahoo RSS news without starting a timer."
+    },
+    {
+      action: "poll_once",
+      label: "Poll Market Flow Once",
+      source: "market_flow",
+      safe: true,
+      enabled: Boolean(byKey.get("market_flow")?.enabled),
+      description: "Run one abnormal volume/flow scan without starting a timer."
+    },
+    {
+      action: "poll_once",
+      label: "Poll SEC Form 4 Once",
+      source: "sec_form4",
+      safe: true,
+      enabled: Boolean(byKey.get("sec_form4")?.enabled),
+      description: "Fetch one insider-filing batch without starting a timer."
+    },
+    {
+      action: "poll_once",
+      label: "Poll SEC 13F Once",
+      source: "sec_13f",
+      safe: false,
+      enabled: Boolean(byKey.get("sec_13f")?.enabled),
+      description: "Run one institutional 13F scan. This can be slower than other actions."
+    },
+    {
+      action: "poll_once",
+      label: "Poll SEC Fundamentals Once",
+      source: "sec_fundamentals",
+      safe: false,
+      enabled: Boolean(byKey.get("sec_fundamentals")?.enabled),
+      description: "Refresh SEC submissions/company facts once. This is the heaviest source."
+    },
+    {
+      action: "poll_once",
+      label: "Refresh Fundamental Market Data",
+      source: "fundamental_market_data",
+      safe: true,
+      enabled: true,
+      description: "Refresh valuation/reference fields once using the configured provider."
+    },
+    {
+      action: "backup_now",
+      label: "Backup SQLite Now",
+      source: "database_backup",
+      safe: false,
+      enabled: Boolean(config.databaseEnabled && config.databaseProvider === "sqlite" && config.sqliteBackupEnabled),
+      description: "Create one SQLite backup now. Avoid during high disk pressure."
+    }
+  ];
+
+  return actions.map((item) => ({
+    ...item,
+    disabled_reason: item.enabled ? null : `${item.source || item.action} is disabled by current configuration.`
+  }));
+}
+
 function overallStatus(sources, pressure) {
   const criticalErrors = sources.filter((source) => source.severity === "critical").length;
   const warnings = sources.filter((source) => source.severity === "warning").length;
@@ -364,6 +447,7 @@ export function createRuntimeReliabilityAgent({ config, store }) {
         disabled: sources.filter((source) => source.status === "disabled").length
       },
       collector_plan: buildPlan(sources, pressure, config),
+      available_actions: buildAvailableActions(sources, config),
       sources
     };
   }

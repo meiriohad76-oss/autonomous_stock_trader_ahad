@@ -832,6 +832,84 @@ export function createSentimentApp() {
     getRuntimeReliability() {
       return runtimeReliabilityAgent.getSnapshot();
     },
+    async runRuntimeReliabilityAction(payload = {}) {
+      await persistenceReady;
+      const action = String(payload.action || "snapshot").trim();
+      const source = String(payload.source || "").trim();
+      const forceUniverse = Boolean(payload.forceUniverse || payload.force_universe);
+
+      const disabledSources = {
+        live_news: !config.liveNewsEnabled,
+        market_flow: !config.marketFlowEnabled,
+        sec_form4: !config.secForm4Enabled,
+        sec_13f: !config.sec13fEnabled,
+        sec_fundamentals: !config.fundamentalSecEnabled,
+        database_backup: !config.databaseEnabled || config.databaseProvider !== "sqlite" || !config.sqliteBackupEnabled
+      };
+
+      function assertSourceEnabled(key) {
+        if (disabledSources[key]) {
+          throw new Error(`${key} is disabled by configuration. Enable it in .env before running this action.`);
+        }
+      }
+
+      let result = null;
+
+      if (action === "snapshot") {
+        result = { message: "Runtime reliability snapshot refreshed." };
+      } else if (action === "refresh_universe") {
+        result = await ensureFundamentalCoverage({ force: true });
+      } else if (action === "backup_now") {
+        assertSourceEnabled("database_backup");
+        result = await persistence.backupNow({ reason: "runtime_reliability_manual" });
+        await refreshBackupStatus();
+      } else if (action === "poll_once") {
+        if (!source) {
+          throw new Error("poll_once requires a source.");
+        }
+
+        if (source === "live_news") {
+          assertSourceEnabled(source);
+          result = await liveNewsCollector.pollOnce();
+        } else if (source === "market_flow") {
+          assertSourceEnabled(source);
+          result = await marketFlowMonitor.pollOnce();
+        } else if (source === "sec_form4") {
+          assertSourceEnabled(source);
+          result = await secInsiderCollector.pollOnce();
+        } else if (source === "sec_13f") {
+          assertSourceEnabled(source);
+          result = await secInstitutionalCollector.pollOnce();
+        } else if (source === "sec_fundamentals") {
+          assertSourceEnabled(source);
+          await ensureFundamentalCoverage({ force: forceUniverse });
+          result = await secFundamentalsCollector.pollOnce();
+        } else if (source === "fundamental_market_data") {
+          const companies = fundamentals.getTrackedCompanies();
+          const referenceMap = await fundamentalMarketDataService.getReferenceBatch(companies);
+          const refreshed = await fundamentals.refreshMarketReference(referenceMap);
+          result = {
+            refreshed_companies: refreshed,
+            reference_count: referenceMap.size
+          };
+        } else if (source === "fundamental_universe") {
+          result = await ensureFundamentalCoverage({ force: true });
+        } else {
+          throw new Error(`Unsupported runtime source: ${source}`);
+        }
+      } else {
+        throw new Error(`Unsupported runtime action: ${action}`);
+      }
+
+      return {
+        ok: true,
+        action,
+        source: source || null,
+        result,
+        runtime_reliability: runtimeReliabilityAgent.getSnapshot(),
+        health: this.getHealth()
+      };
+    },
     getWatchlistSnapshot(windowKey, filters) {
       return buildWatchlistSnapshot(store, windowKey, filters);
     },

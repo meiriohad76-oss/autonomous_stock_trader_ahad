@@ -53,6 +53,7 @@ const state = {
   alertFilter: "all",
   marketFlowSettings: {},
   marketFlowSaveState: "",
+  runtimeActionState: "",
   selectedSignal: null,
   selectedSector: null
 };
@@ -1830,6 +1831,7 @@ function renderSystemView() {
   const runtimeReliability = state.runtimeReliability || state.health?.runtime_reliability || null;
   const runtimePressure = runtimeReliability?.pressure || null;
   const collectorPlan = runtimeReliability?.collector_plan || {};
+  const runtimeActions = runtimeReliability?.available_actions || [];
   const liveNews = state.health?.live_sources?.google_news_rss || null;
   const marketData = state.health?.live_sources?.market_data || null;
   const marketFlow = state.health?.live_sources?.market_flow || null;
@@ -1916,6 +1918,33 @@ function renderSystemView() {
         ? `<ul class="workspace-list">${collectorPlan.recommendations.map((item) => `<li>${item}</li>`).join("")}</ul>`
         : ""
     }
+    <div class="runtime-action-panel">
+      <div class="section-kicker">Runtime Actions</div>
+      <p class="workspace-copy">One-shot operations only. These do not enable permanent background polling.</p>
+      <div class="runtime-action-grid">
+        ${runtimeActions
+          .map(
+            (item) => `
+              <button
+                type="button"
+                class="panel-action runtime-action-button"
+                data-runtime-action="${item.action}"
+                data-runtime-source="${item.source || ""}"
+                ${!item.enabled || state.runtimeActionState === "running" ? "disabled" : ""}
+                title="${item.disabled_reason || item.description}"
+              >
+                ${item.label}
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+      ${
+        state.runtimeActionState
+          ? `<p class="workspace-copy">${state.runtimeActionState === "running" ? "Running selected runtime action..." : state.runtimeActionState}</p>`
+          : ""
+      }
+    </div>
     <ul class="workspace-list">
       <li>News sentiment source: Google News RSS with Yahoo Finance RSS fallback, scored through the same normalization and sentiment pipeline as other live events.</li>
       <li>Money-flow sources: inferred tape anomalies from live market bars, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>
@@ -2014,6 +2043,31 @@ function setActiveView(view) {
   }
 }
 
+async function runRuntimeAction(action, source) {
+  state.runtimeActionState = "running";
+  renderSystemView();
+
+  try {
+    const response = await fetch("/api/runtime-reliability/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, source })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || "Runtime action failed");
+    }
+
+    state.runtimeReliability = payload.runtime_reliability || state.runtimeReliability;
+    state.health = payload.health || state.health;
+    state.runtimeActionState = `${prettyLabel(action)} completed${source ? ` for ${prettyLabel(source)}` : ""}.`;
+    await loadSnapshot();
+  } catch (error) {
+    state.runtimeActionState = error.message;
+    renderSystemView();
+  }
+}
+
 function attachEvents() {
   elements.windowTabs.addEventListener("click", async (event) => {
     const button = event.target.closest(".time-chip");
@@ -2074,6 +2128,15 @@ function attachEvents() {
   elements.sideTerminal?.addEventListener("click", () => setActiveView("system"));
   elements.sideHelp?.addEventListener("click", () => {
     openSignalDrawer(buildHelpSignal());
+  });
+
+  elements.systemNotes?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-runtime-action]");
+    if (!button || button.disabled) {
+      return;
+    }
+
+    await runRuntimeAction(button.dataset.runtimeAction, button.dataset.runtimeSource || null);
   });
 
   elements.signalBackdrop?.addEventListener("click", closeSignalDrawer);
