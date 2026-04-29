@@ -10,6 +10,7 @@ export const RUNTIME_PROFILES = {
     env: {
       PI_PERFORMANCE_MODE: "true",
       DATABASE_ENABLED: "false",
+      LIGHTWEIGHT_STATE_ENABLED: "true",
       SQLITE_BACKUP_ENABLED: "false",
       SQLITE_BACKUP_ON_STARTUP: "false",
       LIVE_NEWS_ENABLED: "false",
@@ -31,6 +32,7 @@ export const RUNTIME_PROFILES = {
     env: {
       PI_PERFORMANCE_MODE: "true",
       DATABASE_ENABLED: "false",
+      LIGHTWEIGHT_STATE_ENABLED: "true",
       SQLITE_BACKUP_ENABLED: "false",
       SQLITE_BACKUP_ON_STARTUP: "false",
       LIVE_NEWS_ENABLED: "true",
@@ -54,6 +56,7 @@ export const RUNTIME_PROFILES = {
     env: {
       PI_PERFORMANCE_MODE: "true",
       DATABASE_ENABLED: "false",
+      LIGHTWEIGHT_STATE_ENABLED: "true",
       SQLITE_BACKUP_ENABLED: "false",
       SQLITE_BACKUP_ON_STARTUP: "false",
       LIVE_NEWS_ENABLED: "true",
@@ -81,6 +84,7 @@ export const RUNTIME_PROFILES = {
     env: {
       PI_PERFORMANCE_MODE: "false",
       DATABASE_ENABLED: "true",
+      LIGHTWEIGHT_STATE_ENABLED: "false",
       SQLITE_BACKUP_ENABLED: "true",
       SQLITE_BACKUP_ON_STARTUP: "false",
       LIVE_NEWS_ENABLED: "true",
@@ -106,6 +110,7 @@ export const RUNTIME_PROFILES = {
 const PROFILE_CONFIG_READERS = {
   PI_PERFORMANCE_MODE: (config) => config.piPerformanceMode,
   DATABASE_ENABLED: (config) => config.databaseEnabled,
+  LIGHTWEIGHT_STATE_ENABLED: (config) => config.lightweightStateEnabled,
   SQLITE_BACKUP_ENABLED: (config) => config.sqliteBackupEnabled,
   SQLITE_BACKUP_ON_STARTUP: (config) => config.sqliteBackupOnStartup,
   LIVE_NEWS_ENABLED: (config) => config.liveNewsEnabled,
@@ -213,6 +218,16 @@ function sourceSpecs(config) {
       intervalMs: config.sec13fPollMs,
       criticality: "low",
       notes: "Tracks slower quarterly institutional position changes."
+    },
+    {
+      key: "lightweight_state",
+      label: "Lightweight State Snapshot",
+      category: "storage",
+      enabled: config.lightweightStateEnabled && !config.databaseEnabled,
+      autoStart: config.lightweightStateEnabled && !config.databaseEnabled,
+      intervalMs: null,
+      criticality: "medium",
+      notes: "Persists a compact JSON runtime snapshot when SQLite/Postgres persistence is disabled."
     },
     {
       key: "database_backup",

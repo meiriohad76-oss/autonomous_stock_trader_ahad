@@ -54,6 +54,7 @@ The current source set includes:
 - SEC Fundamentals
 - SEC Form 4 Insider Flow
 - SEC 13F Institutional Flow
+- Lightweight State Snapshot
 - SQLite Backup
 
 ## Runtime pressure
@@ -128,6 +129,16 @@ Profiles are predefined `.env` operating modes:
 - `pi_light`: balanced Pi mode with expensive collectors manual
 - `full_live`: maximum live coverage for a stable machine or off-Pi deployment
 
+In Pi-oriented profiles, `DATABASE_ENABLED=false` and `LIGHTWEIGHT_STATE_ENABLED=true`. That keeps SQLite and backup load off the Pi while still saving a compact JSON runtime snapshot under `data/runtime-state.json`. The snapshot preserves the current fundamentals universe, SEC refresh progress, recent sentiment context, evidence quality, macro state, and trade setup state across service restarts.
+
+Lightweight state knobs:
+
+- `LIGHTWEIGHT_STATE_ENABLED=true`
+- `LIGHTWEIGHT_STATE_PATH=data/runtime-state.json`
+- `LIGHTWEIGHT_STATE_MAX_DOCUMENTS=300`
+
+This is not a long-term analytical warehouse. It is a safe Pi recovery cache. Use SQLite/Postgres/off-Pi persistence again when you want durable history, larger evidence storage, or richer analytics.
+
 Profile actions are preview-only unless `apply=true` is included. Applying a profile writes `.env`, updates in-process config where possible, and returns a message reminding the operator to restart the service so timers and startup behavior fully reload.
 
 The same profiles are available from the terminal:
@@ -149,7 +160,7 @@ The runtime reliability contract check verifies the offline Pi-safe path:
 npm run check:runtime-reliability
 ```
 
-It confirms source coverage, profile availability, guarded action behavior, health embedding, and the 168-stock fundamentals universe.
+It confirms source coverage, profile availability, guarded action behavior, health embedding, the 168-stock fundamentals universe, lightweight JSON state saving, and lightweight restore after a simulated restart.
 
 ## Current limits
 

@@ -351,6 +351,7 @@ function normalizeScreenerSettingValue(value, spec) {
 const RUNTIME_PROFILE_CONFIG_FIELDS = {
   PI_PERFORMANCE_MODE: { key: "piPerformanceMode", type: "boolean" },
   DATABASE_ENABLED: { key: "databaseEnabled", type: "boolean" },
+  LIGHTWEIGHT_STATE_ENABLED: { key: "lightweightStateEnabled", type: "boolean" },
   SQLITE_BACKUP_ENABLED: { key: "sqliteBackupEnabled", type: "boolean" },
   SQLITE_BACKUP_ON_STARTUP: { key: "sqliteBackupOnStartup", type: "boolean" },
   LIVE_NEWS_ENABLED: { key: "liveNewsEnabled", type: "boolean" },
@@ -843,6 +844,8 @@ export function createSentimentApp() {
         database_enabled: config.databaseEnabled,
         database_provider: config.databaseProvider,
         database_target: databaseTargetLabel(config),
+        lightweight_state_enabled: config.lightweightStateEnabled,
+        lightweight_state_path: config.lightweightStatePath,
         database_backup: databaseBackupConfig(config),
         universe_name: config.universeName,
         default_window: config.defaultWindow,

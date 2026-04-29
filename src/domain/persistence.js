@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
@@ -1637,6 +1637,164 @@ function createDisabledPersistence() {
   };
 }
 
+function limitedPayloadRows(items, limit) {
+  return items.slice(Math.max(0, items.length - limit)).map((item) => ({ payload_json: item }));
+}
+
+function buildLightweightRows(store, config) {
+  const maxDocuments = Math.max(25, Number(config.lightweightStateMaxDocuments || 500));
+  return {
+    rawDocuments: limitedPayloadRows(store.rawDocuments, maxDocuments),
+    normalizedDocuments: limitedPayloadRows(store.normalizedDocuments, maxDocuments),
+    documentEntities: limitedPayloadRows(store.documentEntities, maxDocuments * 4),
+    documentScores: limitedPayloadRows(store.documentScores, maxDocuments),
+    sentimentStates: limitedPayloadRows(store.sentimentStates, maxDocuments),
+    sourceStats: [...store.sourceStats.entries()].map(([source_name, payload]) => ({
+      source_name,
+      payload_json: payload
+    })),
+    alertHistory: limitedPayloadRows(store.alertHistory, maxDocuments),
+    dedupeClusters: [...store.dedupeClusters.entries()].map(([cluster_key, cluster]) => ({
+      cluster_key,
+      payload_json: serializeCluster(cluster)
+    })),
+    seenExternalDocuments: [...store.seenExternalDocuments].slice(-maxDocuments).map((seen_key) => ({ seen_key })),
+    runtimeState: [
+      { state_key: "health", payload_json: store.health },
+      { state_key: "fundamentals", payload_json: buildRuntimeFundamentals(store) }
+    ],
+    fundamentals: buildFundamentalWarehouseRows(store),
+    agents: buildAgentRows(store, config)
+  };
+}
+
+function emptyLightweightRows() {
+  return {
+    rawDocuments: [],
+    normalizedDocuments: [],
+    documentEntities: [],
+    documentScores: [],
+    sentimentStates: [],
+    sourceStats: [],
+    alertHistory: [],
+    dedupeClusters: [],
+    seenExternalDocuments: [],
+    runtimeState: [],
+    fundamentals: {},
+    agents: {}
+  };
+}
+
+function buildLightweightStateStatus(config, state) {
+  const exists = existsSync(config.lightweightStatePath);
+  const stats = exists ? statSync(config.lightweightStatePath) : null;
+  return {
+    provider: "json",
+    supported: true,
+    enabled: true,
+    reason: "lightweight_state",
+    backup_dir: path.dirname(config.lightweightStatePath),
+    interval_ms: null,
+    retention_count: 1,
+    retention_days: null,
+    on_startup: true,
+    last_backup_at: state.lastSavedAt || (stats ? stats.mtime.toISOString() : null),
+    last_backup_path: exists ? config.lightweightStatePath : null,
+    last_backup_size_bytes: stats?.size ?? null,
+    backup_count: exists ? 1 : 0,
+    last_error: state.lastError || null
+  };
+}
+
+function createLightweightPersistence(config) {
+  const state = {
+    lastSavedAt: null,
+    lastError: null
+  };
+
+  return {
+    async init() {
+      mkdirSync(path.dirname(config.lightweightStatePath), { recursive: true });
+    },
+    async hydrateStore(store) {
+      if (!existsSync(config.lightweightStatePath)) {
+        return;
+      }
+
+      try {
+        const snapshot = parsePayload(readFileSync(config.lightweightStatePath, "utf8"), null);
+        hydrateStoreFromRows(store, {
+          ...emptyLightweightRows(),
+          ...(snapshot?.rows || {})
+        });
+        store.health.liveSources.lightweight_state = {
+          enabled: true,
+          last_success_at: snapshot?.saved_at || null,
+          path: config.lightweightStatePath,
+          last_error: null
+        };
+        state.lastSavedAt = snapshot?.saved_at || null;
+        state.lastError = null;
+      } catch (error) {
+        state.lastError = error.message;
+        store.health.liveSources.lightweight_state = {
+          enabled: true,
+          last_success_at: null,
+          path: config.lightweightStatePath,
+          last_error: error.message
+        };
+      }
+    },
+    async clearAll() {
+      rmSync(config.lightweightStatePath, { force: true });
+      state.lastSavedAt = null;
+      state.lastError = null;
+    },
+    async hasData() {
+      return existsSync(config.lightweightStatePath);
+    },
+    async getBackupStatus() {
+      return buildLightweightStateStatus(config, state);
+    },
+    async backupNow() {
+      return buildLightweightStateStatus(config, state);
+    },
+    async saveStoreSnapshot(store) {
+      const savedAt = new Date().toISOString();
+      const tempPath = `${config.lightweightStatePath}.${process.pid}.tmp`;
+      const snapshot = {
+        version: 1,
+        saved_at: savedAt,
+        rows: buildLightweightRows(store, config)
+      };
+
+      try {
+        mkdirSync(path.dirname(config.lightweightStatePath), { recursive: true });
+        writeFileSync(tempPath, JSON.stringify(snapshot), "utf8");
+        renameSync(tempPath, config.lightweightStatePath);
+        state.lastSavedAt = savedAt;
+        state.lastError = null;
+        store.health.liveSources.lightweight_state = {
+          enabled: true,
+          last_success_at: savedAt,
+          path: config.lightweightStatePath,
+          last_error: null
+        };
+      } catch (error) {
+        rmSync(tempPath, { force: true });
+        state.lastError = error.message;
+        store.health.liveSources.lightweight_state = {
+          enabled: true,
+          last_success_at: state.lastSavedAt,
+          path: config.lightweightStatePath,
+          last_error: error.message
+        };
+        throw error;
+      }
+    }
+  };
+}
+
 function createSqlitePersistence(config) {
   mkdirSync(path.dirname(config.databasePath), { recursive: true });
   const db = new DatabaseSync(config.databasePath);
@@ -2073,7 +2231,9 @@ function createPostgresPersistence(config) {
 export function createPersistence({ config }) {
   const provider =
     !config.databaseEnabled
-      ? createDisabledPersistence()
+      ? config.lightweightStateEnabled
+        ? createLightweightPersistence(config)
+        : createDisabledPersistence()
       : config.databaseProvider === "postgres"
         ? createPostgresPersistence(config)
         : createSqlitePersistence(config);

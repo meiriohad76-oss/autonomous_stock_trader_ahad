@@ -69,6 +69,9 @@ export const config = {
   databasePath: resolveFromRoot(process.env.DATABASE_PATH, path.join("data", "sentiment-analyst.sqlite")),
   databaseUrl: process.env.DATABASE_URL || "",
   databaseAutosaveMs: envNumber("DATABASE_AUTOSAVE_MS", 15000, 60000),
+  lightweightStateEnabled: envBoolean("LIGHTWEIGHT_STATE_ENABLED", "false", "true"),
+  lightweightStatePath: resolveFromRoot(process.env.LIGHTWEIGHT_STATE_PATH, path.join("data", "runtime-state.json")),
+  lightweightStateMaxDocuments: envNumber("LIGHTWEIGHT_STATE_MAX_DOCUMENTS", 500, 300),
   sqliteBackupEnabled:
     String(process.env.SQLITE_BACKUP_ENABLED || "true").toLowerCase() !== "false",
   sqliteBackupDir: resolveFromRoot(process.env.SQLITE_BACKUP_DIR, path.join("data", "backups")),

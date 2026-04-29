@@ -179,7 +179,7 @@ Details are documented in [docs/source-reliability.md](/C:/Users/meiri/OneDrive/
 
 ## Runtime Reliability Agent
 
-The Runtime Reliability Agent is the backend traffic-control layer for the Pi and live sources. It observes source health, `.env` auto-start policy, fallback providers, SQLite backup state, process memory, host memory, and CPU load. It then returns a collector plan that tells the dashboard, deploy scripts, and future orchestration logic which sources are safe to auto-start, which should stay manual, and which need investigation.
+The Runtime Reliability Agent is the backend traffic-control layer for the Pi and live sources. It observes source health, `.env` auto-start policy, fallback providers, lightweight/SQLite persistence state, process memory, host memory, and CPU load. It then returns a collector plan that tells the dashboard, deploy scripts, and future orchestration logic which sources are safe to auto-start, which should stay manual, and which need investigation.
 
 Useful endpoint:
 
@@ -193,6 +193,8 @@ The compact summary is also embedded in `/api/health` as `runtime_reliability`.
 The action endpoint supports guarded one-shot operations such as `poll_once` for a single source, `refresh_universe`, and `backup_now`. It does not enable permanent background polling or rewrite `.env`.
 
 It also exposes runtime profile previews for `emergency`, `live_news_only`, `pi_light`, and `full_live`. Profile application requires an explicit `apply=true` payload and a service restart afterward.
+
+Pi-oriented profiles keep SQLite off and use `LIGHTWEIGHT_STATE_ENABLED=true`, writing a compact JSON state file to `data/runtime-state.json`. This preserves SEC fundamentals batch progress and recent runtime context across restarts without reintroducing heavy SQLite writes or backups.
 
 Contract check:
 

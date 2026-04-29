@@ -1068,11 +1068,81 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
   let marketReferenceMap = new Map();
   let persistenceArtifactsByTicker = new Map();
 
+  function sectorInputsFromSnapshot() {
+    return (store.fundamentals?.sectors || []).map((sector) => ({
+      sector: sector.sector,
+      growth_breadth: sector.growth_breadth ?? 0.5,
+      profitability_strength: sector.profitability_strength ?? 0.5,
+      revision_breadth: sector.revision_breadth ?? 0.5,
+      relative_valuation: sector.relative_valuation ?? 0.5,
+      macro_fit: sector.macro_fit ?? 0.5,
+      sector_price_momentum_3m: sector.sector_price_momentum_3m ?? 0
+    }));
+  }
+
+  function companyFromSnapshotRow(row) {
+    const confidenceBreakdown = row.confidence_breakdown || {};
+    const qualityFlags = row.quality_flags || {
+      restatement_flag: false,
+      missing_fields_count: 0,
+      anomaly_flags: [],
+      reporting_confidence_score: confidenceBreakdown.reporting_confidence_score ?? row.reporting_confidence_score ?? 0.7,
+      data_freshness_score: confidenceBreakdown.data_freshness_score ?? row.data_freshness_score ?? 0.7,
+      peer_comparability_score: confidenceBreakdown.peer_comparability_score ?? row.peer_comparability_score ?? 0.7,
+      rule_confidence: confidenceBreakdown.rule_confidence ?? row.rule_confidence ?? 0.7,
+      llm_confidence: confidenceBreakdown.llm_confidence ?? row.llm_confidence ?? 0.65
+    };
+
+    return {
+      ticker: row.ticker,
+      company_name: row.company_name,
+      data_source: row.data_source,
+      sector: row.sector,
+      industry: row.industry,
+      exchange: row.exchange,
+      market_cap_bucket: row.market_cap_bucket,
+      cik: row.cik,
+      as_of: row.as_of || store.fundamentals.asOf,
+      filing_date: row.filing_date || String(store.fundamentals.asOf || new Date().toISOString()).slice(0, 10),
+      period_end: row.period_end || String(store.fundamentals.asOf || new Date().toISOString()).slice(0, 10),
+      form_type: row.form_type || "RESTORED",
+      filing_url: row.filing_url || "",
+      summary: row.explanation_short || `${row.company_name || row.ticker} restored from the lightweight runtime snapshot.`,
+      notes: row.notes?.length ? row.notes : ["Restored from the lightweight runtime snapshot."],
+      metrics: row.metric_snapshot || {},
+      quality_flags: qualityFlags,
+      previous_composite_score: round(
+        Number(row.composite_fundamental_score || 0) - Number(row.score_delta_30d || 0),
+        3
+      ),
+      market_reference: row.market_reference || null
+    };
+  }
+
+  function restoreBaseCompaniesFromStore() {
+    if (baseCompanies.length || !store.fundamentals?.leaderboard?.length) {
+      return;
+    }
+
+    samplePayload = {
+      as_of: store.fundamentals.asOf || new Date().toISOString(),
+      sector_inputs: sectorInputsFromSnapshot()
+    };
+    baseCompanies = store.fundamentals.leaderboard.map(companyFromSnapshotRow);
+    marketReferenceMap = new Map(
+      baseCompanies
+        .filter((company) => company.market_reference)
+        .map((company) => [company.ticker, company.market_reference])
+    );
+  }
+
   function getTrackedCompanies() {
+    restoreBaseCompaniesFromStore();
     return baseCompanies;
   }
 
   function buildCompaniesForSnapshot(count = baseCompanies.length) {
+    restoreBaseCompaniesFromStore();
     return baseCompanies.slice(0, count).map((company) => mergeCompanyWithMarketReference(company, marketReferenceMap.get(company.ticker)));
   }
 
@@ -1159,6 +1229,7 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
   }
 
   async function refreshMarketReference(nextReferenceMap) {
+    restoreBaseCompaniesFromStore();
     marketReferenceMap = nextReferenceMap;
     if (!samplePayload || !baseCompanies.length) {
       return 0;

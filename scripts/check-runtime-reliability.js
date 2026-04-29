@@ -1,5 +1,9 @@
+import { rmSync } from "node:fs";
+
 process.env.DATABASE_ENABLED = process.env.DATABASE_ENABLED || "false";
 process.env.PI_PERFORMANCE_MODE = process.env.PI_PERFORMANCE_MODE || "true";
+process.env.LIGHTWEIGHT_STATE_ENABLED = process.env.LIGHTWEIGHT_STATE_ENABLED || "true";
+process.env.LIGHTWEIGHT_STATE_PATH = process.env.LIGHTWEIGHT_STATE_PATH || "data/runtime-reliability-test-state.json";
 process.env.LIVE_NEWS_ENABLED = process.env.LIVE_NEWS_ENABLED || "false";
 process.env.MARKET_FLOW_ENABLED = process.env.MARKET_FLOW_ENABLED || "false";
 process.env.SEC_FORM4_ENABLED = process.env.SEC_FORM4_ENABLED || "false";
@@ -9,6 +13,8 @@ process.env.AUTO_START_MARKET_FLOW = process.env.AUTO_START_MARKET_FLOW || "fals
 process.env.AUTO_START_SEC_13F = process.env.AUTO_START_SEC_13F || "false";
 process.env.AUTO_START_SEC_FUNDAMENTALS = process.env.AUTO_START_SEC_FUNDAMENTALS || "false";
 process.env.AUTO_START_FUNDAMENTAL_MARKET_DATA = process.env.AUTO_START_FUNDAMENTAL_MARKET_DATA || "false";
+
+rmSync(process.env.LIGHTWEIGHT_STATE_PATH, { force: true });
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => {
@@ -56,6 +62,11 @@ const runtime = app.getRuntimeReliability();
 assertRuntimeSnapshot(runtime);
 
 const health = app.getHealth();
+assert(health.database_backup?.provider === "json", "Pi-safe lightweight state should replace disabled persistence.");
+assert(
+  health.live_sources?.lightweight_state?.last_success_at,
+  "Lightweight state should save a runtime snapshot during the reliability check."
+);
 assert(health.runtime_reliability?.status === runtime.status, "Health runtime summary is out of sync.");
 assert(
   health.live_sources?.fundamental_universe?.sec_directory_source === "unavailable_fallback",
@@ -127,7 +138,22 @@ try {
 assert(disabledError.includes("disabled by configuration"), "Disabled live news action should be blocked.");
 
 await app.stopLiveSources();
+
+const restoredApp = createSentimentApp();
+await restoredApp.initialize();
+const restoredWatchlist = restoredApp.getWatchlistSnapshot("1h");
+assert(
+  restoredWatchlist.screener_overview?.full_universe?.tracked === watchlist.screener_overview.full_universe.tracked,
+  "Lightweight state restore must preserve the full fundamentals universe after restart."
+);
+assert(
+  restoredWatchlist.screener_overview?.all_universe?.eligible === watchlist.screener_overview.all_universe.eligible,
+  "Lightweight state restore must preserve screener counts after restart."
+);
+await restoredApp.stopLiveSources();
+
 globalThis.fetch = originalFetch;
+rmSync(process.env.LIGHTWEIGHT_STATE_PATH, { force: true });
 
 console.log(
   JSON.stringify(
@@ -144,6 +170,7 @@ console.log(
       sector_count: watchlist.sectors.length,
       screen_only_rows: screenOnlyRows.length,
       unknown_bootstrap_sector_rows: unknownBootstrapRows.length,
+      lightweight_state: health.database_backup.provider,
       blocked_disabled_source: Boolean(disabledError)
     },
     null,
