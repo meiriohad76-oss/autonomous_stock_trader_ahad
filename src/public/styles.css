@@ -766,6 +766,20 @@ input:focus-visible {
   text-align: right;
 }
 
+.conf-cell span,
+.conf-cell small {
+  display: block;
+}
+
+.conf-cell small {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .detail-panel {
   min-height: 320px;
 }

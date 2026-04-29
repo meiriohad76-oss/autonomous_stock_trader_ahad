@@ -277,6 +277,24 @@ function screenBadgeClass(row) {
   return "bearish";
 }
 
+function confidenceCell(row) {
+  if (row?.sentiment_visible) {
+    return `
+      <span>${formatNumber((row.sentiment_confidence ?? row.weighted_confidence ?? 0) * 100, 1)}%</span>
+      <small>sentiment</small>
+    `;
+  }
+
+  if (row?.fundamental_confidence !== null && row?.fundamental_confidence !== undefined) {
+    return `
+      <span>${formatNumber(row.fundamental_confidence * 100, 1)}%</span>
+      <small>fund only</small>
+    `;
+  }
+
+  return "<span>--</span><small>no signal</small>";
+}
+
 function signalTimestamp(item) {
   return item?.timestamp || item?.published_at || null;
 }
@@ -941,7 +959,7 @@ function renderLeaderboard() {
       <td>
         <span class="momentum ${labelStyle}">${formatSignedPercent(row.momentum_delta)}</span>
       </td>
-      <td class="conf-cell">${formatNumber(row.weighted_confidence * 100, 1)}%</td>
+      <td class="conf-cell">${confidenceCell(row)}</td>
     `;
     tr.addEventListener("click", async () => {
       state.selectedTicker = row.entity_key;

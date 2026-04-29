@@ -72,6 +72,12 @@ assert(
   watchlist.screener_overview?.all_universe?.tracked >= watchlist.screener_overview.full_universe.tracked,
   "Sentiment watchlist should expose the full universe plus any sentiment-only rows."
 );
+const screenOnlyRows = watchlist.leaderboard.filter((row) => !row.sentiment_visible && row.doc_count === 0);
+assert(screenOnlyRows.length > 0, "Runtime check should include screen-only fundamentals rows.");
+assert(
+  screenOnlyRows.every((row) => row.weighted_confidence === 0 && row.fundamental_confidence > 0),
+  "Screen-only rows must keep sentiment confidence at zero and expose fundamental confidence separately."
+);
 
 const eligibleWatchlist = app.getWatchlistSnapshot("1h", { screenStage: "eligible" });
 assert(
@@ -129,6 +135,7 @@ console.log(
       all_universe_rows: watchlist.screener_overview.all_universe.tracked,
       eligible_filter_rows: eligibleWatchlist.screener_overview.visible_universe.tracked,
       sector_count: watchlist.sectors.length,
+      screen_only_rows: screenOnlyRows.length,
       blocked_disabled_source: Boolean(disabledError)
     },
     null,
