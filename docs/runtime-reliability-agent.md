@@ -111,6 +111,17 @@ Profiles are predefined `.env` operating modes:
 
 Profile actions are preview-only unless `apply=true` is included. Applying a profile writes `.env`, updates in-process config where possible, and returns a message reminding the operator to restart the service so timers and startup behavior fully reload.
 
+The same profiles are available from the terminal:
+
+```bash
+npm run runtime:profiles
+npm run runtime:profile -- preview live_news_only
+npm run runtime:profile -- apply live_news_only --yes
+sudo systemctl restart sentiment-analyst.service
+```
+
+The CLI creates an `.env` backup under `data/env-backups/` before writing.
+
 ## Current limits
 
 The agent still does not automatically rewrite `.env`, restart collectors, or pause collectors. That is intentional: the Pi should not be surprised by hidden automation.

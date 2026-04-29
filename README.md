@@ -192,6 +192,14 @@ The action endpoint supports guarded one-shot operations such as `poll_once` for
 
 It also exposes runtime profile previews for `emergency`, `live_news_only`, `pi_light`, and `full_live`. Profile application requires an explicit `apply=true` payload and a service restart afterward.
 
+Terminal helper:
+
+```bash
+npm run runtime:profiles
+npm run runtime:profile -- preview live_news_only
+npm run runtime:profile -- apply live_news_only --yes
+```
+
 The full design is documented in [docs/runtime-reliability-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/runtime-reliability-agent.md).
 
 ## Pi Performance Mode
