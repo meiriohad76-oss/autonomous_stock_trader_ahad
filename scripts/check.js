@@ -2,6 +2,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createSentimentApp } from "../src/app.js";
 import { config } from "../src/config.js";
+import { createCorporateEventsCollector } from "../src/domain/corporate-events.js";
+import { createSocialSentimentCollector } from "../src/domain/social-sentiment.js";
+import { createTradePrintsCollector } from "../src/domain/trade-prints.js";
 import { parseGoogleNewsRss } from "../src/domain/live-news.js";
 import { detectMarketFlowSignal } from "../src/domain/market-flow.js";
 import { computeLiveMetricsFromCompanyFacts } from "../src/domain/sec-fundamentals.js";
@@ -342,6 +345,32 @@ for (const s of longSetups) {
   }
 }
 
+// --- New collector interface checks ---
+const mockApp = { config: app.config, store: app.store, pipeline: app.pipeline };
+
+const corpEvents = createCorporateEventsCollector(mockApp);
+if (typeof corpEvents.start !== "function") throw new Error("createCorporateEventsCollector missing start()");
+if (typeof corpEvents.stop !== "function") throw new Error("createCorporateEventsCollector missing stop()");
+if (typeof corpEvents.pollOnce !== "function") throw new Error("createCorporateEventsCollector missing pollOnce()");
+
+const socialSent = createSocialSentimentCollector(mockApp);
+if (typeof socialSent.start !== "function") throw new Error("createSocialSentimentCollector missing start()");
+if (typeof socialSent.stop !== "function") throw new Error("createSocialSentimentCollector missing stop()");
+
+const tradePrints = createTradePrintsCollector(mockApp);
+if (typeof tradePrints.start !== "function") throw new Error("createTradePrintsCollector missing start()");
+if (typeof tradePrints.stop !== "function") throw new Error("createTradePrintsCollector missing stop()");
+
+if (!(app.store.earningsCalendar instanceof Map))
+  throw new Error("store.earningsCalendar is not a Map");
+
+if (typeof app.getEarningsCalendar !== "function")
+  throw new Error("app.getEarningsCalendar is not a function");
+
+const calendarSnapshot = app.getEarningsCalendar();
+if (typeof calendarSnapshot !== "object" || calendarSnapshot === null)
+  throw new Error("getEarningsCalendar() did not return an object");
+
 console.log(
   JSON.stringify(
     {
@@ -365,6 +394,7 @@ console.log(
       trade_setups_total: tradeSetups.length,
       trade_setups_long: longSetups.length,
       trade_setups_provisional: provisionalSetups.length,
+      earnings_calendar_tickers: app.store.earningsCalendar.size,
     },
     null,
     2
