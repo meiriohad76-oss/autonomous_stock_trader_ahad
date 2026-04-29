@@ -226,7 +226,7 @@ function deriveTimeframe(sentimentSignal) {
   return "1d-4d swing";
 }
 
-function buildRiskFlags(sentiment, moneyFlow, fundamental, macroRegime, provisional, action) {
+function buildRiskFlags(sentiment, moneyFlow, fundamental, macroRegime, provisional, action, ticker, earningsCalendar) {
   const flags = [];
   if (provisional) flags.push("provisional_fundamentals");
   if ((macroRegime?.confidence ?? 0) < 0.4) flags.push("low_macro_confidence");
@@ -237,6 +237,10 @@ function buildRiskFlags(sentiment, moneyFlow, fundamental, macroRegime, provisio
   if ((sentiment?.source_diversity ?? 1) < 0.3) flags.push("low_story_diversity");
   if ((sentiment?.momentum_delta ?? 0) < -0.15) flags.push("deteriorating_sentiment");
   if (fundamental?.direction_label === "bearish_headwind") flags.push("weak_fundamentals");
+  const cal = ticker && earningsCalendar ? earningsCalendar.get(ticker) : null;
+  if (cal?.days_until != null && cal.days_until >= 0 && cal.days_until <= 7) {
+    flags.push("earnings_in_window");
+  }
   return flags;
 }
 
@@ -341,7 +345,7 @@ export function generateTradeSetups(store, macroRegime) {
         stop_guidance: guidance.stop,
         target_guidance: guidance.target,
         thesis: buildThesis(action, sentiment, moneyFlow, fundamental, macroRegime),
-        risk_flags: buildRiskFlags(sentiment, moneyFlow, fundamental, macroRegime, provisional, action),
+        risk_flags: buildRiskFlags(sentiment, moneyFlow, fundamental, macroRegime, provisional, action, ticker, store.earningsCalendar),
         evidence: {
           sentiment: {
             signal: sentiment.signal,
