@@ -10,6 +10,11 @@ process.env.AUTO_START_SEC_13F = process.env.AUTO_START_SEC_13F || "false";
 process.env.AUTO_START_SEC_FUNDAMENTALS = process.env.AUTO_START_SEC_FUNDAMENTALS || "false";
 process.env.AUTO_START_FUNDAMENTAL_MARKET_DATA = process.env.AUTO_START_FUNDAMENTAL_MARKET_DATA || "false";
 
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async () => {
+  throw new Error("offline runtime reliability contract blocks network fetches");
+};
+
 const { createSentimentApp } = await import("../src/app.js");
 const { RUNTIME_PROFILES } = await import("../src/domain/runtime-reliability.js");
 
@@ -52,6 +57,10 @@ assertRuntimeSnapshot(runtime);
 
 const health = app.getHealth();
 assert(health.runtime_reliability?.status === runtime.status, "Health runtime summary is out of sync.");
+assert(
+  health.live_sources?.fundamental_universe?.sec_directory_source === "unavailable_fallback",
+  "Fundamental universe should survive SEC directory fetch failures."
+);
 
 const watchlist = app.getWatchlistSnapshot("1h");
 assert(watchlist.screener_overview?.full_universe?.tracked === 168, "Full fundamentals universe should remain at 168.");
@@ -79,6 +88,7 @@ try {
 assert(disabledError.includes("disabled by configuration"), "Disabled live news action should be blocked.");
 
 await app.stopLiveSources();
+globalThis.fetch = originalFetch;
 
 console.log(
   JSON.stringify(

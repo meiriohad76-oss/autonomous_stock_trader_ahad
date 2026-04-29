@@ -486,7 +486,14 @@ function buildPlaceholderCompany({
 
 export async function loadFundamentalUniverse({ config }) {
   const asOf = new Date().toISOString();
-  const secDirectory = await fetchSecCompanyDirectory(config);
+  let secDirectory = null;
+  let secDirectorySource = "official_live";
+  try {
+    secDirectory = await fetchSecCompanyDirectory(config);
+  } catch {
+    secDirectory = new Map();
+    secDirectorySource = "unavailable_fallback";
+  }
 
   let sp100Map = null;
   let sp100Source = "official_live";
@@ -515,6 +522,7 @@ export async function loadFundamentalUniverse({ config }) {
     asOf,
     universeName: "S&P 100 + QQQ Holdings",
     sources: {
+      sec_directory: secDirectorySource,
       sp100: sp100Source,
       qqq: "nasdaq_100_curated_apr_2026"
     },

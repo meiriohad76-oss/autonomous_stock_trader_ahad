@@ -10,18 +10,26 @@ const server = createServer((request, response) => {
   });
 });
 
-server.listen(app.config.port, app.config.host, async () => {
+async function start() {
   await app.initialize();
   if (!(await app.hasPersistedData())) {
     await app.replay({ reset: false, intervalMs: 180, skipFundamentals: true });
   }
   await app.startLiveSources();
-  const databaseTarget =
-    app.config.databaseProvider === "postgres"
-      ? app.config.databaseUrl || "unconfigured"
-      : app.config.databasePath;
-  console.log(`Sentiment Analyst listening on http://${app.config.host}:${app.config.port}`);
-  console.log(`Persistence provider: ${app.config.databaseProvider} (${databaseTarget})`);
+
+  server.listen(app.config.port, app.config.host, () => {
+    const databaseTarget =
+      app.config.databaseProvider === "postgres"
+        ? app.config.databaseUrl || "unconfigured"
+        : app.config.databasePath;
+    console.log(`Sentiment Analyst listening on http://${app.config.host}:${app.config.port}`);
+    console.log(`Persistence provider: ${app.config.databaseProvider} (${databaseTarget})`);
+  });
+}
+
+start().catch((error) => {
+  console.error("Failed to start Sentiment Analyst:", error);
+  process.exitCode = 1;
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

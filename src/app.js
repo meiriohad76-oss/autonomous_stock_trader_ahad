@@ -708,6 +708,7 @@ export function createSentimentApp() {
       tracked_companies: targetUniverse.counts.combined,
       sp100_constituents: targetUniverse.counts.sp100,
       qqq_constituents: targetUniverse.counts.qqq,
+      sec_directory_source: targetUniverse.sources.sec_directory,
       sp100_source: targetUniverse.sources.sp100,
       qqq_source: targetUniverse.sources.qqq,
       last_error: null
