@@ -78,6 +78,13 @@ assert(
   screenOnlyRows.every((row) => row.weighted_confidence === 0 && row.fundamental_confidence > 0),
   "Screen-only rows must keep sentiment confidence at zero and expose fundamental confidence separately."
 );
+const unknownBootstrapRows = watchlist.leaderboard.filter(
+  (row) => row.fundamental_data_source === "bootstrap_placeholder" && row.sector === "Unknown"
+);
+assert(
+  unknownBootstrapRows.length === 0,
+  "Bootstrap fallback should not leave tracked stocks with Unknown sectors."
+);
 
 const eligibleWatchlist = app.getWatchlistSnapshot("1h", { screenStage: "eligible" });
 assert(
@@ -136,6 +143,7 @@ console.log(
       eligible_filter_rows: eligibleWatchlist.screener_overview.visible_universe.tracked,
       sector_count: watchlist.sectors.length,
       screen_only_rows: screenOnlyRows.length,
+      unknown_bootstrap_sector_rows: unknownBootstrapRows.length,
       blocked_disabled_source: Boolean(disabledError)
     },
     null,

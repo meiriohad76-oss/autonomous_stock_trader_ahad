@@ -135,6 +135,56 @@ const QQQ_NAME_OVERRIDES = new Map([
   ["ZS", "Zscaler, Inc."]
 ]);
 
+function sectorEntries(sector, tickers) {
+  return tickers.map((ticker) => [
+    ticker,
+    {
+      sector,
+      industry: `${sector} Curated Classification`
+    }
+  ]);
+}
+
+const CURATED_TICKER_CLASSIFICATIONS = new Map([
+  ...sectorEntries("Information Technology", [
+    "AAPL", "ACN", "ADBE", "ADI", "ADP", "ADSK", "AMAT", "AMD", "ARM", "ASML",
+    "AVGO", "CDNS", "CRM", "CRWD", "CSCO", "CTSH", "DDOG", "FTNT", "IBM", "INTC",
+    "INTU", "KLAC", "LRCX", "MCHP", "MPWR", "MRVL", "MSFT", "MSTR", "MU", "NOW",
+    "NVDA", "NXPI", "ORCL", "PANW", "PLTR", "QCOM", "ROP", "SHOP", "SNDK", "SNPS",
+    "STX", "TXN", "WDAY", "WDC", "ZS"
+  ]),
+  ...sectorEntries("Communication Services", [
+    "APP", "CHTR", "CMCSA", "DIS", "EA", "GOOG", "GOOGL", "META", "NFLX", "T",
+    "TMUS", "TTWO", "VZ", "WBD"
+  ]),
+  ...sectorEntries("Consumer Discretionary", [
+    "ABNB", "AMZN", "BKNG", "DASH", "GM", "HD", "LOW", "MAR", "MCD", "MELI",
+    "NKE", "ORLY", "PDD", "ROST", "SBUX", "TSLA"
+  ]),
+  ...sectorEntries("Consumer Staples", [
+    "CCEP", "CL", "COST", "KDP", "KHC", "KO", "MDLZ", "MNST", "MO", "PEP",
+    "PG", "PM", "WMT"
+  ]),
+  ...sectorEntries("Health Care", [
+    "ABBV", "ABT", "ALNY", "AMGN", "BMY", "CVS", "DHR", "DXCM", "GEHC", "GILD",
+    "IDXX", "INSM", "ISRG", "JNJ", "LLY", "MDT", "MRK", "PFE", "REGN", "TMO",
+    "UNH", "VRTX"
+  ]),
+  ...sectorEntries("Financials", [
+    "AXP", "BAC", "BK", "BLK", "BRKB", "C", "COF", "GS", "JPM", "MA",
+    "MS", "PYPL", "SCHW", "USB", "V", "WFC"
+  ]),
+  ...sectorEntries("Industrials", [
+    "AXON", "BA", "CAT", "CPRT", "CSX", "CTAS", "DE", "EMR", "FAST", "FDX",
+    "FER", "GD", "GE", "GEV", "HON", "LMT", "ODFL", "PCAR", "RTX", "TRI",
+    "UBER", "UNP", "UPS", "VRSK", "PAYX", "MMM"
+  ]),
+  ...sectorEntries("Energy", ["BKR", "COP", "CVX", "FANG", "XOM"]),
+  ...sectorEntries("Materials", ["LIN"]),
+  ...sectorEntries("Utilities", ["AEP", "CEG", "DUK", "EXC", "NEE", "SO", "XEL"]),
+  ...sectorEntries("Real Estate", ["AMT", "CSGP", "SPG"])
+]);
+
 const DEFAULT_METRIC_RANGES = {
   revenue_growth_yoy: [0.01, 0.2],
   eps_growth_yoy: [-0.03, 0.22],
@@ -424,15 +474,18 @@ async function fetchLiveSp100Map(config) {
 
 function buildFallbackSp100Map() {
   return new Map(
-    SP100_FALLBACK_TICKERS.map((ticker) => [
-      ticker,
-      {
+    SP100_FALLBACK_TICKERS.map((ticker) => {
+      const curated = CURATED_TICKER_CLASSIFICATIONS.get(ticker);
+      return [
         ticker,
-        company_name: null,
-        sector: "Unknown",
-        exchange: null
-      }
-    ])
+        {
+          ticker,
+          company_name: null,
+          sector: curated?.sector || "Unknown",
+          exchange: null
+        }
+      ];
+    })
   );
 }
 
@@ -444,7 +497,10 @@ function buildPlaceholderCompany({
   inSp100,
   inQqq
 }) {
-  const sector = normalizeSectorLabel(sp100Record?.sector);
+  const curated = CURATED_TICKER_CLASSIFICATIONS.get(ticker);
+  const sp100Sector = normalizeSectorLabel(sp100Record?.sector);
+  const curatedSector = normalizeSectorLabel(curated?.sector);
+  const sector = sp100Sector !== "Unknown" ? sp100Sector : curatedSector;
 
   return {
     ticker,
@@ -454,7 +510,10 @@ function buildPlaceholderCompany({
       secRecord?.company_name ||
       ticker,
     sector,
-    industry: sp100Record?.sector ? `${sector} Constituents` : "Pending SEC classification",
+    industry:
+      sp100Sector !== "Unknown"
+        ? `${sector} Constituents`
+        : curated?.industry || "Pending SEC classification",
     exchange: sp100Record?.exchange || (inQqq ? "NASDAQ" : "NYSE"),
     market_cap_bucket: inSp100 ? "mega_cap" : "large_cap",
     cik: secRecord?.cik || null,
