@@ -23,6 +23,7 @@ import { createStore, resetStore } from "./domain/store.js";
 import { TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { createMacroRegimeAgent } from "./domain/macro-regime.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
+import { createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
 import { scoreToLabel } from "./utils/helpers.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
@@ -725,6 +726,7 @@ export function createSentimentApp() {
     store,
     getMacroRegime: (options = {}) => macroRegimeAgent.getMacroRegime(options)
   });
+  const runtimeReliabilityAgent = createRuntimeReliabilityAgent({ config, store });
 
   const app = {
     config,
@@ -802,6 +804,7 @@ export function createSentimentApp() {
       };
     },
     getHealth() {
+      const runtimeReliability = runtimeReliabilityAgent.getSnapshot();
       return {
         status: store.health.systemStatus,
         last_update: store.health.lastUpdate,
@@ -813,11 +816,21 @@ export function createSentimentApp() {
         active_sources: store.sourceStats.size,
         live_sources: store.health.liveSources,
         database_backup: store.health.databaseBackup,
-        evidence_quality: store.evidenceQuality.summary || null
+        evidence_quality: store.evidenceQuality.summary || null,
+        runtime_reliability: {
+          status: runtimeReliability.status,
+          summary: runtimeReliability.summary,
+          pressure: runtimeReliability.pressure,
+          source_counts: runtimeReliability.source_counts,
+          collector_plan: runtimeReliability.collector_plan
+        }
       };
     },
     getPerformance() {
       return buildPerformanceSnapshot(config, store);
+    },
+    getRuntimeReliability() {
+      return runtimeReliabilityAgent.getSnapshot();
     },
     getWatchlistSnapshot(windowKey, filters) {
       return buildWatchlistSnapshot(store, windowKey, filters);

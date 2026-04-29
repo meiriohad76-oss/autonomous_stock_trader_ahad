@@ -51,6 +51,11 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/runtime-reliability" && request.method === "GET") {
+    sendJson(response, 200, app.getRuntimeReliability());
+    return;
+  }
+
   if (pathname === "/api/config" && request.method === "GET") {
     sendJson(response, 200, app.getConfig());
     return;

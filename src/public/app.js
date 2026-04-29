@@ -36,6 +36,7 @@ const MARKET_FLOW_FIELD_META = {
 const state = {
   config: null,
   health: null,
+  runtimeReliability: null,
   snapshot: null,
   macroRegime: null,
   tradeSetups: null,
@@ -726,8 +727,12 @@ async function loadConfig() {
 }
 
 async function loadHealth() {
-  const health = await getJson("/api/health");
+  const [health, runtimeReliability] = await Promise.all([
+    getJson("/api/health"),
+    getJson("/api/runtime-reliability").catch(() => null)
+  ]);
   state.health = health;
+  state.runtimeReliability = runtimeReliability || health.runtime_reliability || null;
   elements.healthStatus.textContent = healthLabel(health.status);
   elements.healthUpdate.textContent = formatTime(health.last_update);
   elements.healthQueue.textContent = health.queue_depth;
@@ -1822,6 +1827,9 @@ function renderSignalDrawer() {
 
 function renderSystemView() {
   const pulse = state.snapshot?.market_pulse || {};
+  const runtimeReliability = state.runtimeReliability || state.health?.runtime_reliability || null;
+  const runtimePressure = runtimeReliability?.pressure || null;
+  const collectorPlan = runtimeReliability?.collector_plan || {};
   const liveNews = state.health?.live_sources?.google_news_rss || null;
   const marketData = state.health?.live_sources?.market_data || null;
   const marketFlow = state.health?.live_sources?.market_flow || null;
@@ -1840,22 +1848,41 @@ function renderSystemView() {
     <div class="workspace-stat-card"><span>Last Backup</span><strong>${backup?.last_backup_at ? relativeTime(backup.last_backup_at) : "n/a"}</strong></div>
     <div class="workspace-stat-card"><span>Evidence Items</span><strong>${evidenceQuality?.total_evidence_items || 0}</strong></div>
     <div class="workspace-stat-card"><span>Avg Evidence Weight</span><strong>${evidenceQuality ? formatNumber(evidenceQuality.average_downstream_weight, 2) : "n/a"}</strong></div>
+    <div class="workspace-stat-card"><span>Runtime Reliability</span><strong>${prettyLabel(runtimeReliability?.status || "unknown")}</strong></div>
+    <div class="workspace-stat-card"><span>Runtime Pressure</span><strong>${runtimePressure?.isConstrained ? "Constrained" : "Normal"}</strong></div>
+    <div class="workspace-stat-card"><span>Node RSS</span><strong>${runtimePressure?.process?.rss_mb ? `${runtimePressure.process.rss_mb} MB` : "n/a"}</strong></div>
+    <div class="workspace-stat-card"><span>Load/Core</span><strong>${runtimePressure?.system?.load_per_core_1m ?? "n/a"}</strong></div>
   `;
 
-  elements.systemSourceQuality.innerHTML = state.snapshot.source_quality.length
-    ? state.snapshot.source_quality
+  const reliabilitySources = runtimeReliability?.sources || [];
+  elements.systemSourceQuality.innerHTML = reliabilitySources.length
+    ? reliabilitySources
         .map(
           (source) => `
             <div class="source-card">
-              <strong>${source.source_name}</strong>
-              <span>Volume ${source.rolling_volume_1d}</span>
-              <span>Confidence ${formatNumber(source.rolling_avg_confidence)}</span>
-              <span>Lag ${formatNumber(source.avg_lag_seconds, 0)}s</span>
+              <strong>${source.label}</strong>
+              <span>Status ${prettyLabel(source.status)}</span>
+              <span>Action ${prettyLabel(source.action)}</span>
+              <span>${source.reason}</span>
+              <span>Last success ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}</span>
             </div>
           `
         )
         .join("")
-    : `<div class="workspace-empty">No source telemetry available.</div>`;
+    : state.snapshot.source_quality.length
+      ? state.snapshot.source_quality
+          .map(
+            (source) => `
+              <div class="source-card">
+                <strong>${source.source_name}</strong>
+                <span>Volume ${source.rolling_volume_1d}</span>
+                <span>Confidence ${formatNumber(source.rolling_avg_confidence)}</span>
+                <span>Lag ${formatNumber(source.avg_lag_seconds, 0)}s</span>
+              </div>
+            `
+          )
+          .join("")
+      : `<div class="workspace-empty">No source telemetry available.</div>`;
 
   elements.systemNotes.innerHTML = `
     <div class="workspace-detail-grid">
@@ -1879,7 +1906,16 @@ function renderSystemView() {
       <div class="workspace-stat-card"><span>Insider Poll</span><strong>${secForm4?.last_success_at ? formatTime(secForm4.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>SEC 13F</span><strong>${state.config?.sec_13f_enabled ? "Enabled" : "Disabled"}</strong></div>
       <div class="workspace-stat-card"><span>Institutional Poll</span><strong>${sec13f?.last_success_at ? formatTime(sec13f.last_success_at) : "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>Safe Autostart</span><strong>${collectorPlan.safe_to_autostart?.length ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>Keep Manual</span><strong>${collectorPlan.keep_manual?.length ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>Investigate</span><strong>${collectorPlan.investigate?.length ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>Disabled</span><strong>${collectorPlan.disabled?.length ?? 0}</strong></div>
     </div>
+    ${
+      collectorPlan.recommendations?.length
+        ? `<ul class="workspace-list">${collectorPlan.recommendations.map((item) => `<li>${item}</li>`).join("")}</ul>`
+        : ""
+    }
     <ul class="workspace-list">
       <li>News sentiment source: Google News RSS with Yahoo Finance RSS fallback, scored through the same normalization and sentiment pipeline as other live events.</li>
       <li>Money-flow sources: inferred tape anomalies from live market bars, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>

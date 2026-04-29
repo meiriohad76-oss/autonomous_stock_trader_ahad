@@ -48,6 +48,7 @@ For the new fundamentals view, open `http://127.0.0.1:3000/fundamentals.html`.
 - The dashboard now also includes a Trade Setup Agent that turns sentiment, money flow, alerts, and fundamentals into ranked `long`, `short`, `watch`, and `no_trade` ideas.
 - Macro-regime snapshots and trade-setup decisions are now persisted in dedicated audit tables, so the system can inspect prior recommendations after restart.
 - The runtime now includes an Evidence Quality Agent that scores every document after classification and before aggregation, so dashboards and downstream agents share one trust layer for freshness, duplication, corroboration, source quality, and display tier.
+- The runtime now includes a Runtime Reliability Agent that evaluates Pi/system pressure, source freshness, fallback mode, collector errors, and auto-start policy before heavier live-source load is enabled.
 
 ## SQLite backup and retention
 
@@ -173,6 +174,20 @@ The detailed design and criteria are documented in [docs/evidence-quality-agent.
 Live news now uses Google News RSS first and Yahoo Finance RSS as a no-key fallback. SEC collectors use retry-aware requests so transient aborts/timeouts are reported clearly and retried before collector health is marked degraded.
 
 Details are documented in [docs/source-reliability.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/source-reliability.md).
+
+## Runtime Reliability Agent
+
+The Runtime Reliability Agent is the backend traffic-control layer for the Pi and live sources. It observes source health, `.env` auto-start policy, fallback providers, SQLite backup state, process memory, host memory, and CPU load. It then returns a collector plan that tells the dashboard, deploy scripts, and future orchestration logic which sources are safe to auto-start, which should stay manual, and which need investigation.
+
+Useful endpoint:
+
+```bash
+GET /api/runtime-reliability
+```
+
+The compact summary is also embedded in `/api/health` as `runtime_reliability`.
+
+The full design is documented in [docs/runtime-reliability-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/runtime-reliability-agent.md).
 
 ## Pi Performance Mode
 
