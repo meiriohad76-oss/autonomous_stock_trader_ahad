@@ -715,7 +715,7 @@ async function buildTickerDetail(store, marketDataService, ticker) {
     .filter(Boolean)
     .sort((a, b) => new Date(b.normalized.published_at) - new Date(a.normalized.published_at));
 
-  if (!scoredDocs.length) {
+  if (!scoredDocs.length && !fundamentalRow && !tickerMeta) {
     return null;
   }
 
@@ -742,6 +742,7 @@ async function buildTickerDetail(store, marketDataService, ticker) {
     industry: fundamentalRow?.industry || tickerMeta?.industry || null,
     as_of: store.health.lastUpdate,
     windows,
+    data_mode: scoredDocs.length ? "sentiment_and_market" : "fundamentals_only",
     top_events: scoredDocs.slice(0, 5).map(({ score, normalized }) => ({
       event_type: score.event_type,
       impact_score: score.impact_score,
@@ -770,6 +771,12 @@ async function buildTickerDetail(store, marketDataService, ticker) {
     source_distribution: sourceDistribution,
     event_family_breakdown: eventFamilyBreakdown
   };
+}
+
+function hasUsableDashboardData(store, windowKey = "1h") {
+  return store.sentimentStates.some(
+    (state) => state.entity_type === "ticker" && state.window === windowKey
+  );
 }
 
 function buildRecentDocuments(store, { ticker = null, limit = 20 } = {}) {
@@ -940,6 +947,9 @@ export function createSentimentApp() {
     async hasPersistedData() {
       await persistenceReady;
       return persistence.hasData();
+    },
+    hasDashboardData(windowKey = config.defaultWindow) {
+      return hasUsableDashboardData(store, windowKey);
     },
     async reset() {
       await persistenceReady;

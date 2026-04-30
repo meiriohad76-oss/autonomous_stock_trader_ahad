@@ -368,6 +368,15 @@ if (secBatchTwo.length !== 2 || secBatchTwo[0].ticker === secBatchOne[0].ticker)
 }
 
 const app = createSentimentApp();
+await app.initialize();
+const bootSnapshot = app.getWatchlistSnapshot("1h");
+const bootFirstTicker = bootSnapshot.leaderboard[0]?.entity_key;
+const bootTickerDetail = bootFirstTicker ? await app.getTickerDetail(bootFirstTicker) : null;
+
+if (!bootSnapshot.leaderboard.length || !bootTickerDetail) {
+  throw new Error("Dashboard bootstrap should render a fundamentals-only ticker detail before sentiment replay.");
+}
+
 await app.replay({ reset: true, intervalMs: 0 });
 const snapshot = app.getWatchlistSnapshot("1h");
 const topTicker = snapshot.leaderboard[0]?.entity_key;
@@ -487,6 +496,8 @@ console.log(
       market_flow_signal: flowSignal.eventType,
       sec_live_metric_keys: Object.keys(liveMetrics).length,
       sec_fundamentals_batch_size: secBatchOne.length,
+      bootstrap_dashboard_rows: bootSnapshot.leaderboard.length,
+      bootstrap_ticker_detail_mode: bootTickerDetail.data_mode,
       leaderboard_count: snapshot.leaderboard.length,
       recent_documents: app.getRecentDocuments({ limit: 5 }).length,
       alerts: app.store.alertHistory.length,

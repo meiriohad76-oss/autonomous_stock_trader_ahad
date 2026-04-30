@@ -984,7 +984,12 @@ async function ensureTickerDetail(force = false) {
     return;
   }
 
-  state.tickerDetail = await getJson(`/api/sentiment/ticker/${state.selectedTicker}`);
+  try {
+    state.tickerDetail = await getJson(`/api/sentiment/ticker/${state.selectedTicker}`);
+  } catch (error) {
+    console.warn(`Ticker detail unavailable for ${state.selectedTicker}`, error);
+    state.tickerDetail = null;
+  }
 }
 
 async function loadSnapshot() {
@@ -1166,7 +1171,7 @@ function renderLeaderboard() {
     `;
     tr.addEventListener("click", async () => {
       state.selectedTicker = row.entity_key;
-      state.tickerDetail = await getJson(`/api/sentiment/ticker/${row.entity_key}`);
+      await ensureTickerDetail(true);
       render();
     });
     elements.leaderboardBody.appendChild(tr);
