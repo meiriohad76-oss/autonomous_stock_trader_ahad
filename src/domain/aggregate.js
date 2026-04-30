@@ -1,4 +1,5 @@
 import { HALF_LIFE_HOURS, WINDOWS } from "./taxonomy.js";
+import { shouldUseEvidence } from "./freshness-policy.js";
 import { clamp, differenceInHours, makeId, round, scoreToLabel } from "../utils/helpers.js";
 
 function decayFactor(score, normalized, asOf) {
@@ -82,7 +83,8 @@ export function recomputeStates(store, asOf = Date.now()) {
       const normalized = store.normalizedDocuments.find((doc) => doc.doc_id === score.doc_id);
       return normalized ? { score, normalized, decay: decayFactor(score, normalized, asOf) } : null;
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((row) => shouldUseEvidence(row.normalized, store.config, asOf));
 
   const nextStates = [];
   const latestByKey = new Map();

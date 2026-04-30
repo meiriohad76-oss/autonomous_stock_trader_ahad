@@ -466,6 +466,14 @@ export async function routeRequest(app, request, response) {
 
     request.on("end", async () => {
       options = parseJsonBody(body) || {};
+      if (!app.config.seedDataInDecisions) {
+        sendJson(response, 403, {
+          status: "blocked",
+          reason: "seed_data_disabled",
+          message: "Sample replay is disabled for decision data. Set SEED_DATA_IN_DECISIONS=true only for offline testing."
+        });
+        return;
+      }
       app.replay({
         reset: true,
         intervalMs: options.interval_ms ?? 350,

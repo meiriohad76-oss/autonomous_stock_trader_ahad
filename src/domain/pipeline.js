@@ -4,6 +4,7 @@ import { classifyWithRules } from "./rules.js";
 import { buildDocumentScore, simulateLlmScore } from "./score.js";
 import { recomputeStates } from "./aggregate.js";
 import { createEvidenceQualityAgent } from "./evidence-quality.js";
+import { freshnessStatus } from "./freshness-policy.js";
 import { makeId, round } from "../utils/helpers.js";
 
 function updateSourceStats(store, normalized, score) {
@@ -136,6 +137,19 @@ export function createPipeline(store) {
     store.rawDocuments.push(raw);
 
     const normalized = normalizeRawDocument(raw);
+    const freshness = freshnessStatus(normalized, store.config);
+    if (!freshness.fresh) {
+      store.health.queueDepth = Math.max(0, store.health.queueDepth - 1);
+      store.health.lastUpdate = new Date().toISOString();
+      return {
+        raw,
+        normalized,
+        skipped: true,
+        skipped_reason: freshness.reason,
+        freshness
+      };
+    }
+
     const cluster = assignDedupeCluster(store, normalized);
     normalized.dedupe_cluster_id = cluster.dedupe_cluster_id;
     normalized.novelty_score = cluster.novelty_score;

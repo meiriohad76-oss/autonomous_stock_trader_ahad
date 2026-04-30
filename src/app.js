@@ -9,6 +9,7 @@ import {
 } from "./domain/fundamental-persistence.js";
 import { createFundamentalMarketDataService } from "./domain/fundamental-market-data.js";
 import { loadFundamentalUniverse } from "./domain/fundamental-universe.js";
+import { filterFreshEvidence, shouldUseEvidence } from "./domain/freshness-policy.js";
 import { createFundamentalsEngine } from "./domain/fundamentals.js";
 import { createLiveNewsCollector } from "./domain/live-news.js";
 import { createMarketDataService } from "./domain/market-data.js";
@@ -447,6 +448,9 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
     if (state.window !== windowKey) {
       continue;
     }
+    if (!shouldUseEvidence({ published_at: state.as_of, source_type: "sentiment_state" }, config)) {
+      continue;
+    }
     if (state.entity_type === "ticker") {
       rememberLatest(dedupedStates, state.entity_key, state);
     } else if (state.entity_type === "sector") {
@@ -584,7 +588,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         bootstrap: fullFundamentalRows.filter((row) => row.data_source === "bootstrap_placeholder").length
       },
       sectors,
-      alerts: store.alertHistory.slice(0, 10),
+      alerts: filterFreshEvidence(store.alertHistory, config).slice(0, 10),
     source_quality: [...store.sourceStats.values()].sort((a, b) => b.rolling_avg_confidence - a.rolling_avg_confidence)
   };
 }
@@ -715,6 +719,7 @@ async function buildTickerDetail(store, marketDataService, ticker) {
       return normalized?.primary_ticker === ticker ? { score, normalized } : null;
     })
     .filter(Boolean)
+    .filter(({ normalized }) => shouldUseEvidence(normalized, config))
     .sort((a, b) => new Date(b.normalized.published_at) - new Date(a.normalized.published_at));
 
   if (!scoredDocs.length && !fundamentalRow && !tickerMeta) {
@@ -752,7 +757,7 @@ async function buildTickerDetail(store, marketDataService, ticker) {
       confidence: score.final_confidence
     })),
     regime: scoreToLabel(windows["1h"].weighted_sentiment),
-    risk_flags: store.alertHistory.filter((alert) => alert.entity_key === ticker).map((alert) => alert.alert_type),
+    risk_flags: filterFreshEvidence(store.alertHistory, config).filter((alert) => alert.entity_key === ticker).map((alert) => alert.alert_type),
     recent_documents: scoredDocs.slice(0, 10).map(({ score, normalized }) => ({
       published_at: normalized.published_at,
       headline: normalized.headline,
@@ -777,7 +782,10 @@ async function buildTickerDetail(store, marketDataService, ticker) {
 
 function hasUsableDashboardData(store, windowKey = "1h") {
   return store.sentimentStates.some(
-    (state) => state.entity_type === "ticker" && state.window === windowKey
+    (state) =>
+      state.entity_type === "ticker" &&
+      state.window === windowKey &&
+      shouldUseEvidence({ published_at: state.as_of, source_type: "sentiment_state" }, config)
   );
 }
 
@@ -793,8 +801,13 @@ function buildRecentDocuments(store, { ticker = null, limit = 20 } = {}) {
         return null;
       }
 
+      if (!shouldUseEvidence(normalized, config)) {
+        return null;
+      }
+
       return {
         timestamp: score.scored_at,
+        published_at: normalized.published_at,
         ticker: normalized.primary_ticker,
         headline: normalized.headline,
         source_name: normalized.source_name,
@@ -812,7 +825,7 @@ function buildRecentDocuments(store, { ticker = null, limit = 20 } = {}) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .sort((a, b) => new Date(b.published_at || b.timestamp) - new Date(a.published_at || a.timestamp))
     .slice(0, limit);
 }
 
@@ -1006,6 +1019,9 @@ export function createSentimentApp() {
         universe_name: config.universeName,
         default_window: config.defaultWindow,
         windows: ["15m", "1h", "4h", "1d", "7d"],
+        signal_freshness_max_hours: config.signalFreshnessMaxHours,
+        seed_data_on_empty: config.seedDataOnEmpty,
+        seed_data_in_decisions: config.seedDataInDecisions,
         live_news_enabled: config.liveNewsEnabled,
         market_data_provider: config.marketDataProvider,
         market_flow_enabled: config.marketFlowEnabled,
@@ -1046,7 +1062,7 @@ export function createSentimentApp() {
         active_sources: store.sourceStats.size,
         live_sources: store.health.liveSources,
         database_backup: store.health.databaseBackup,
-        evidence_quality: store.evidenceQuality.summary || null,
+        evidence_quality: pipeline.evidenceQualityAgent.getSnapshot({ limit: 0 }).summary || null,
         runtime_reliability: {
           status: runtimeReliability.status,
           summary: runtimeReliability.summary,

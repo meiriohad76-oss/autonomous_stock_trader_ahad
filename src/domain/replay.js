@@ -9,7 +9,11 @@ function materializeSampleEvents(sampleEvents) {
     return {
       ...event,
       published_at: publishedAt,
-      fetched_at: new Date(now - Math.max(0, offsetMinutes - 1) * 60_000).toISOString()
+      fetched_at: new Date(now - Math.max(0, offsetMinutes - 1) * 60_000).toISOString(),
+      source_metadata: {
+        ...(event.source_metadata || {}),
+        seed_data: true
+      }
     };
   });
 }

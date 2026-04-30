@@ -40,7 +40,7 @@ async function start() {
   try {
     app.setStartupStatus({ phase: "initializing" });
     await app.initialize();
-    if (!(await app.hasPersistedData()) || !app.hasDashboardData(app.config.defaultWindow)) {
+    if (app.config.seedDataOnEmpty && (!(await app.hasPersistedData()) || !app.hasDashboardData(app.config.defaultWindow))) {
       app.setStartupStatus({ phase: "replaying_seed_data" });
       await app.replay({ reset: false, intervalMs: 180, skipFundamentals: true });
     }

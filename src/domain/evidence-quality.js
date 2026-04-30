@@ -1,4 +1,5 @@
 import { clamp, makeId, round } from "../utils/helpers.js";
+import { filterFreshEvidence } from "./freshness-policy.js";
 
 const SOURCE_TYPE_WEIGHTS = {
   filing: 0.96,
@@ -225,7 +226,7 @@ export function createEvidenceQualityAgent({ store }) {
   }
 
   function getSnapshot({ ticker = null, tier = null, limit = 50 } = {}) {
-    let items = store.evidenceQuality.items || [];
+    let items = filterFreshEvidence(store.evidenceQuality.items || [], store.config);
     if (ticker) {
       items = items.filter((item) => item.ticker === ticker);
     }

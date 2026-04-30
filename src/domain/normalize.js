@@ -63,6 +63,7 @@ export function normalizeRawDocument(raw) {
     published_at: publishedAt,
     source_name: raw.source_name,
     source_type: raw.source_type,
+    source_metadata: raw.source_metadata || null,
     source_trust: sourceTrust,
     is_official_filing: raw.source_type === "filing" || /sec\.gov/i.test(raw.url),
     is_press_release: /announces|company said|press release/i.test(combined),

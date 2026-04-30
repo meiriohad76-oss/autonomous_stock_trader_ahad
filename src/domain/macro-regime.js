@@ -1,4 +1,5 @@
 import { clamp, round } from "../utils/helpers.js";
+import { filterFreshEvidence, shouldUseEvidence } from "./freshness-policy.js";
 
 const BULLISH_FLOW_EVENT_TYPES = new Set([
   "insider_buy",
@@ -39,7 +40,7 @@ function buildRecentScores(store, recentHours) {
       }
 
       const publishedAt = new Date(normalized.published_at).getTime();
-      if (!Number.isFinite(publishedAt) || publishedAt < cutoff) {
+      if (!Number.isFinite(publishedAt) || publishedAt < cutoff || !shouldUseEvidence(normalized, store.config)) {
         return null;
       }
 
@@ -71,6 +72,9 @@ function latestStatesForWindow(store, entityType, window) {
     if (state.entity_type !== entityType || state.window !== window) {
       continue;
     }
+    if (!shouldUseEvidence({ published_at: state.as_of, source_type: "sentiment_state" }, store.config)) {
+      continue;
+    }
     const previous = byKey.get(state.entity_key);
     if (!previous || new Date(state.as_of || 0) >= new Date(previous.as_of || 0)) {
       byKey.set(state.entity_key, state);
@@ -88,9 +92,10 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
   const recentRows = buildRecentScores(store, recentHours);
   const bullishFlowCount = recentRows.filter((row) => BULLISH_FLOW_EVENT_TYPES.has(row.score.event_type)).length;
   const bearishFlowCount = recentRows.filter((row) => BEARISH_FLOW_EVENT_TYPES.has(row.score.event_type)).length;
-  const positiveAlertCount = store.alertHistory.filter((item) => item.alert_type === "high_confidence_positive").length;
-  const negativeAlertCount = store.alertHistory.filter((item) => item.alert_type === "high_confidence_negative").length;
-  const reversalAlertCount = store.alertHistory.filter((item) => item.alert_type === "polarity_reversal").length;
+  const activeAlerts = filterFreshEvidence(store.alertHistory, store.config);
+  const positiveAlertCount = activeAlerts.filter((item) => item.alert_type === "high_confidence_positive").length;
+  const negativeAlertCount = activeAlerts.filter((item) => item.alert_type === "high_confidence_negative").length;
+  const reversalAlertCount = activeAlerts.filter((item) => item.alert_type === "polarity_reversal").length;
 
   const bullishSectorBreadth = sectorStates.length
     ? sectorStates.filter((item) => item.weighted_sentiment >= 0.15).length / sectorStates.length
@@ -260,7 +265,7 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
       reversal_alert_count: reversalAlertCount
     },
     dominant_sectors: dominantSectors,
-    recent_alerts: store.alertHistory
+    recent_alerts: activeAlerts
       .slice()
       .sort((a, b) => new Date(latestAlertTimestamp(b) || 0) - new Date(latestAlertTimestamp(a) || 0))
       .slice(0, 5)

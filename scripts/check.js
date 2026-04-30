@@ -1,4 +1,5 @@
 process.env.DATABASE_ENABLED = process.env.DATABASE_ENABLED || "false";
+process.env.SEED_DATA_IN_DECISIONS = "true";
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -378,6 +379,25 @@ if (!bootSnapshot.leaderboard.length || !bootTickerDetail) {
 }
 
 await app.replay({ reset: true, intervalMs: 0 });
+const scoreCountBeforeStale = app.store.documentScores.length;
+const staleResult = await app.pipeline.processRawDocument({
+  source_name: "google_news",
+  source_type: "rss",
+  source_priority: 0.62,
+  url: "https://news.google.com/articles/stale-check",
+  title: "Apple stale check event should not affect current decisions",
+  body: "Apple old news item that must be ignored by the decision pipeline.",
+  language: "en",
+  published_at: new Date(Date.now() - 96 * 3_600_000).toISOString(),
+  source_metadata: {
+    ticker_hint: "AAPL",
+    sector_hint: "Technology"
+  },
+  raw_payload: {}
+});
+if (!staleResult.skipped || app.store.documentScores.length !== scoreCountBeforeStale) {
+  throw new Error("Stale non-filing evidence should be skipped before scoring.");
+}
 const snapshot = app.getWatchlistSnapshot("1h");
 const topTicker = snapshot.leaderboard[0]?.entity_key;
 const tickerDetail = topTicker ? await app.getTickerDetail(topTicker) : null;

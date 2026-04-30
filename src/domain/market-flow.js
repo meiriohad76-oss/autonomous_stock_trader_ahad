@@ -1,4 +1,5 @@
 import { WATCHLIST } from "./taxonomy.js";
+import { shouldUseEvidence } from "./freshness-policy.js";
 import { dedupeKey, round } from "../utils/helpers.js";
 
 function ensureHealthEntry(store, config) {
@@ -25,6 +26,7 @@ function collectTickerDocs(store, ticker) {
       return normalized?.primary_ticker === ticker ? { score, normalized } : null;
     })
     .filter(Boolean)
+    .filter(({ normalized }) => shouldUseEvidence(normalized, store.config))
     .sort((a, b) => new Date(a.normalized.published_at) - new Date(b.normalized.published_at));
 }
 

@@ -54,6 +54,7 @@ For the new fundamentals view, open `http://127.0.0.1:3000/fundamentals.html`.
 - The runtime now includes an Execution Agent with a guarded Alpaca broker adapter. It can preview paper-trading orders from Trade Setup Agent output, while real submission stays disabled until explicit broker safety flags are configured.
 - The runtime now includes a Portfolio Risk Agent that checks proposed orders against gross exposure, single-name exposure, open-order count, and runtime-pressure policy before execution.
 - The runtime now includes a Position Monitor Agent that compares Alpaca positions and open orders against the latest Trade Setup Agent view.
+- Decision signals now enforce freshness: non-filing market/news/flow evidence older than `SIGNAL_FRESHNESS_MAX_HOURS` is skipped from scoring, alerts, macro regime, trade setups, and dashboard feeds. Automatic seed-data replay is disabled by default.
 
 ## SQLite backup and retention
 
@@ -363,6 +364,23 @@ LIVE_NEWS_REQUEST_TIMEOUT_MS=12000
 ```
 
 Set `LIVE_NEWS_ENABLED=false` if you want an offline-only session.
+
+## Signal freshness policy
+
+Trading decisions should not be influenced by stale news, stale market-flow, or old seeded examples. The default policy is:
+
+- non-filing market/news/macro/flow evidence must be no older than 72 hours
+- SEC filings, institutional filings, and quarterly/fundamental evidence are allowed as long-horizon context
+- automatic startup replay of sample data is disabled
+- seed/sample replay data is excluded from decisions unless explicitly enabled for offline testing
+
+Useful environment variables:
+
+```bash
+SIGNAL_FRESHNESS_MAX_HOURS=72
+SEED_DATA_ON_EMPTY=false
+SEED_DATA_IN_DECISIONS=false
+```
 
 ## Market data provider
 

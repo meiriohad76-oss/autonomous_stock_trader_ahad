@@ -1,5 +1,6 @@
 import { clamp, round } from "../utils/helpers.js";
 import { buildMacroRegimeSnapshot } from "./macro-regime.js";
+import { filterFreshEvidence, shouldUseEvidence } from "./freshness-policy.js";
 
 const BULLISH_FLOW_EVENT_TYPES = new Set([
   "insider_buy",
@@ -47,6 +48,7 @@ function buildSentimentByTicker(store, window) {
   return new Map(
     store.sentimentStates
       .filter((state) => state.entity_type === "ticker" && state.window === window)
+      .filter((state) => shouldUseEvidence({ published_at: state.as_of, source_type: "sentiment_state" }, store.config))
       .map((state) => [state.entity_key, state])
   );
 }
@@ -60,6 +62,10 @@ function buildRecentTickerDocuments(store, documentLookup, ticker, limit = 8) {
     .map((score) => {
       const normalized = documentLookup.get(score.doc_id);
       if (!normalized || normalized.primary_ticker !== ticker) {
+        return null;
+      }
+
+      if (!shouldUseEvidence(normalized, store.config)) {
         return null;
       }
 
@@ -579,7 +585,7 @@ export function buildTradeSetupsSnapshot(
         sentimentRow: sentimentByTicker.get(ticker) || null,
         fundamentalRow: fundamentalsByTicker.get(ticker) || null,
         docs: buildRecentTickerDocuments(store, documentLookup, ticker),
-        alerts: store.alertHistory
+        alerts: filterFreshEvidence(store.alertHistory, store.config)
           .filter((item) => item.entity_key === ticker)
           .sort((a, b) => new Date(latestAlertTimestamp(b) || 0) - new Date(latestAlertTimestamp(a) || 0)),
         macroRegimeSnapshot: regimeSnapshot,

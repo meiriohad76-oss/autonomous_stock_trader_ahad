@@ -1,4 +1,5 @@
 process.env.DATABASE_ENABLED = process.env.DATABASE_ENABLED || "false";
+process.env.SEED_DATA_IN_DECISIONS = "true";
 
 const { createSentimentApp } = await import("../src/app.js");
 
