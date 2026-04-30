@@ -291,6 +291,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecutionStatus"
+  /api/risk/status:
+    get:
+      summary: Portfolio Risk Agent snapshot with exposure, open-order, and runtime risk limits.
+      responses:
+        "200":
+          description: Portfolio risk snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskSnapshot"
+        "400":
+          description: Broker request failed.
+  /api/risk/evaluate:
+    post:
+      summary: Evaluate the risk impact of a proposed Trade Setup execution.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutionOrderRequest"
+      responses:
+        "200":
+          description: Execution preview plus risk evaluation.
+        "400":
+          description: Risk evaluation failed.
   /api/execution/account:
     get:
       summary: Alpaca account details when broker credentials are configured.
@@ -458,6 +484,33 @@ components:
           type: object
         intent:
           type: object
+        risk:
+          type: object
+    RiskSnapshot:
+      type: object
+      properties:
+        as_of:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [ok, caution, blocked]
+        equity:
+          type: number
+        buying_power:
+          type: number
+        gross_exposure_pct:
+          type: number
+        open_orders:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+        hard_blocks:
+          type: array
+          items:
+            type: string
     FundamentalChangeEvent:
       type: object
       properties:

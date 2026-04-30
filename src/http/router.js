@@ -349,6 +349,33 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/risk/status" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getRiskSnapshot());
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/risk/evaluate" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", async () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        sendJson(response, 200, await app.evaluateExecutionRisk(payload));
+      } catch (error) {
+        sendJson(response, 400, { ok: false, error: error.message });
+      }
+    });
+    return;
+  }
+
   if (pathname === "/api/execution/account" && request.method === "GET") {
     try {
       sendJson(response, 200, await app.getBrokerAccount());

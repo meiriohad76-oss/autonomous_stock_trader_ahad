@@ -52,6 +52,7 @@ For the new fundamentals view, open `http://127.0.0.1:3000/fundamentals.html`.
 - The runtime now includes an Evidence Quality Agent that scores every document after classification and before aggregation, so dashboards and downstream agents share one trust layer for freshness, duplication, corroboration, source quality, and display tier.
 - The runtime now includes a Runtime Reliability Agent that evaluates Pi/system pressure, source freshness, fallback mode, collector errors, and auto-start policy before heavier live-source load is enabled.
 - The runtime now includes an Execution Agent with a guarded Alpaca broker adapter. It can preview paper-trading orders from Trade Setup Agent output, while real submission stays disabled until explicit broker safety flags are configured.
+- The runtime now includes a Portfolio Risk Agent that checks proposed orders against gross exposure, single-name exposure, open-order count, and runtime-pressure policy before execution.
 
 ## SQLite backup and retention
 
@@ -161,6 +162,8 @@ GET /api/execution/positions
 GET /api/execution/orders
 POST /api/execution/preview
 POST /api/execution/orders
+GET /api/risk/status
+POST /api/risk/evaluate
 ```
 
 Contract check:
@@ -170,6 +173,8 @@ npm run check:execution
 ```
 
 The full design is documented in [docs/execution-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/execution-agent.md).
+
+The risk gate is documented in [docs/risk-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/risk-agent.md).
 
 ## Evidence Quality Agent
 

@@ -8,6 +8,7 @@ process.env.ALPACA_API_SECRET_KEY = "";
 const { config } = await import("../src/config.js");
 const { createAlpacaBroker } = await import("../src/domain/broker-alpaca.js");
 const { buildExecutionIntent, createExecutionAgent } = await import("../src/domain/execution-agent.js");
+const { buildPortfolioRiskSnapshot, evaluateExecutionRisk } = await import("../src/domain/risk-agent.js");
 
 const longSetup = {
   ticker: "AAPL",
@@ -70,7 +71,18 @@ const broker = createAlpacaBroker({ config });
 const agent = createExecutionAgent({
   config,
   broker,
-  getTradeSetup: (ticker) => (ticker === "AAPL" ? longSetup : watchSetup)
+  getTradeSetup: (ticker) => (ticker === "AAPL" ? longSetup : watchSetup),
+  evaluateRisk: (executionIntent) => evaluateExecutionRisk(
+    executionIntent,
+    buildPortfolioRiskSnapshot({
+      account,
+      positions: [],
+      orders: [],
+      runtimeReliability: null,
+      config
+    }),
+    config
+  )
 });
 
 const status = agent.getStatus();
@@ -79,7 +91,7 @@ if (status.status !== "not_configured" || status.broker.ready_for_order_submissi
 }
 
 const preview = await agent.previewOrder({ ticker: "AAPL" });
-if (!preview.ok || !preview.dry_run || !preview.intent.allowed) {
+if (!preview.ok || !preview.dry_run || !preview.intent.allowed || !preview.risk?.allowed) {
   throw new Error("Execution preview should produce a dry-run order without broker credentials.");
 }
 
@@ -104,6 +116,7 @@ console.log(
       order_side: intent.order.side,
       estimated_notional_usd: intent.estimated_notional_usd,
       bracket_order: intent.order.order_class === "bracket",
+      risk_allowed: preview.risk.allowed,
       watch_blocked_reason: watchIntent.blocked_reason,
       submit_blocked: submitBlocked
     },

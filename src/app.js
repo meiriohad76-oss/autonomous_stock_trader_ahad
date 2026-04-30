@@ -26,6 +26,7 @@ import { createTradeSetupAgent } from "./domain/trade-setup.js";
 import { RUNTIME_PROFILES, createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
 import { createAlpacaBroker } from "./domain/broker-alpaca.js";
 import { createExecutionAgent } from "./domain/execution-agent.js";
+import { createRiskAgent } from "./domain/risk-agent.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
@@ -890,10 +891,16 @@ export function createSentimentApp() {
     getRuntimeReliability: () => runtimeReliabilityAgent.getSnapshot()
   });
   const broker = createAlpacaBroker({ config });
+  const riskAgent = createRiskAgent({
+    config,
+    broker,
+    getRuntimeReliability: () => runtimeReliabilityAgent.getSnapshot()
+  });
   const executionAgent = createExecutionAgent({
     config,
     broker,
-    getTradeSetup: (ticker, options = {}) => tradeSetupAgent.getTickerSetup(ticker, options)
+    getTradeSetup: (ticker, options = {}) => tradeSetupAgent.getTickerSetup(ticker, options),
+    evaluateRisk: (intent) => riskAgent.evaluateIntent(intent)
   });
   const startupState = {
     started_at: new Date().toISOString(),
@@ -995,6 +1002,12 @@ export function createSentimentApp() {
         sec_13f_enabled: config.sec13fEnabled,
         auto_start_sec_13f: config.autoStartSec13f,
         execution: executionAgent.getStatus(),
+        risk: {
+          max_gross_exposure_pct: config.riskMaxGrossExposurePct,
+          max_single_name_exposure_pct: config.riskMaxSingleNameExposurePct,
+          max_open_orders: config.riskMaxOpenOrders,
+          block_when_runtime_constrained: config.riskBlockWhenRuntimeConstrained
+        },
         fundamentals_enabled: true
       };
     },
@@ -1323,6 +1336,18 @@ export function createSentimentApp() {
     },
     async getBrokerOrders(options = {}) {
       return broker.getOrders(options);
+    },
+    async getRiskSnapshot() {
+      return riskAgent.getSnapshot();
+    },
+    async evaluateExecutionRisk(payload = {}) {
+      const preview = await executionAgent.previewOrder(payload);
+      return {
+        ok: true,
+        ticker: payload.ticker || preview.intent?.ticker || null,
+        preview,
+        risk: preview.risk
+      };
     },
     getTradeSetupStorageSummary() {
       const rows = store.tradeSetupHistory || [];

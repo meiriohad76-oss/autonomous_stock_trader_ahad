@@ -10,6 +10,7 @@ Live collectors
 -> Sentiment, Fundamentals, Macro Regime
 -> Trade Setup Agent
 -> Execution Agent
+-> Portfolio Risk Agent
 -> Alpaca broker adapter
 -> paper/live brokerage account
 ```
@@ -22,6 +23,7 @@ The Execution Agent does not decide whether a stock is interesting. That remains
 - Is the proposed notional within configured risk limits?
 - Is the broker configured?
 - Is order submission explicitly enabled?
+- Does Portfolio Risk Agent allow the proposed exposure?
 
 ## Safety model
 
@@ -36,6 +38,7 @@ The default mode is preview-only. No order can be submitted unless all of these 
 - the setup action is `long` or `short`
 - setup conviction is at least `EXECUTION_MIN_CONVICTION`
 - proposed order size passes notional and position-size limits
+- Portfolio Risk Agent passes gross exposure, single-name exposure, and open-order checks
 
 Short selling is blocked unless `EXECUTION_ALLOW_SHORTS=true`.
 
@@ -106,6 +109,8 @@ GET /api/execution/positions
 GET /api/execution/orders?status=open&limit=50
 POST /api/execution/preview
 POST /api/execution/orders
+GET /api/risk/status
+POST /api/risk/evaluate
 ```
 
 Preview a generated order:

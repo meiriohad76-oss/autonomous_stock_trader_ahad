@@ -455,7 +455,7 @@ if (!Number.isFinite(tradeSetups.setups[0].score_components?.runtime_multiplier)
   throw new Error("Trade setup engine did not expose a runtime adjustment multiplier.");
 }
 
-if (!executionStatus.broker || !executionPreview.dry_run || !executionPreview.intent?.allowed) {
+if (!executionStatus.broker || !executionPreview.dry_run || !executionPreview.intent?.allowed || !executionPreview.risk?.allowed) {
   throw new Error("Execution agent did not produce a guarded dry-run order preview.");
 }
 
@@ -497,6 +497,7 @@ console.log(
       trade_setup_runtime_multiplier: tradeSetups.setups[0].score_components.runtime_multiplier,
       execution_status: executionStatus.status,
       execution_preview_allowed: executionPreview.intent.allowed,
+      risk_preview_allowed: executionPreview.risk.allowed,
       fundamental_change_events: app.getFundamentalsChanges(20).length,
       warehouse_coverage_rows: warehouseSummary.coverage_universe,
       warehouse_fact_rows: warehouseSummary.financial_facts,

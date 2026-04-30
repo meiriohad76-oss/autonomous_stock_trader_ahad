@@ -202,7 +202,7 @@ export function buildExecutionIntent(setup, account, config, { now = new Date() 
   };
 }
 
-export function createExecutionAgent({ config, broker, getTradeSetup }) {
+export function createExecutionAgent({ config, broker, getTradeSetup, evaluateRisk = null }) {
   async function accountIfAvailable() {
     const status = broker.getStatus();
     if (!status.configured) {
@@ -235,6 +235,7 @@ export function createExecutionAgent({ config, broker, getTradeSetup }) {
     const tradeSetup = setup || getTradeSetup(normalizeTicker(ticker), { window });
     const account = await accountIfAvailable();
     const intent = buildExecutionIntent(tradeSetup, account, config);
+    const risk = evaluateRisk && intent.allowed ? await evaluateRisk(intent) : null;
     const brokerStatus = broker.getStatus();
 
     return {
@@ -242,7 +243,9 @@ export function createExecutionAgent({ config, broker, getTradeSetup }) {
       dry_run: true,
       broker_ready: brokerStatus.ready_for_order_submission,
       broker: brokerStatus,
-      intent
+      execution_allowed: Boolean(intent.allowed && (!risk || risk.allowed)),
+      intent,
+      risk
     };
   }
 
@@ -265,6 +268,9 @@ export function createExecutionAgent({ config, broker, getTradeSetup }) {
     const preview = await previewOrder({ ticker, window, setup });
     if (!preview.intent.allowed) {
       throw new Error(`Execution blocked: ${preview.intent.blocked_reason}`);
+    }
+    if (preview.risk && !preview.risk.allowed) {
+      throw new Error(`Risk blocked execution: ${preview.risk.blocked_reason}`);
     }
 
     const submittedOrder = await broker.submitOrder(preview.intent.order);

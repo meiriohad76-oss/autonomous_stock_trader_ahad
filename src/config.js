@@ -153,6 +153,11 @@ export const config = {
   executionUseBracketOrders: String(process.env.EXECUTION_USE_BRACKET_ORDERS || "true").toLowerCase() !== "false",
   executionDefaultOrderType: process.env.EXECUTION_DEFAULT_ORDER_TYPE || "market",
   executionDefaultTimeInForce: process.env.EXECUTION_DEFAULT_TIME_IN_FORCE || "day",
+  riskMaxGrossExposurePct: Number(process.env.RISK_MAX_GROSS_EXPOSURE_PCT || 0.35),
+  riskMaxSingleNameExposurePct: Number(process.env.RISK_MAX_SINGLE_NAME_EXPOSURE_PCT || 0.08),
+  riskMaxOpenOrders: Number(process.env.RISK_MAX_OPEN_ORDERS || 10),
+  riskBlockWhenRuntimeConstrained:
+    String(process.env.RISK_BLOCK_WHEN_RUNTIME_CONSTRAINED || "false").toLowerCase() === "true",
   secForm4Enabled: String(process.env.SEC_FORM4_ENABLED || "true").toLowerCase() !== "false",
   secForm4PollMs: Number(process.env.SEC_FORM4_POLL_MS || 600000),
   secForm4LookbackHours: Number(process.env.SEC_FORM4_LOOKBACK_HOURS || 72),
