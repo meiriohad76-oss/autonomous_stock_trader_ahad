@@ -67,6 +67,16 @@ Then verify in Claude Code:
 /mcp
 ```
 
+## Project smoke test
+
+Run the project-level read-only MCP check:
+
+```powershell
+npm run check:alpaca-mcp
+```
+
+The check starts the MCP server, lists tools, calls only `get_account_info`, and prints a sanitized account status. It never places orders and never prints keys.
+
 ## Safety
 
 - Use paper keys only.
