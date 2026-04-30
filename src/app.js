@@ -887,6 +887,29 @@ export function createSentimentApp() {
     getMacroRegime: (options = {}) => macroRegimeAgent.getMacroRegime(options),
     getRuntimeReliability: () => runtimeReliabilityAgent.getSnapshot()
   });
+  const startupState = {
+    started_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    phase: "created",
+    http_listening: false,
+    initialized: false,
+    live_sources_started: false,
+    last_error: null
+  };
+
+  function updateStartupStatus(nextStatus = {}) {
+    Object.assign(startupState, nextStatus, { updated_at: new Date().toISOString() });
+    return startupState;
+  }
+
+  function getReadiness() {
+    const ready = Boolean(startupState.http_listening && startupState.initialized);
+    return {
+      status: startupState.last_error ? "error" : ready ? "ready" : "starting",
+      ready,
+      ...startupState
+    };
+  }
 
   const app = {
     config,
@@ -971,6 +994,7 @@ export function createSentimentApp() {
       const runtimeReliability = runtimeReliabilityAgent.getSnapshot();
       return {
         status: store.health.systemStatus,
+        readiness: getReadiness(),
         last_update: store.health.lastUpdate,
         queue_depth: store.health.queueDepth,
         llm_latency_ms: store.health.llmLatencyMs,
@@ -992,6 +1016,12 @@ export function createSentimentApp() {
     },
     getPerformance() {
       return buildPerformanceSnapshot(config, store);
+    },
+    setStartupStatus(nextStatus = {}) {
+      return updateStartupStatus(nextStatus);
+    },
+    getReadiness() {
+      return getReadiness();
     },
     getRuntimeReliability() {
       refreshSecFundamentalsHealthPreview(store, config);

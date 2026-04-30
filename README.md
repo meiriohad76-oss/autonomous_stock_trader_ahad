@@ -185,11 +185,13 @@ Useful endpoint:
 
 ```bash
 GET /api/runtime-reliability
+GET /api/ready
 GET /api/fundamentals/sec-queue
 POST /api/runtime-reliability/actions
 ```
 
 The compact summary is also embedded in `/api/health` as `runtime_reliability`.
+`/api/ready` reports whether HTTP is listening, initialization is complete, and live collectors have finished their startup warmup.
 
 The action endpoint supports guarded one-shot operations such as `poll_once` for a single source, `refresh_universe`, and `backup_now`. It does not enable permanent background polling or rewrite `.env`.
 

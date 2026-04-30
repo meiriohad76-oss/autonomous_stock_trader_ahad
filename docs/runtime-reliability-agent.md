@@ -74,11 +74,13 @@ When the system is constrained, the collector plan recommends keeping expensive 
 ```bash
 GET /api/runtime-reliability
 GET /api/health
+GET /api/ready
 GET /api/fundamentals/sec-queue
 POST /api/runtime-reliability/actions
 ```
 
 `/api/health` includes a compact `runtime_reliability` section. `/api/runtime-reliability` returns the complete source-by-source view.
+`/api/ready` separates HTTP readiness from live-source warmup, which is useful on the Pi because the dashboard can be reachable while collectors are still starting.
 `/api/fundamentals/sec-queue` exposes SEC fundamentals coverage progress, pending bootstrap counts, pending sectors, and the next bounded refresh batch.
 
 ## Operator actions

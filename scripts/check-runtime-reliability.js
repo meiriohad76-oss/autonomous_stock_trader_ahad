@@ -58,10 +58,19 @@ const app = createSentimentApp();
 await app.initialize();
 await app.replay({ reset: false, intervalMs: 0, skipFundamentals: true });
 
+const startingReadiness = app.getReadiness();
+assert(startingReadiness.status === "starting", "App readiness should start in starting state outside the HTTP server.");
+assert(startingReadiness.ready === false, "App readiness should not be ready before HTTP and initialization are marked complete.");
+app.setStartupStatus({ http_listening: true, initialized: true, phase: "running" });
+const readyState = app.getReadiness();
+assert(readyState.status === "ready", "App readiness should report ready after HTTP and initialization complete.");
+assert(readyState.ready === true, "Ready flag should be true after HTTP and initialization complete.");
+
 const runtime = app.getRuntimeReliability();
 assertRuntimeSnapshot(runtime);
 
 const health = app.getHealth();
+assert(health.readiness?.ready === true, "Health should embed readiness status.");
 assert(health.database_backup?.provider === "json", "Pi-safe lightweight state should replace disabled persistence.");
 assert(
   health.live_sources?.lightweight_state?.last_success_at,
@@ -194,6 +203,7 @@ console.log(
       profile_count: Object.keys(RUNTIME_PROFILES).length,
       recommended_profile: runtime.runtime_profiles.recommended,
       available_actions: runtime.available_actions.length,
+      readiness: health.readiness.status,
       full_universe_tracked: watchlist.screener_overview.full_universe.tracked,
       all_universe_rows: watchlist.screener_overview.all_universe.tracked,
       eligible_filter_rows: eligibleWatchlist.screener_overview.visible_universe.tracked,
