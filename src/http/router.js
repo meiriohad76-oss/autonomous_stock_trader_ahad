@@ -148,6 +148,13 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/fundamentals/sec-queue" && request.method === "GET") {
+    sendJson(response, 200, app.getSecFundamentalsQueue({
+      limit: query.limit ? Number(query.limit) : 20
+    }));
+    return;
+  }
+
   if (pathname === "/api/fundamentals/refresh" && request.method === "POST") {
     let body = "";
 

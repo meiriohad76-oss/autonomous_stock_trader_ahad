@@ -97,6 +97,16 @@ assert(
   "Bootstrap fallback should not leave tracked stocks with Unknown sectors."
 );
 
+const secQueue = app.getSecFundamentalsQueue({ limit: 5 });
+assert(secQueue.tracked_companies === 168, "SEC queue should expose the full fundamentals universe.");
+assert(secQueue.pending_bootstrap_companies >= 0, "SEC queue should expose pending bootstrap count.");
+assert(secQueue.next_batch.length <= 5, "SEC queue should honor preview limits.");
+assert(secQueue.next_batch_size > 0, "SEC queue should expose the next SEC refresh batch.");
+assert(
+  Array.isArray(secQueue.pending_by_sector) && secQueue.pending_by_sector.length > 0,
+  "SEC queue should summarize pending names by sector."
+);
+
 const eligibleWatchlist = app.getWatchlistSnapshot("1h", { screenStage: "eligible" });
 assert(
   eligibleWatchlist.screener_overview?.full_universe?.tracked === watchlist.screener_overview.full_universe.tracked,
@@ -182,6 +192,8 @@ console.log(
       sector_count: watchlist.sectors.length,
       screen_only_rows: screenOnlyRows.length,
       unknown_bootstrap_sector_rows: unknownBootstrapRows.length,
+      sec_queue_next_batch: secQueue.next_batch.length,
+      sec_queue_pending: secQueue.pending_bootstrap_companies,
       lightweight_state: health.database_backup.provider,
       blocked_disabled_source: Boolean(disabledError)
     },

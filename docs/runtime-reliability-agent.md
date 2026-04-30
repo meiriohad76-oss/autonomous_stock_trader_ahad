@@ -74,10 +74,12 @@ When the system is constrained, the collector plan recommends keeping expensive 
 ```bash
 GET /api/runtime-reliability
 GET /api/health
+GET /api/fundamentals/sec-queue
 POST /api/runtime-reliability/actions
 ```
 
 `/api/health` includes a compact `runtime_reliability` section. `/api/runtime-reliability` returns the complete source-by-source view.
+`/api/fundamentals/sec-queue` exposes SEC fundamentals coverage progress, pending bootstrap counts, pending sectors, and the next bounded refresh batch.
 
 ## Operator actions
 
@@ -181,6 +183,14 @@ Health fields exposed under `live_sources.sec_fundamentals`:
 - `refresh_cursor`: retry cursor used when a batch cannot advance because all selected names failed.
 - `live_companies`: total SEC-backed companies after the poll.
 - `pending_bootstrap_companies`: names still waiting for live SEC refresh.
+
+For a direct operator view of the SEC queue:
+
+```bash
+curl -s "http://127.0.0.1:3000/api/fundamentals/sec-queue?limit=10"
+```
+
+This returns the full tracked count, live SEC count, remaining bootstrap count, pending sector distribution, and a preview of the next names that a System tab SEC batch or `npm run sec:catchup` will attempt.
 
 ## Runtime profiles
 

@@ -16,7 +16,7 @@ import { createMarketFlowMonitor } from "./domain/market-flow.js";
 import { createPersistence } from "./domain/persistence.js";
 import { createPipeline } from "./domain/pipeline.js";
 import { replaySampleEvents } from "./domain/replay.js";
-import { createSecFundamentalsCollector } from "./domain/sec-fundamentals.js";
+import { createSecFundamentalsCollector, selectSecFundamentalsRefreshBatch } from "./domain/sec-fundamentals.js";
 import { createSecInstitutionalCollector } from "./domain/sec-institutional.js";
 import { createSecInsiderCollector } from "./domain/sec-insider.js";
 import { createStore, resetStore } from "./domain/store.js";
@@ -24,7 +24,7 @@ import { TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { createMacroRegimeAgent } from "./domain/macro-regime.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
 import { RUNTIME_PROFILES, createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
-import { scoreToLabel } from "./utils/helpers.js";
+import { round, scoreToLabel } from "./utils/helpers.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
   marketFlowVolumeSpikeThreshold: { env: "MARKET_FLOW_VOLUME_SPIKE_THRESHOLD", min: 1, max: 20, digits: 2 },
@@ -584,6 +584,72 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
   };
 }
 
+function summarizeQueueCompany(company) {
+  return {
+    ticker: company.ticker,
+    company_name: company.company_name,
+    sector: company.sector,
+    industry: company.industry,
+    data_source: company.data_source || null,
+    screen_stage: company.initial_screen?.stage || null,
+    screen_score: company.initial_screen?.score ?? null,
+    screen_provisional: Boolean(company.initial_screen?.provisional),
+    composite_fundamental_score: company.composite_fundamental_score ?? null,
+    final_confidence: company.final_confidence ?? null,
+    rating_label: company.rating_label || null,
+    filing_date: company.filing_date || null,
+    form_type: company.form_type || null
+  };
+}
+
+function summarizePendingBySector(companies) {
+  const counts = new Map();
+  for (const company of companies) {
+    const sector = company.sector || "Unknown";
+    counts.set(sector, (counts.get(sector) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([sector, count]) => ({ sector, count }))
+    .sort((a, b) => b.count - a.count || a.sector.localeCompare(b.sector));
+}
+
+function buildSecFundamentalsQueue(store, config, options = {}) {
+  const parsedLimit = Math.floor(Number(options.limit || 20));
+  const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(100, parsedLimit)) : 20;
+  const companies = store.fundamentals?.leaderboard || [];
+  const health = store.health.liveSources.sec_fundamentals || {};
+  const liveCompanies = companies.filter((company) => company.data_source === "live_sec_filing");
+  const pendingCompanies = companies.filter((company) => company.data_source !== "live_sec_filing");
+  const refreshCursor = Math.max(0, Math.floor(Number(health.refresh_cursor || 0)));
+  const nextBatch = selectSecFundamentalsRefreshBatch(companies, config, refreshCursor);
+  const configuredLimit = Number(config.fundamentalSecMaxCompaniesPerPoll || 0);
+  const refreshLimit =
+    Number(health.refresh_limit || 0) ||
+    (configuredLimit > 0 ? Math.min(configuredLimit, companies.length) : companies.length);
+
+  return {
+    as_of: store.health.lastUpdate,
+    enabled: config.fundamentalSecEnabled,
+    auto_start: config.autoStartSecFundamentals,
+    tracked_companies: companies.length,
+    live_sec_companies: liveCompanies.length,
+    pending_bootstrap_companies: pendingCompanies.length,
+    coverage_ratio: companies.length ? round(liveCompanies.length / companies.length, 3) : 0,
+    refresh_limit: refreshLimit,
+    refresh_cursor: refreshCursor,
+    next_batch_size: nextBatch.length,
+    next_batch_preview_count: Math.min(limit, nextBatch.length),
+    next_batch: nextBatch.slice(0, limit).map(summarizeQueueCompany),
+    pending_by_sector: summarizePendingBySector(pendingCompanies),
+    live_preview: liveCompanies.slice(0, limit).map(summarizeQueueCompany),
+    last_poll_at: health.last_poll_at || null,
+    last_success_at: health.last_success_at || null,
+    last_error: health.last_error || null,
+    explanation:
+      "SEC fundamentals refresh runs in bounded batches. Pending bootstrap names stay visible with provisional scores until a batch replaces them with live SEC-backed metrics."
+  };
+}
+
 async function buildTickerDetail(store, marketDataService, ticker) {
   const fundamentalsByTicker = new Map((store.fundamentals?.leaderboard || []).map((row) => [row.ticker, row]));
   const tickerMeta = TICKER_LOOKUP.get(ticker);
@@ -896,6 +962,9 @@ export function createSentimentApp() {
     },
     getRuntimeReliability() {
       return runtimeReliabilityAgent.getSnapshot();
+    },
+    getSecFundamentalsQueue(options = {}) {
+      return buildSecFundamentalsQueue(store, config, options);
     },
     async runRuntimeReliabilityAction(payload = {}) {
       await persistenceReady;

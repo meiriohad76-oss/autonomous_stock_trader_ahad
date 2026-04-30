@@ -185,6 +185,7 @@ Useful endpoint:
 
 ```bash
 GET /api/runtime-reliability
+GET /api/fundamentals/sec-queue
 POST /api/runtime-reliability/actions
 ```
 
@@ -212,6 +213,7 @@ npm run sec:catchup -- --max-batches 5 --delay-ms 2000
 ```
 
 `sec:catchup` is the safe Pi helper for SEC fundamentals progress. It runs bounded one-shot SEC batches, auto-saves lightweight JSON state when Pi mode is using JSON state, and reports live SEC coverage plus remaining bootstrap placeholders.
+`/api/fundamentals/sec-queue` shows the same SEC coverage queue from the API, including pending bootstrap names by sector and the next batch preview.
 
 The full design is documented in [docs/runtime-reliability-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/runtime-reliability-agent.md).
 
