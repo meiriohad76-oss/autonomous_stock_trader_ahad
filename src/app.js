@@ -30,6 +30,7 @@ import { createAlpacaMcpBroker } from "./domain/broker-alpaca-mcp.js";
 import { createExecutionAgent } from "./domain/execution-agent.js";
 import { createRiskAgent } from "./domain/risk-agent.js";
 import { createPositionMonitorAgent } from "./domain/position-monitor-agent.js";
+import { buildTradingWorkflowStatus } from "./domain/trading-workflow.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
@@ -1354,6 +1355,33 @@ export function createSentimentApp() {
     },
     getTradeSetupTicker(ticker, options = {}) {
       return tradeSetupAgent.getTickerSetup(ticker, options);
+    },
+    async getTradingWorkflowStatus(options = {}) {
+      refreshSecFundamentalsHealthPreview(store, config);
+      const window = options.window || config.defaultWindow;
+      const runtimeReliability = runtimeReliabilityAgent.getSnapshot();
+      const tradeSetups = tradeSetupAgent.getTradeSetups({
+        window,
+        limit: options.limit ? Number(options.limit) : 25,
+        minConviction: options.minConviction !== undefined ? Number(options.minConviction) : 0.35
+      });
+      const executionStatus = executionAgent.getStatus();
+      const riskSnapshot = await riskAgent.getSnapshot();
+      const positionMonitor = await positionMonitorAgent.getSnapshot({
+        window,
+        limit: options.positionLimit ? Number(options.positionLimit) : 25
+      });
+
+      return buildTradingWorkflowStatus({
+        config,
+        store,
+        readiness: getReadiness(),
+        runtimeReliability,
+        tradeSetups,
+        executionStatus,
+        riskSnapshot,
+        positionMonitor
+      });
     },
     getExecutionStatus() {
       return executionAgent.getStatus();

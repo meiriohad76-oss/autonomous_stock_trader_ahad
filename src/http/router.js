@@ -317,6 +317,19 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/trading-workflow/status" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getTradingWorkflowStatus({
+        window: query.window || app.config.defaultWindow,
+        limit: query.limit ? Number(query.limit) : 25,
+        minConviction: query.minConviction !== undefined ? Number(query.minConviction) : undefined
+      }));
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
   if (pathname === "/api/trade-setups/storage/summary" && request.method === "GET") {
     sendJson(response, 200, app.getTradeSetupStorageSummary());
     return;

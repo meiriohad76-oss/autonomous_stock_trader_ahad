@@ -975,6 +975,158 @@ input:focus-visible {
   line-height: 1.45;
 }
 
+.trading-workflow-status {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 4px;
+}
+
+.workflow-readiness-card,
+.workflow-step-card,
+.workflow-data-card,
+.workflow-action-card {
+  min-width: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.workflow-readiness-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-left: 4px solid var(--surface-border-strong);
+}
+
+.workflow-readiness-card.bullish,
+.workflow-step-card.bullish,
+.workflow-action-card.bullish {
+  border-left-color: rgba(19, 255, 67, 0.62);
+}
+
+.workflow-readiness-card.neutral,
+.workflow-step-card.neutral,
+.workflow-action-card.neutral {
+  border-left-color: rgba(68, 138, 255, 0.62);
+}
+
+.workflow-readiness-card.bearish,
+.workflow-step-card.bearish,
+.workflow-action-card.bearish {
+  border-left-color: rgba(255, 84, 75, 0.68);
+}
+
+.workflow-readiness-card h3 {
+  margin: 6px 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.035em;
+}
+
+.workflow-readiness-card p,
+.workflow-step-card p,
+.workflow-data-card small,
+.workflow-action-card li {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workflow-readiness-flags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.workflow-step-grid,
+.workflow-live-data-grid,
+.workflow-action-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.workflow-step-grid {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.workflow-live-data-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workflow-action-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.workflow-step-card,
+.workflow-action-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+
+.workflow-step-card span,
+.workflow-data-card span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.workflow-step-card strong,
+.workflow-data-card strong,
+.workflow-action-card strong {
+  color: var(--text);
+  font-weight: 850;
+}
+
+.workflow-data-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.workflow-data-card.wide {
+  grid-column: span 1;
+}
+
+.workflow-data-card strong {
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+}
+
+.workflow-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflow-source-list span {
+  padding: 7px 9px;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-soft);
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.workflow-action-card ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
 .setup-explain {
   display: grid;
   gap: 8px;
@@ -1987,6 +2139,10 @@ input:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .workflow-live-data-grid {
+    grid-template-columns: 1fr;
+  }
+
   .feed-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2079,8 +2235,19 @@ input:focus-visible {
   .sector-strip,
   .health-grid,
   .summary-grid,
-  .trading-flow-map {
+  .trading-flow-map,
+  .workflow-step-grid,
+  .workflow-action-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .workflow-readiness-card {
+    flex-direction: column;
+  }
+
+  .workflow-readiness-flags {
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .leaderboard-shell {
@@ -2176,6 +2343,11 @@ input:focus-visible {
   }
 
   .trading-flow-map {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-step-grid,
+  .workflow-action-grid {
     grid-template-columns: 1fr;
   }
 

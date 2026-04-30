@@ -281,6 +281,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EvidenceQualitySnapshot"
+  /api/trading-workflow/status:
+    get:
+      summary: End-to-end workflow readiness from fresh live evidence through guarded paper execution.
+      parameters:
+        - in: query
+          name: window
+          schema:
+            type: string
+            enum: [15m, 1h, 4h, 1d, 7d]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: minConviction
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+      responses:
+        "200":
+          description: Workflow readiness, live-data freshness, source status, trade-plan counts, and execution gates.
+        "400":
+          description: Workflow status could not be built.
   /api/execution/status:
     get:
       summary: Execution Agent status, broker readiness, and active safety policy.

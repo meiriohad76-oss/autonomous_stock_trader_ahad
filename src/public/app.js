@@ -38,6 +38,7 @@ const state = {
   health: null,
   runtimeReliability: null,
   secQueue: null,
+  workflowStatus: null,
   executionStatus: null,
   riskSnapshot: null,
   positionMonitor: null,
@@ -110,6 +111,7 @@ const elements = {
   alertsSummaryStrip: document.querySelector("#alerts-summary-strip"),
   alertsHighImpact: document.querySelector("#alerts-high-impact"),
   alertsMoneyFlow: document.querySelector("#alerts-money-flow"),
+  tradingWorkflowStatus: document.querySelector("#trading-workflow-status"),
   tradingPlanSummary: document.querySelector("#trading-plan-summary"),
   tradingPlanLists: document.querySelector("#trading-plan-lists"),
   tradingExecutionConsole: document.querySelector("#trading-execution-console"),
@@ -1084,10 +1086,11 @@ async function loadConfig() {
 }
 
 async function loadHealth() {
-  const [health, runtimeReliability, secQueue, executionStatus, riskSnapshot, positionMonitor] = await Promise.all([
+  const [health, runtimeReliability, secQueue, workflowStatus, executionStatus, riskSnapshot, positionMonitor] = await Promise.all([
     getJson("/api/health"),
     getJson("/api/runtime-reliability").catch(() => null),
     getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null),
+    getJson(`/api/trading-workflow/status?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
     getJson("/api/execution/status").catch(() => null),
     getJson("/api/risk/status").catch(() => null),
     getJson(`/api/positions/monitor?window=${encodeURIComponent(state.activeWindow)}&limit=12`).catch(() => null)
@@ -1095,6 +1098,7 @@ async function loadHealth() {
   state.health = health;
   state.runtimeReliability = runtimeReliability || health.runtime_reliability || null;
   state.secQueue = secQueue;
+  state.workflowStatus = workflowStatus;
   state.executionStatus = executionStatus || health.execution || null;
   state.riskSnapshot = riskSnapshot;
   state.positionMonitor = positionMonitor;
@@ -2617,6 +2621,101 @@ function renderExecutionConsolePanel() {
   `;
 }
 
+function workflowStatusClass(status) {
+  if (status === "ready" || status === "pass") {
+    return "bullish";
+  }
+  if (status === "not_ready" || status === "fail") {
+    return "bearish";
+  }
+  return "neutral";
+}
+
+function renderTradingWorkflowStatus() {
+  const workflow = state.workflowStatus;
+  if (!workflow) {
+    return `<div class="workspace-empty">Workflow readiness is loading. If this persists, check /api/trading-workflow/status.</div>`;
+  }
+
+  const liveData = workflow.live_data || {};
+  const steps = workflow.steps || [];
+  const sources = liveData.sources || [];
+  const blockers = workflow.blockers || [];
+  const warnings = workflow.warnings || [];
+  const actions = workflow.next_actions || [];
+
+  return `
+    <div class="workflow-readiness-card ${workflowStatusClass(workflow.status)}">
+      <div>
+        <div class="section-kicker">End-To-End Readiness</div>
+        <h3>${prettyLabel(workflow.status)}</h3>
+        <p>${escapeHtml(workflow.summary)}</p>
+      </div>
+      <div class="workflow-readiness-flags">
+        <span class="sentiment-badge ${workflow.can_use_for_decisions ? "bullish" : "bearish"}">${workflow.can_use_for_decisions ? "Decision Ready" : "Decision Blocked"}</span>
+        <span class="sentiment-badge ${workflow.can_preview_orders ? "bullish" : "neutral"}">${workflow.can_preview_orders ? "Preview Ready" : "Preview Limited"}</span>
+        <span class="sentiment-badge ${workflow.can_submit_orders ? "bullish" : "neutral"}">${workflow.can_submit_orders ? "Paper Submit Ready" : "Submit Gated"}</span>
+      </div>
+    </div>
+    <div class="workflow-step-grid">
+      ${steps
+        .map(
+          (step) => `
+            <div class="workflow-step-card ${workflowStatusClass(step.status)}">
+              <span>${prettyLabel(step.status)}</span>
+              <strong>${escapeHtml(step.label)}</strong>
+              <p>${escapeHtml(step.summary)}</p>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+    <div class="workflow-live-data-grid">
+      <div class="workflow-data-card">
+        <span>Fresh Decision Evidence</span>
+        <strong>${liveData.fresh_decision_evidence_count || 0}</strong>
+        <small>Max age ${liveData.freshness_max_hours || 72}h. Seed decisions: ${liveData.seed_data_in_decisions ? "on" : "off"}. Live pricing: ${liveData.live_pricing_ready ? "ready" : "not confirmed"}.</small>
+      </div>
+      <div class="workflow-data-card">
+        <span>Alert / Watch / Context</span>
+        <strong>${liveData.display_tiers?.alert || 0} / ${liveData.display_tiers?.watch || 0} / ${liveData.display_tiers?.context || 0}</strong>
+        <small>Only fresh alert/watch evidence can make the workflow decision-ready.</small>
+      </div>
+      <div class="workflow-data-card wide">
+        <span>Live Sources</span>
+        <div class="workflow-source-list">
+          ${sources
+            .map(
+              (source) => `
+                <span title="${escapeHtml(source.last_error || source.label)}">
+                  ${escapeHtml(source.label)}: ${prettyLabel(source.status)}${source.age_hours !== null && source.age_hours !== undefined ? `, ${formatNumber(source.age_hours, 1)}h old` : ""}
+                </span>
+              `
+            )
+            .join("")}
+        </div>
+      </div>
+    </div>
+    ${
+      blockers.length || warnings.length || actions.length
+        ? `<div class="workflow-action-grid">
+            ${
+              blockers.length
+                ? `<div class="workflow-action-card bearish"><strong>Blockers</strong><ul>${blockers.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+                : ""
+            }
+            ${
+              warnings.length
+                ? `<div class="workflow-action-card neutral"><strong>Warnings</strong><ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+                : ""
+            }
+            <div class="workflow-action-card bullish"><strong>Next Actions</strong><ul>${actions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+          </div>`
+        : ""
+    }
+  `;
+}
+
 function renderTradingView() {
   const payload = state.tradeSetups || { counts: {}, setups: [] };
   const setups = payload.setups || [];
@@ -2641,6 +2740,10 @@ function renderTradingView() {
       <div class="workspace-stat-card"><span>Positions</span><strong>${monitor.position_count ?? 0}</strong></div>
       <div class="workspace-stat-card"><span>Open Orders</span><strong>${monitor.open_order_count ?? 0}</strong></div>
     `;
+  }
+
+  if (elements.tradingWorkflowStatus) {
+    elements.tradingWorkflowStatus.innerHTML = renderTradingWorkflowStatus();
   }
 
   if (elements.tradingPlanLists) {

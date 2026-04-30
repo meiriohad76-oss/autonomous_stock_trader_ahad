@@ -149,6 +149,24 @@ The intended dashboard flow is:
 - Use `Trading Plan` as the main action workspace. It shows the compiled `Buy Candidates`, `Short / Sell Candidates`, and `Watch List`, plus Alpaca paper readiness, risk status, open positions, and execution preview controls.
 - Use Execution/Risk/Position endpoints or dashboard controls to preview Alpaca paper orders. Order submission remains blocked unless credentials, safety flags, risk approval, and confirmation phrase are present.
 
+## End-to-end workflow readiness
+
+The system now exposes one workflow gate for the complete path from live evidence to guarded paper execution:
+
+```bash
+GET /api/trading-workflow/status
+GET /api/trading-workflow/status?window=1h&limit=25
+npm run check:workflow
+```
+
+The workflow gate is intentionally strict. It blocks decision-ready status when seed/sample data is enabled, when there is no fresh market evidence inside `SIGNAL_FRESHNESS_MAX_HOURS`, when the app is still starting, or when the Portfolio Risk Agent has a hard block. SEC filings and quarterly fundamentals can remain useful as long-horizon context, but stale news, money-flow, or alert evidence is not allowed to drive trade decisions.
+
+The Trading Plan screen uses this status to show:
+
+- `Decision Ready`: fresh production evidence is available and seed data is blocked.
+- `Preview Ready`: the current trade plan can be converted into order previews.
+- `Paper Submit Ready`: Alpaca paper credentials, broker safety flags, risk gates, and confirmation gates are all aligned.
+
 ## Execution Agent and Alpaca integration
 
 The Execution Agent sits after the Trade Setup Agent. It turns a qualified `long` or `short` setup into a broker-ready order preview, then blocks actual submission unless Alpaca credentials and explicit safety flags are present.

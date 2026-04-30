@@ -16,6 +16,7 @@
     "check:positions": "node scripts/check-position-monitor.js",
     "check:risk": "node scripts/check-risk-agent.js",
     "check:runtime-reliability": "node scripts/check-runtime-reliability.js",
+    "check:workflow": "node scripts/check-trading-workflow.js",
     "ux:smoke": "node scripts/ux-smoke.js",
     "sqlite:backup": "node scripts/sqlite-backup.js",
     "sqlite:health": "node scripts/sqlite-health.js",
