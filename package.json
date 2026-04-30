@@ -10,6 +10,7 @@
     "replay": "node scripts/replay.js",
     "check": "node scripts/check.js",
     "check:evidence-quality": "node scripts/check-evidence-quality.js",
+    "check:execution": "node scripts/check-execution-agent.js",
     "check:runtime-reliability": "node scripts/check-runtime-reliability.js",
     "sqlite:backup": "node scripts/sqlite-backup.js",
     "sqlite:health": "node scripts/sqlite-health.js",

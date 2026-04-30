@@ -344,6 +344,79 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/execution/status" && request.method === "GET") {
+    sendJson(response, 200, app.getExecutionStatus());
+    return;
+  }
+
+  if (pathname === "/api/execution/account" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getBrokerAccount());
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/execution/positions" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getBrokerPositions());
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/execution/orders" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getBrokerOrders({
+        status: query.status || "open",
+        limit: query.limit ? Number(query.limit) : 50,
+        nested: String(query.nested || "false").toLowerCase() === "true",
+        symbols: query.symbols || null
+      }));
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/execution/preview" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", async () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        sendJson(response, 200, await app.previewExecutionOrder(payload));
+      } catch (error) {
+        sendJson(response, 400, { ok: false, error: error.message });
+      }
+    });
+    return;
+  }
+
+  if (pathname === "/api/execution/orders" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", async () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        sendJson(response, 200, await app.submitExecutionOrder(payload));
+      } catch (error) {
+        sendJson(response, 400, { ok: false, error: error.message });
+      }
+    });
+    return;
+  }
+
   if (pathname === "/api/replay" && request.method === "POST") {
     let options = {};
     let body = "";

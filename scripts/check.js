@@ -376,6 +376,24 @@ const fundamentals = app.getFundamentalsSnapshot();
 const topFundamental = fundamentals.leaderboard[0]?.ticker;
 const fundamentalDetail = topFundamental ? app.getFundamentalsTickerDetail(topFundamental) : null;
 const tradeSetups = app.getTradeSetups({ limit: 8, minConviction: 0 });
+const executionStatus = app.getExecutionStatus();
+const executionPreview = await app.previewExecutionOrder({
+  ticker: tradeSetups.setups[0]?.ticker,
+  setup: {
+    ticker: "AAPL",
+    action: "long",
+    setup_label: "check_long",
+    conviction: 0.72,
+    position_size_pct: 0.01,
+    current_price: 195,
+    timeframe: "swing_3d_to_2w",
+    stop_loss: 188,
+    take_profit: 214,
+    summary: "Check-only execution preview.",
+    thesis: [],
+    risk_flags: []
+  }
+});
 const warehouseSummary = app.getFundamentalPersistenceSummary();
 const warehouseTicker = topFundamental ? app.getFundamentalPersistenceTicker(topFundamental) : null;
 const baseFundamentalCompany = topFundamental ? app.getTrackedFundamentalCompanies().find((item) => item.ticker === topFundamental) : null;
@@ -437,6 +455,10 @@ if (!Number.isFinite(tradeSetups.setups[0].score_components?.runtime_multiplier)
   throw new Error("Trade setup engine did not expose a runtime adjustment multiplier.");
 }
 
+if (!executionStatus.broker || !executionPreview.dry_run || !executionPreview.intent?.allowed) {
+  throw new Error("Execution agent did not produce a guarded dry-run order preview.");
+}
+
 if (!warehouseSummary.coverage_universe || !warehouseSummary.fundamental_scores || !warehouseSummary.fundamental_states) {
   throw new Error("Fundamental warehouse summary is missing expected materialized rows.");
 }
@@ -473,6 +495,8 @@ console.log(
       sectors_count: fundamentals.sectors.length,
       trade_setups: tradeSetups.setups.length,
       trade_setup_runtime_multiplier: tradeSetups.setups[0].score_components.runtime_multiplier,
+      execution_status: executionStatus.status,
+      execution_preview_allowed: executionPreview.intent.allowed,
       fundamental_change_events: app.getFundamentalsChanges(20).length,
       warehouse_coverage_rows: warehouseSummary.coverage_universe,
       warehouse_fact_rows: warehouseSummary.financial_facts,

@@ -24,6 +24,8 @@ import { TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { createMacroRegimeAgent } from "./domain/macro-regime.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
 import { RUNTIME_PROFILES, createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
+import { createAlpacaBroker } from "./domain/broker-alpaca.js";
+import { createExecutionAgent } from "./domain/execution-agent.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
@@ -887,6 +889,12 @@ export function createSentimentApp() {
     getMacroRegime: (options = {}) => macroRegimeAgent.getMacroRegime(options),
     getRuntimeReliability: () => runtimeReliabilityAgent.getSnapshot()
   });
+  const broker = createAlpacaBroker({ config });
+  const executionAgent = createExecutionAgent({
+    config,
+    broker,
+    getTradeSetup: (ticker, options = {}) => tradeSetupAgent.getTickerSetup(ticker, options)
+  });
   const startupState = {
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -986,6 +994,7 @@ export function createSentimentApp() {
         sec_form4_enabled: config.secForm4Enabled,
         sec_13f_enabled: config.sec13fEnabled,
         auto_start_sec_13f: config.autoStartSec13f,
+        execution: executionAgent.getStatus(),
         fundamentals_enabled: true
       };
     },
@@ -1296,6 +1305,24 @@ export function createSentimentApp() {
     },
     getTradeSetupTicker(ticker, options = {}) {
       return tradeSetupAgent.getTickerSetup(ticker, options);
+    },
+    getExecutionStatus() {
+      return executionAgent.getStatus();
+    },
+    async previewExecutionOrder(payload = {}) {
+      return executionAgent.previewOrder(payload);
+    },
+    async submitExecutionOrder(payload = {}) {
+      return executionAgent.submitOrder(payload);
+    },
+    async getBrokerAccount() {
+      return broker.getAccount();
+    },
+    async getBrokerPositions() {
+      return broker.getPositions();
+    },
+    async getBrokerOrders(options = {}) {
+      return broker.getOrders(options);
     },
     getTradeSetupStorageSummary() {
       const rows = store.tradeSetupHistory || [];

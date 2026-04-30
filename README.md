@@ -51,6 +51,7 @@ For the new fundamentals view, open `http://127.0.0.1:3000/fundamentals.html`.
 - Macro-regime snapshots and trade-setup decisions are now persisted in dedicated audit tables, so the system can inspect prior recommendations after restart.
 - The runtime now includes an Evidence Quality Agent that scores every document after classification and before aggregation, so dashboards and downstream agents share one trust layer for freshness, duplication, corroboration, source quality, and display tier.
 - The runtime now includes a Runtime Reliability Agent that evaluates Pi/system pressure, source freshness, fallback mode, collector errors, and auto-start policy before heavier live-source load is enabled.
+- The runtime now includes an Execution Agent with a guarded Alpaca broker adapter. It can preview paper-trading orders from Trade Setup Agent output, while real submission stays disabled until explicit broker safety flags are configured.
 
 ## SQLite backup and retention
 
@@ -133,6 +134,42 @@ GET /api/trade-setups/ticker/NVDA
 GET /api/trade-setups/storage/summary
 GET /api/trade-setups/storage/ticker/NVDA
 ```
+
+## Execution Agent and Alpaca integration
+
+The Execution Agent sits after the Trade Setup Agent. It turns a qualified `long` or `short` setup into a broker-ready order preview, then blocks actual submission unless Alpaca credentials and explicit safety flags are present.
+
+Default behavior is preview-only:
+
+```bash
+BROKER_PROVIDER=alpaca
+BROKER_TRADING_MODE=paper
+BROKER_SUBMIT_ENABLED=false
+ALPACA_API_KEY_ID=
+ALPACA_API_SECRET_KEY=
+EXECUTION_MIN_CONVICTION=0.62
+EXECUTION_MAX_ORDER_NOTIONAL_USD=1000
+EXECUTION_MAX_POSITION_PCT=0.03
+```
+
+Useful endpoints:
+
+```bash
+GET /api/execution/status
+GET /api/execution/account
+GET /api/execution/positions
+GET /api/execution/orders
+POST /api/execution/preview
+POST /api/execution/orders
+```
+
+Contract check:
+
+```bash
+npm run check:execution
+```
+
+The full design is documented in [docs/execution-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/execution-agent.md).
 
 ## Evidence Quality Agent
 

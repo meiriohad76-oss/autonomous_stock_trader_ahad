@@ -281,6 +281,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EvidenceQualitySnapshot"
+  /api/execution/status:
+    get:
+      summary: Execution Agent status, broker readiness, and active safety policy.
+      responses:
+        "200":
+          description: Execution status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionStatus"
+  /api/execution/account:
+    get:
+      summary: Alpaca account details when broker credentials are configured.
+      responses:
+        "200":
+          description: Broker account payload.
+        "400":
+          description: Broker is not configured or request failed.
+  /api/execution/positions:
+    get:
+      summary: Current Alpaca open positions when broker credentials are configured.
+      responses:
+        "200":
+          description: Broker positions payload.
+        "400":
+          description: Broker is not configured or request failed.
+  /api/execution/orders:
+    get:
+      summary: Current Alpaca orders when broker credentials are configured.
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, closed, all]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: Broker orders payload.
+        "400":
+          description: Broker is not configured or request failed.
+    post:
+      summary: Submit a guarded paper/live order generated from a Trade Setup Agent setup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutionOrderRequest"
+      responses:
+        "200":
+          description: Submitted broker order and execution intent.
+        "400":
+          description: Safety gate blocked submission or broker request failed.
+  /api/execution/preview:
+    post:
+      summary: Preview the broker order that would be generated from a Trade Setup Agent setup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutionOrderRequest"
+      responses:
+        "200":
+          description: Dry-run execution intent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionPreview"
   /api/replay:
     post:
       summary: Replay the local sample event set into the live pipeline.
@@ -342,6 +417,47 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EvidenceQualityItem"
+    ExecutionStatus:
+      type: object
+      properties:
+        as_of:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [ready, guarded, not_configured]
+        broker:
+          type: object
+        safety:
+          type: object
+        order_submission_policy:
+          type: object
+    ExecutionOrderRequest:
+      type: object
+      properties:
+        ticker:
+          type: string
+        window:
+          type: string
+          enum: [15m, 1h, 4h, 1d, 7d]
+        confirm:
+          type: string
+          description: Required only for order submission. Use paper-trade for paper mode or live-trade for live mode.
+      required:
+        - ticker
+    ExecutionPreview:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        dry_run:
+          type: boolean
+        broker_ready:
+          type: boolean
+        broker:
+          type: object
+        intent:
+          type: object
     FundamentalChangeEvent:
       type: object
       properties:
