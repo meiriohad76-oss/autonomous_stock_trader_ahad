@@ -38,6 +38,9 @@ const state = {
   health: null,
   runtimeReliability: null,
   secQueue: null,
+  executionStatus: null,
+  riskSnapshot: null,
+  positionMonitor: null,
   snapshot: null,
   macroRegime: null,
   tradeSetups: null,
@@ -142,6 +145,15 @@ let refreshTimer = null;
 let refreshInFlight = false;
 let refreshQueued = false;
 let snapshotLoadToken = 0;
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function formatNumber(value, digits = 2) {
   return Number(value || 0).toFixed(digits);
@@ -786,6 +798,53 @@ function buildSignalFromTradeSetup(setup) {
   };
 }
 
+function buildSignalFromExecutionPreview(ticker, payload, submitted = null) {
+  const intent = payload.intent || payload.preview?.intent || {};
+  const risk = payload.risk || payload.preview?.risk || null;
+  const order = intent.order || {};
+  const allowed = Boolean(payload.execution_allowed ?? (intent.allowed && (!risk || risk.allowed)));
+  const blockedReason = intent.blocked_reason || risk?.blocked_reason || submitted?.error || null;
+  const orderJson = Object.keys(order).length ? JSON.stringify(order, null, 2) : "No order payload generated.";
+  const riskChecks = risk?.checks || [];
+
+  return {
+    ticker: ticker || intent.ticker || null,
+    title: `${ticker || intent.ticker || "Order"} execution ${submitted ? "submit" : "preview"}`,
+    subtitle: "Execution Agent",
+    label: submitted?.ok ? "Paper submitted" : allowed ? "Preview allowed" : "Blocked",
+    badgeClass: submitted?.ok || allowed ? "bullish" : "bearish",
+    confidence: intent.setup?.conviction || 0,
+    timestamp: new Date().toISOString(),
+    sourceName: "Execution Agent",
+    headline: submitted?.ok
+      ? "Paper order was submitted through the guarded broker path."
+      : allowed
+        ? "This setup currently passes execution and risk preview checks."
+        : `Execution is blocked: ${prettyLabel(blockedReason || "unknown")}.`,
+    explanation:
+      "Execution preview translates the Trade Setup Agent output into an Alpaca-ready order, then passes it through Portfolio Risk Agent before any paper submission is allowed.",
+    eventType: "execution_preview",
+    statsHtml: `
+      <div class="workspace-stat-card"><span>Ticker</span><strong>${intent.ticker || ticker || "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>Action</span><strong>${prettyLabel(intent.action)}</strong></div>
+      <div class="workspace-stat-card"><span>Side</span><strong>${prettyLabel(intent.side)}</strong></div>
+      <div class="workspace-stat-card"><span>Notional</span><strong>${formatUsdCompact(intent.estimated_notional_usd || 0)}</strong></div>
+      <div class="workspace-stat-card"><span>Quantity</span><strong>${formatNumber(intent.estimated_quantity || 0, 4)}</strong></div>
+      <div class="workspace-stat-card"><span>Risk</span><strong>${risk?.allowed === false ? "Blocked" : "Allowed"}</strong></div>
+    `,
+    contextItems: [
+      intent.setup?.summary ? `Setup: ${intent.setup.summary}` : null,
+      intent.setup?.timeframe ? `Timeframe: ${prettyLabel(intent.setup.timeframe)}.` : null,
+      risk?.proposed ? `Post-trade gross exposure: ${formatNumber(risk.proposed.gross_exposure_pct_after * 100, 1)}%.` : null,
+      riskChecks.length
+        ? `Risk checks: ${riskChecks.map((check) => `${prettyLabel(check.key)} ${check.pass ? "pass" : "fail"}`).join(", ")}.`
+        : null,
+      blockedReason ? `Blocked reason: ${prettyLabel(blockedReason)}.` : null,
+      `<pre class="drawer-json">${escapeHtml(orderJson)}</pre>`
+    ].filter(Boolean)
+  };
+}
+
 function moneyFlowEvidence(item) {
   const meta = item?.source_metadata || {};
 
@@ -939,6 +998,19 @@ async function getJson(url) {
   return response.json();
 }
 
+async function postJson(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {})
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.ok === false) {
+    throw new Error(body.error || `Failed to post ${url}`);
+  }
+  return body;
+}
+
 async function loadConfig() {
   state.config = await getJson("/api/config");
   state.activeWindow = state.config.default_window || "1h";
@@ -948,14 +1020,20 @@ async function loadConfig() {
 }
 
 async function loadHealth() {
-  const [health, runtimeReliability, secQueue] = await Promise.all([
+  const [health, runtimeReliability, secQueue, executionStatus, riskSnapshot, positionMonitor] = await Promise.all([
     getJson("/api/health"),
     getJson("/api/runtime-reliability").catch(() => null),
-    getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null)
+    getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null),
+    getJson("/api/execution/status").catch(() => null),
+    getJson("/api/risk/status").catch(() => null),
+    getJson(`/api/positions/monitor?window=${encodeURIComponent(state.activeWindow)}&limit=12`).catch(() => null)
   ]);
   state.health = health;
   state.runtimeReliability = runtimeReliability || health.runtime_reliability || null;
   state.secQueue = secQueue;
+  state.executionStatus = executionStatus || health.execution || null;
+  state.riskSnapshot = riskSnapshot;
+  state.positionMonitor = positionMonitor;
   elements.healthStatus.textContent = healthLabel(health.status);
   elements.healthUpdate.textContent = formatTime(health.last_update);
   elements.healthQueue.textContent = health.queue_depth;
@@ -1224,6 +1302,53 @@ function renderFeed() {
   });
 }
 
+async function previewTradeExecution(ticker) {
+  try {
+    const payload = await postJson("/api/execution/preview", {
+      ticker,
+      window: state.activeWindow
+    });
+    openSignalDrawer(buildSignalFromExecutionPreview(ticker, payload));
+    state.executionStatus = await getJson("/api/execution/status").catch(() => state.executionStatus);
+    state.riskSnapshot = await getJson("/api/risk/status").catch(() => state.riskSnapshot);
+  } catch (error) {
+    openSignalDrawer(buildSignalFromExecutionPreview(ticker, {
+      intent: {
+        ticker,
+        allowed: false,
+        blocked_reason: error.message
+      },
+      risk: null
+    }));
+  }
+}
+
+async function submitPaperTrade(ticker) {
+  const confirmation = window.prompt(`Type paper-trade to submit a guarded Alpaca paper order for ${ticker}.`);
+  if (confirmation !== "paper-trade") {
+    return;
+  }
+
+  try {
+    const payload = await postJson("/api/execution/orders", {
+      ticker,
+      window: state.activeWindow,
+      confirm: "paper-trade"
+    });
+    openSignalDrawer(buildSignalFromExecutionPreview(ticker, payload, payload));
+    await loadHealth();
+  } catch (error) {
+    openSignalDrawer(buildSignalFromExecutionPreview(ticker, {
+      intent: {
+        ticker,
+        allowed: false,
+        blocked_reason: error.message
+      },
+      risk: null
+    }, { error: error.message }));
+  }
+}
+
 function tradeSetupRuntimeExplain(setup) {
   const runtime = setup.runtime_reliability || {};
   const score = setup.score_components || {};
@@ -1277,6 +1402,8 @@ function renderTradeSetups() {
   const counts = payload.counts || {};
   const setups = payload.setups || [];
   const runtimeStatus = payload.runtime_reliability?.status || "unknown";
+  const broker = state.executionStatus?.broker || {};
+  const paperSubmitEnabled = broker.mode === "paper" && broker.ready_for_order_submission;
   const averageRuntimeMultiplier = setups.length
     ? setups.reduce((sum, setup) => sum + Number(setup.runtime_reliability?.adjustment_multiplier || 1), 0) / setups.length
     : 1;
@@ -1329,10 +1456,32 @@ function renderTradeSetups() {
         <span>${setup.current_price ? `$${formatNumber(setup.current_price)}` : "Price n/a"}</span>
         <span>runtime x${formatNumber(setup.runtime_reliability?.adjustment_multiplier || 1, 2)}</span>
       </div>
+      <div class="setup-action-row">
+        <button type="button" class="panel-action compact-action" data-execution-preview="${setup.ticker}">
+          Preview Order
+        </button>
+        <button
+          type="button"
+          class="panel-action compact-action danger-action"
+          data-paper-submit="${setup.ticker}"
+          ${paperSubmitEnabled ? "" : "disabled"}
+          title="${paperSubmitEnabled ? "Submit guarded Alpaca paper order" : "Paper submit requires Alpaca credentials, paper mode, and BROKER_SUBMIT_ENABLED=true"}"
+        >
+          Paper Submit
+        </button>
+      </div>
       ${tradeSetupRuntimeExplain(setup)}
     `;
     article.addEventListener("click", () => {
       openSignalDrawer(buildSignalFromTradeSetup(setup));
+    });
+    article.querySelector("[data-execution-preview]")?.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await previewTradeExecution(setup.ticker);
+    });
+    article.querySelector("[data-paper-submit]")?.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await submitPaperTrade(setup.ticker);
     });
     elements.tradeSetupList.appendChild(article);
   });
@@ -2114,6 +2263,179 @@ function renderSignalDrawer() {
   elements.signalSourceButton.disabled = !signal.url;
 }
 
+function monitorActionClass(action) {
+  if (["close_candidate", "action_needed", "blocked"].includes(action)) {
+    return "bearish";
+  }
+  if (action === "hold" || action === "ok") {
+    return "bullish";
+  }
+  return "neutral";
+}
+
+function renderExecutionConsolePanel() {
+  const execution = state.executionStatus || {};
+  const monitor = state.positionMonitor || {};
+  const risk = state.riskSnapshot || {};
+  const broker = execution.broker || monitor.broker || {};
+  const safety = execution.safety || {};
+  const positions = monitor.positions || [];
+  const orders = monitor.open_orders || [];
+  const planningCandidates =
+    monitor.planning_candidates?.length
+      ? monitor.planning_candidates
+      : (state.tradeSetups?.setups || [])
+          .filter((setup) => ["long", "short"].includes(setup.action))
+          .slice(0, 5)
+          .map((setup) => ({
+            ticker: setup.ticker,
+            action: setup.action,
+            conviction: setup.conviction,
+            summary: setup.summary
+          }));
+  const submitEnabled = broker.mode === "paper" && broker.ready_for_order_submission;
+  const brokerLabel = broker.ready_for_order_submission
+    ? "ready"
+    : broker.configured
+      ? "guarded"
+      : "not configured";
+  const statusClass = broker.ready_for_order_submission ? "bullish" : broker.configured ? "neutral" : "bearish";
+
+  return `
+    <div class="runtime-action-panel execution-console-panel">
+      <div class="section-kicker">Execution Control</div>
+      <h3>Paper Trading And Position Monitor</h3>
+      <p class="workspace-copy">This is the guarded execution layer. Preview converts a Trade Setup Agent idea into an Alpaca-ready order and risk check. Paper submit stays disabled until Alpaca paper credentials and BROKER_SUBMIT_ENABLED=true are configured.</p>
+      <div class="workspace-detail-grid execution-status-grid">
+        <div class="workspace-stat-card"><span>Broker</span><strong>${prettyLabel(broker.provider || "alpaca")}</strong></div>
+        <div class="workspace-stat-card"><span>Mode</span><strong>${prettyLabel(broker.mode || "paper")}</strong></div>
+        <div class="workspace-stat-card"><span>Submit Guard</span><strong>${broker.submit_enabled ? "Enabled" : "Disabled"}</strong></div>
+        <div class="workspace-stat-card"><span>Execution</span><strong>${prettyLabel(execution.status || brokerLabel)}</strong></div>
+        <div class="workspace-stat-card"><span>Risk</span><strong>${prettyLabel(risk.status || monitor.risk_status || "unknown")}</strong></div>
+        <div class="workspace-stat-card"><span>Equity Basis</span><strong>${formatUsdCompact(risk.equity || monitor.account?.equity || 0)}</strong></div>
+        <div class="workspace-stat-card"><span>Positions</span><strong>${monitor.position_count ?? positions.length ?? 0}</strong></div>
+        <div class="workspace-stat-card"><span>Open Orders</span><strong>${monitor.open_order_count ?? orders.length ?? 0}</strong></div>
+      </div>
+      <div class="runtime-control-grid">
+        <div class="runtime-control-card">
+          <div class="runtime-source-head">
+            <strong>Broker Guardrails</strong>
+            <span class="sentiment-badge ${statusClass}">${prettyLabel(brokerLabel)}</span>
+          </div>
+          <p class="workspace-copy">Submission requires credentials, paper mode, the backend safety flag, and the confirmation phrase <strong>paper-trade</strong>. Live trading is intentionally not exposed in this dashboard flow.</p>
+          <ul class="workspace-list">
+            <li>Max order notional: ${formatUsdCompact(safety.max_order_notional_usd || 0)}</li>
+            <li>Max position size: ${formatNumber((safety.max_position_pct || 0) * 100, 1)}%</li>
+            <li>Min conviction: ${formatNumber((safety.min_conviction || 0) * 100, 0)}%</li>
+            <li>Shorts: ${safety.allow_shorts ? "allowed" : "disabled"}</li>
+          </ul>
+        </div>
+        <div class="runtime-control-card">
+          <div class="runtime-source-head">
+            <strong>Portfolio Risk</strong>
+            <span class="sentiment-badge ${monitorActionClass(risk.status)}">${prettyLabel(risk.status || "unknown")}</span>
+          </div>
+          <p class="workspace-copy">The Portfolio Risk Agent blocks orders when exposure, single-name concentration, open orders, or runtime pressure exceed configured guardrails.</p>
+          <ul class="workspace-list">
+            <li>Gross exposure: ${formatNumber((risk.gross_exposure_pct || 0) * 100, 1)}%</li>
+            <li>Largest position: ${risk.largest_position?.symbol || "n/a"} ${risk.largest_position ? `${formatNumber(risk.largest_position.exposure_pct * 100, 1)}%` : ""}</li>
+            <li>Buying power: ${formatUsdCompact(risk.buying_power || 0)}</li>
+            <li>Runtime constrained: ${risk.runtime_constrained ? "yes" : "no"}</li>
+          </ul>
+        </div>
+        <div class="runtime-control-card">
+          <div class="runtime-source-head">
+            <strong>Position Monitor</strong>
+            <span class="sentiment-badge ${monitorActionClass(monitor.status)}">${prettyLabel(monitor.status || "waiting")}</span>
+          </div>
+          <p class="workspace-copy">The Position Monitor compares open Alpaca positions and orders against the latest trade setups. It flags stale positions, setup drift, and close candidates.</p>
+          <ul class="workspace-list">
+            <li>Review: ${monitor.review_count || 0}</li>
+            <li>Close candidates: ${monitor.close_candidate_count || 0}</li>
+            <li>Total position value: ${formatUsdCompact(monitor.total_position_value || 0)}</li>
+            <li>Broker configured: ${broker.configured ? "yes" : "no"}</li>
+          </ul>
+        </div>
+      </div>
+      <div class="execution-subsection">
+        <div>
+          <h4>Next Setup Candidates</h4>
+          <p class="workspace-copy">Use Preview Order first. Paper Submit is intentionally gated and only sends to Alpaca paper trading when the backend confirms it is safe.</p>
+        </div>
+        ${
+          planningCandidates.length
+            ? `<div class="execution-candidate-grid">
+                ${planningCandidates
+                  .map(
+                    (candidate) => `
+                      <div class="source-card execution-candidate-card">
+                        <div class="runtime-source-head">
+                          <strong>${escapeHtml(candidate.ticker)}</strong>
+                          <span class="sentiment-badge ${setupActionClass(candidate.action)}">${prettyLabel(candidate.action)}</span>
+                        </div>
+                        <span>${escapeHtml(candidate.summary || "Trade setup candidate.")}</span>
+                        <span>${formatNumber((candidate.conviction || 0) * 100, 0)}% conviction</span>
+                        <div class="setup-action-row">
+                          <button type="button" class="panel-action compact-action" data-preview-execution="${escapeHtml(candidate.ticker)}">Preview</button>
+                          <button type="button" class="panel-action compact-action danger-action" data-submit-paper="${escapeHtml(candidate.ticker)}" ${submitEnabled ? "" : "disabled"}>Paper Submit</button>
+                        </div>
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>`
+            : `<div class="workspace-empty">No long or short candidates are ready from the Trade Setup Agent.</div>`
+        }
+      </div>
+      <div class="execution-subsection">
+        <h4>Open Position Review</h4>
+        ${
+          positions.length
+            ? `<div class="execution-position-list">
+                ${positions
+                  .map(
+                    (position) => `
+                      <div class="source-card execution-position-card ${monitorActionClass(position.monitor_action)}">
+                        <div class="runtime-source-head">
+                          <strong>${escapeHtml(position.symbol)}</strong>
+                          <span class="sentiment-badge ${monitorActionClass(position.monitor_action)}">${prettyLabel(position.monitor_action)}</span>
+                        </div>
+                        <span>${prettyLabel(position.side)} ${formatNumber(position.qty, 4)} shares - ${formatUsdCompact(position.market_value)}</span>
+                        <span>P/L ${formatUsdCompact(position.unrealized_pl)} (${formatNumber((position.unrealized_plpc || 0) * 100, 1)}%)</span>
+                        <span>Current setup: ${prettyLabel(position.setup_action || "none")} ${position.setup_conviction !== null ? `- ${formatNumber(position.setup_conviction * 100, 0)}% conviction` : ""}</span>
+                        <small>${position.reason_codes?.length ? position.reason_codes.map(prettyLabel).join(", ") : "No monitor warnings."}</small>
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>`
+            : `<div class="workspace-empty">No open Alpaca positions are visible. If credentials are not configured, this panel stays in planning mode.</div>`
+        }
+      </div>
+      ${
+        orders.length
+          ? `<div class="execution-subsection">
+              <h4>Open Orders</h4>
+              <div class="execution-position-list">
+                ${orders
+                  .map(
+                    (order) => `
+                      <div class="source-card">
+                        <strong>${escapeHtml(order.symbol)}</strong>
+                        <span>${prettyLabel(order.side)} ${order.qty || order.notional || ""} - ${prettyLabel(order.type)} - ${prettyLabel(order.status)}</span>
+                        <small>${order.submitted_at ? relativeTime(order.submitted_at) : "submitted time n/a"}</small>
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>
+            </div>`
+          : ""
+      }
+    </div>
+  `;
+}
+
 function renderSystemView() {
   const pulse = state.snapshot?.market_pulse || {};
   const runtimeReliability = state.runtimeReliability || state.health?.runtime_reliability || null;
@@ -2207,6 +2529,7 @@ function renderSystemView() {
       : `<div class="workspace-empty">No source telemetry available.</div>`;
 
   elements.systemNotes.innerHTML = `
+    ${renderExecutionConsolePanel()}
     <div class="runtime-action-panel runtime-console">
       <div class="section-kicker">Runtime Control Console</div>
       <h3>Safe one-shot operations</h3>
@@ -2567,6 +2890,18 @@ function attachEvents() {
     const focusButton = event.target.closest("[data-focus-ticker]");
     if (focusButton) {
       await focusTicker(focusButton.dataset.focusTicker, "overview");
+      return;
+    }
+
+    const previewButton = event.target.closest("[data-preview-execution]");
+    if (previewButton) {
+      await previewTradeExecution(previewButton.dataset.previewExecution);
+      return;
+    }
+
+    const submitButton = event.target.closest("[data-submit-paper]");
+    if (submitButton && !submitButton.disabled) {
+      await submitPaperTrade(submitButton.dataset.submitPaper);
       return;
     }
 

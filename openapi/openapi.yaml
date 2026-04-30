@@ -317,6 +317,26 @@ paths:
           description: Execution preview plus risk evaluation.
         "400":
           description: Risk evaluation failed.
+  /api/positions/monitor:
+    get:
+      summary: Position Monitor Agent snapshot with open positions, orders, setup drift, and review actions.
+      parameters:
+        - in: query
+          name: window
+          schema:
+            type: string
+            enum: [15m, 1h, 4h, 1d, 7d]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Position monitor snapshot.
+        "400":
+          description: Broker request failed.
   /api/execution/account:
     get:
       summary: Alpaca account details when broker credentials are configured.

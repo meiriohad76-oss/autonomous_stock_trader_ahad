@@ -376,6 +376,18 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/positions/monitor" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getPositionMonitor({
+        window: query.window || app.config.defaultWindow,
+        limit: query.limit ? Number(query.limit) : 25
+      }));
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
   if (pathname === "/api/execution/account" && request.method === "GET") {
     try {
       sendJson(response, 200, await app.getBrokerAccount());

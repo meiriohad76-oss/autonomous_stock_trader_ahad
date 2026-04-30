@@ -666,6 +666,36 @@ input:focus-visible {
   text-transform: uppercase;
 }
 
+.panel-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.setup-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.compact-action {
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.danger-action {
+  color: #ffc1bd;
+  border-color: rgba(255, 84, 75, 0.28);
+  background: rgba(255, 84, 75, 0.08);
+}
+
+.danger-action:not(:disabled):hover {
+  border-color: rgba(255, 84, 75, 0.48);
+  background: rgba(255, 84, 75, 0.14);
+}
+
 .chip-row {
   display: flex;
   gap: 8px;
@@ -1344,6 +1374,61 @@ input:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
   margin-top: 12px;
+}
+
+.execution-console-panel h3,
+.execution-subsection h4 {
+  margin: 6px 0 6px;
+  font-size: 1.1rem;
+  letter-spacing: -0.03em;
+}
+
+.execution-status-grid {
+  margin-top: 14px;
+}
+
+.execution-subsection {
+  margin-top: 18px;
+}
+
+.execution-candidate-grid,
+.execution-position-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.execution-candidate-card,
+.execution-position-card {
+  min-width: 0;
+}
+
+.execution-position-card {
+  border-left: 3px solid rgba(173, 198, 255, 0.42);
+}
+
+.execution-position-card.bullish {
+  border-left-color: rgba(19, 255, 67, 0.62);
+}
+
+.execution-position-card.bearish {
+  border-left-color: rgba(255, 84, 75, 0.68);
+}
+
+.drawer-json {
+  max-height: 240px;
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--surface-border);
+  color: var(--text-soft);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .runtime-action-button:disabled {

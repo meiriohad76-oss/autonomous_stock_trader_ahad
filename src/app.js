@@ -27,6 +27,7 @@ import { RUNTIME_PROFILES, createRuntimeReliabilityAgent } from "./domain/runtim
 import { createAlpacaBroker } from "./domain/broker-alpaca.js";
 import { createExecutionAgent } from "./domain/execution-agent.js";
 import { createRiskAgent } from "./domain/risk-agent.js";
+import { createPositionMonitorAgent } from "./domain/position-monitor-agent.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
@@ -909,6 +910,11 @@ export function createSentimentApp() {
     getTradeSetup: (ticker, options = {}) => tradeSetupAgent.getTickerSetup(ticker, options),
     evaluateRisk: (intent) => riskAgent.evaluateIntent(intent)
   });
+  const positionMonitorAgent = createPositionMonitorAgent({
+    broker,
+    getTradeSetups: (options = {}) => tradeSetupAgent.getTradeSetups(options),
+    getRiskSnapshot: () => riskAgent.getSnapshot()
+  });
   const startupState = {
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -1358,6 +1364,9 @@ export function createSentimentApp() {
         preview,
         risk: preview.risk
       };
+    },
+    async getPositionMonitor(options = {}) {
+      return positionMonitorAgent.getSnapshot(options);
     },
     getTradeSetupStorageSummary() {
       const rows = store.tradeSetupHistory || [];
