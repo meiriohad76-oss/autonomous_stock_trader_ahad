@@ -1578,6 +1578,14 @@ input:focus-visible {
   flex-wrap: wrap;
 }
 
+.source-stamp {
+  margin: 4px 0 10px;
+}
+
+.source-stamp span {
+  line-height: 1.35;
+}
+
 .watch-card-meta span {
   line-height: 1.45;
 }

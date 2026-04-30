@@ -38,6 +38,14 @@ function updateSourceStats(store, normalized, score) {
 function buildAlerts(store, normalized, score, latestStates) {
   const alerts = [];
   const evidenceQuality = score.evidence_quality || null;
+  const sourceContext = {
+    source_name: normalized.source_name || evidenceQuality?.source_name || null,
+    source_type: normalized.source_type || null,
+    published_at: normalized.published_at || evidenceQuality?.published_at || null,
+    event_type: score.event_type || null,
+    url: normalized.url || normalized.canonical_url || null,
+    evidence_quality: evidenceQuality
+  };
 
   if (evidenceQuality?.display_tier === "suppress") {
     return alerts;
@@ -52,7 +60,12 @@ function buildAlerts(store, normalized, score, latestStates) {
       headline: normalized.headline,
       severity: "high",
       confidence: score.final_confidence,
-      payload: { score_id: score.score_id, sentiment_score: score.sentiment_score, evidence_quality: evidenceQuality },
+      source_name: sourceContext.source_name,
+      source_type: sourceContext.source_type,
+      published_at: sourceContext.published_at,
+      event_type: sourceContext.event_type,
+      url: sourceContext.url,
+      payload: { score_id: score.score_id, sentiment_score: score.sentiment_score, ...sourceContext },
       created_at: new Date().toISOString()
     });
   }
@@ -66,7 +79,12 @@ function buildAlerts(store, normalized, score, latestStates) {
       headline: normalized.headline,
       severity: "high",
       confidence: score.final_confidence,
-      payload: { score_id: score.score_id, sentiment_score: score.sentiment_score, evidence_quality: evidenceQuality },
+      source_name: sourceContext.source_name,
+      source_type: sourceContext.source_type,
+      published_at: sourceContext.published_at,
+      event_type: sourceContext.event_type,
+      url: sourceContext.url,
+      payload: { score_id: score.score_id, sentiment_score: score.sentiment_score, ...sourceContext },
       created_at: new Date().toISOString()
     });
   }
@@ -81,10 +99,15 @@ function buildAlerts(store, normalized, score, latestStates) {
       headline: normalized.headline,
       severity: "medium",
       confidence: tickerState.weighted_confidence,
+      source_name: sourceContext.source_name,
+      source_type: sourceContext.source_type,
+      published_at: sourceContext.published_at,
+      event_type: sourceContext.event_type,
+      url: sourceContext.url,
       payload: {
         weighted_sentiment: tickerState.weighted_sentiment,
         momentum_delta: tickerState.momentum_delta,
-        evidence_quality: evidenceQuality
+        ...sourceContext
       },
       created_at: new Date().toISOString()
     });
@@ -142,9 +165,13 @@ export function createPipeline(store) {
     const liveEvent = {
       type: "document_scored",
       timestamp: score.scored_at,
+      published_at: normalized.published_at,
       ticker: normalized.primary_ticker,
       headline: normalized.headline,
       source_name: normalized.source_name,
+      source_type: normalized.source_type,
+      url: normalized.url || normalized.canonical_url || null,
+      source_metadata: normalized.source_metadata || null,
       event_type: score.event_type,
       label: score.bullish_bearish_label,
       sentiment_score: score.sentiment_score,
@@ -179,7 +206,10 @@ export function createPipeline(store) {
         alert_type: alert.alert_type,
         entity_key: alert.entity_key,
         headline: alert.headline,
-        confidence: alert.confidence
+        confidence: alert.confidence,
+        source_name: alert.source_name,
+        published_at: alert.published_at,
+        event_type: alert.event_type
       });
     }
 

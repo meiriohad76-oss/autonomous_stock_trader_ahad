@@ -188,6 +188,18 @@ function formatTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-";
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 function healthLabel(value) {
   if (String(value).toLowerCase() === "green") {
     return "Optimal";
@@ -461,7 +473,30 @@ function confidenceCell(row) {
 }
 
 function signalTimestamp(item) {
-  return item?.timestamp || item?.published_at || null;
+  return item?.published_at || item?.timestamp || null;
+}
+
+function signalSourceName(item, fallback = "Source n/a") {
+  return item?.source_name || item?.sourceName || item?.payload?.source_name || item?.payload?.evidence_quality?.source_name || fallback;
+}
+
+function alertEvidenceTimestamp(alert) {
+  return alert?.published_at || alert?.payload?.published_at || alert?.payload?.evidence_quality?.published_at || alert?.detected_at || alert?.created_at || null;
+}
+
+function alertSourceName(alert) {
+  return alert?.source_name || alert?.payload?.source_name || alert?.payload?.evidence_quality?.source_name || "Sentiment Engine";
+}
+
+function sourceStamp(sourceName, timestamp, { includeAbsolute = true } = {}) {
+  const parts = [
+    `<span>Source: ${escapeHtml(sourceName || "n/a")}</span>`,
+    `<span>Observed: ${relativeTime(timestamp)}</span>`
+  ];
+  if (includeAbsolute) {
+    parts.push(`<span>${formatDateTime(timestamp)}</span>`);
+  }
+  return `<div class="feed-meta source-stamp">${parts.join("")}</div>`;
 }
 
 function isMoneyFlowEvent(item) {
@@ -694,8 +729,8 @@ function buildSignalFromFeed(item, sourceLabel = "Live Feed") {
     subtitle: sourceLabel,
     label: item.label || sentimentLabel(item.sentiment_score || 0),
     confidence: item.confidence || 0,
-    timestamp: item.timestamp || null,
-    sourceName: item.source_name || sourceLabel,
+    timestamp: signalTimestamp(item),
+    sourceName: signalSourceName(item, sourceLabel),
     headline: item.headline || "Untitled signal",
     explanation: item.explanation_short || item.headline || "No additional analyst explanation is available for this signal yet.",
     eventType: item.event_type || "signal",
@@ -719,15 +754,24 @@ function buildSignalFromAlert(alert) {
     subtitle: "Alert Trigger",
     label,
     confidence: alert.confidence || 0,
-    timestamp: alert.detected_at || alert.created_at || null,
-    sourceName: "Sentiment Engine",
+    timestamp: alertEvidenceTimestamp(alert),
+    sourceName: alertSourceName(alert),
     headline: alert.headline || "State-based alert trigger",
     explanation:
       alert.headline ||
       "This alert was generated from the current state transition and confidence threshold in the sentiment engine.",
     eventType: alert.alert_type || "alert",
-    url: null,
-    sourceMetadata: null
+    url: alert.url || null,
+    sourceMetadata: alert.source_metadata || alert.payload?.source_metadata || null,
+    evidenceQuality: alert.payload?.evidence_quality || null,
+    contextItems: [
+      `Alert generated: ${formatDateTime(alert.created_at)}.`,
+      alert.published_at || alert.payload?.published_at
+        ? `Underlying evidence timestamp: ${formatDateTime(alertEvidenceTimestamp(alert))}.`
+        : null,
+      alert.event_type || alert.payload?.event_type ? `Underlying event type: ${prettyLabel(alert.event_type || alert.payload?.event_type)}.` : null,
+      `Source: ${alertSourceName(alert)}.`
+    ].filter(Boolean)
   };
 }
 
@@ -914,18 +958,22 @@ function renderMoneyFlowSection(title, emptyText, signals, sourceLabel) {
               .slice(0, 3)
               .map((item, index) => {
                 const evidence = moneyFlowEvidence(item);
+                const timestamp = signalTimestamp(item);
+                const sourceName = signalSourceName(item, "Money Flow Radar");
                 return `
                   <button type="button" class="money-flow-card ${badgeClass(item.label)}" data-money-flow-index="${sourceLabel}:${index}">
                     <div class="money-flow-card-head">
                       <div>
                         <strong>${item.ticker || "MKT"}: ${eventTypeLabel(item.event_type)}</strong>
                       </div>
-                      <span>${relativeTime(signalTimestamp(item))}</span>
+                      <span>${relativeTime(timestamp)}</span>
                     </div>
+                    ${sourceStamp(sourceName, timestamp)}
                     <p>${item.headline}</p>
                     <div class="feed-meta">
                       <span class="sentiment-badge ${badgeClass(item.label)}">${item.label}</span>
                       <span>${formatNumber(item.confidence * 100, 0)}% Conf</span>
+                      <span>${evidenceQualityLabel(item.evidence_quality)}</span>
                     </div>
                     ${
                       evidence.length
@@ -2022,28 +2070,43 @@ function renderAlertsView() {
   const insiderCount = moneyFlowSignals.filter((item) => INSIDER_FLOW_EVENT_TYPES.has(item.event_type)).length;
   const institutionalCount = moneyFlowSignals.filter((item) => INSTITUTIONAL_FLOW_EVENT_TYPES.has(item.event_type)).length;
   const tapeFlowCount = moneyFlowSignals.filter((item) => TAPE_FLOW_EVENT_TYPES.has(item.event_type)).length;
+  const newestAlertAt = state.alerts
+    .map(alertEvidenceTimestamp)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a))[0];
+  const newestFlowAt = moneyFlowSignals
+    .map(signalTimestamp)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a))[0];
 
   elements.alertsSummaryStrip.innerHTML = `
     <div class="workspace-stat-card"><span>Positive</span><strong>${positiveCount}</strong></div>
     <div class="workspace-stat-card"><span>Negative</span><strong>${negativeCount}</strong></div>
     <div class="workspace-stat-card"><span>Reversal</span><strong>${reversalCount}</strong></div>
     <div class="workspace-stat-card"><span>Money Flow</span><strong>${moneyFlowSignals.length}</strong></div>
+    <div class="workspace-stat-card"><span>Newest Alert</span><strong>${newestAlertAt ? relativeTime(newestAlertAt) : "n/a"}</strong></div>
+    <div class="workspace-stat-card"><span>Newest Flow</span><strong>${newestFlowAt ? relativeTime(newestFlowAt) : "n/a"}</strong></div>
   `;
 
   elements.alertsCritical.innerHTML = filteredAlerts.length
     ? filteredAlerts
         .map(
-          (alert, index) => `
-            <article class="workspace-alert ${alert.alert_type}" data-alert-index="${index}">
-              <div class="workspace-alert-head">
-                <strong>${alert.alert_type.replace(/_/g, " ")}</strong>
-                <span>${alert.entity_key}</span>
-              </div>
-              <p>${alert.headline || "State-based alert trigger"}</p>
-              <small>${formatNumber(alert.confidence * 100, 0)}% confidence</small>
-              <div class="mini-bar-track"><div class="mini-bar-fill ${alert.alert_type.includes("negative") ? "bearish" : "bullish"}" style="width:${Math.max(10, Math.round(alert.confidence * 100))}%"></div></div>
-            </article>
-          `
+          (alert, index) => {
+            const timestamp = alertEvidenceTimestamp(alert);
+            const sourceName = alertSourceName(alert);
+            return `
+              <article class="workspace-alert ${alert.alert_type}" data-alert-index="${index}">
+                <div class="workspace-alert-head">
+                  <strong>${alert.alert_type.replace(/_/g, " ")}</strong>
+                  <span>${alert.entity_key}</span>
+                </div>
+                ${sourceStamp(sourceName, timestamp)}
+                <p>${alert.headline || "State-based alert trigger"}</p>
+                <small>${formatNumber(alert.confidence * 100, 0)}% confidence · generated ${relativeTime(alert.created_at)}</small>
+                <div class="mini-bar-track"><div class="mini-bar-fill ${alert.alert_type.includes("negative") ? "bearish" : "bullish"}" style="width:${Math.max(10, Math.round(alert.confidence * 100))}%"></div></div>
+              </article>
+            `;
+          }
         )
         .join("")
     : `<div class="workspace-empty">No active alerts at this time.</div>`;
@@ -2051,20 +2114,25 @@ function renderAlertsView() {
   elements.alertsHighImpact.innerHTML = state.highImpact.length
     ? state.highImpact
         .map(
-          (item, index) => `
-            <article class="feed-card ${badgeClass(item.label)}" data-high-impact-index="${index}">
-              <div class="feed-row">
-                <strong>${item.ticker || "MKT"}: ${eventTypeLabel(item.event_type)}</strong>
-                <span>${relativeTime(item.timestamp)}</span>
-              </div>
-              <p>${item.headline}</p>
-              <div class="feed-meta">
-                <span class="sentiment-badge ${badgeClass(item.label)}">${item.label}</span>
-                <span>${formatNumber(item.confidence * 100, 0)}% Conf</span>
-                <span>${evidenceQualityLabel(item.evidence_quality)}</span>
-              </div>
-            </article>
-          `
+          (item, index) => {
+            const timestamp = signalTimestamp(item);
+            const sourceName = signalSourceName(item, "High Impact Signal");
+            return `
+              <article class="feed-card ${badgeClass(item.label)}" data-high-impact-index="${index}">
+                <div class="feed-row">
+                  <strong>${item.ticker || "MKT"}: ${eventTypeLabel(item.event_type)}</strong>
+                  <span>${relativeTime(timestamp)}</span>
+                </div>
+                ${sourceStamp(sourceName, timestamp)}
+                <p>${item.headline}</p>
+                <div class="feed-meta">
+                  <span class="sentiment-badge ${badgeClass(item.label)}">${item.label}</span>
+                  <span>${formatNumber(item.confidence * 100, 0)}% Conf</span>
+                  <span>${evidenceQualityLabel(item.evidence_quality)}</span>
+                </div>
+              </article>
+            `;
+          }
         )
         .join("")
     : `<div class="workspace-empty">No high impact signals available.</div>`;
