@@ -195,6 +195,30 @@ sudo systemctl restart sentiment-analyst.service
 
 The CLI creates an `.env` backup under `data/env-backups/` before writing.
 
+## SQLite health and recovery
+
+When SQLite is enabled, use the health check before restarting into a heavy persistence mode:
+
+```bash
+npm run sqlite:health
+npm run sqlite:health -- --full
+```
+
+The default check uses SQLite `quick_check`; `--full` runs `integrity_check`. If the database is malformed, the command exits non-zero and prints the newest backup plus exact recovery commands.
+
+Recommended recovery flow:
+
+```bash
+sudo systemctl stop sentiment-analyst.service
+mv /home/ahad/sentiment-analyst/data/sentiment-analyst.sqlite /home/ahad/sentiment-analyst/data/sentiment-analyst.sqlite.bad-$(date +%Y%m%d-%H%M%S)
+cp /home/ahad/sentiment-analyst/data/backups/<backup-file>.sqlite /home/ahad/sentiment-analyst/data/sentiment-analyst.sqlite
+sudo chown ahad:ahad /home/ahad/sentiment-analyst/data/sentiment-analyst.sqlite
+npm run sqlite:health
+sudo systemctl start sentiment-analyst.service
+```
+
+In `pi_light`, SQLite is normally disabled and lightweight JSON state is preferred, so a malformed SQLite file should not block the dashboard. Treat SQLite recovery as a deliberate operator step before returning to full persistence.
+
 ## Contract check
 
 The runtime reliability contract check verifies the offline Pi-safe path:
