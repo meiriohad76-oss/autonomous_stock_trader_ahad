@@ -88,6 +88,20 @@ const markets = {
   tableText: (await page.locator("#markets-table-body").innerText()).slice(0, 500)
 };
 
+await page.click('button.topnav-link[data-view="trading"]');
+await page.waitForSelector('[data-view-panel="trading"].is-active', { timeout: 10_000 });
+await page
+  .waitForFunction(() => (document.querySelector("#trading-plan-lists")?.innerText || "").trim().length > 0, { timeout: 10_000 })
+  .catch(() => {});
+
+const trading = {
+  flowSteps: await page.locator(".trading-flow-step").count(),
+  tradeLists: await page.locator('#trading-plan-lists .trade-list-card').count(),
+  summaryCards: await page.locator("#trading-plan-summary .workspace-stat-card").count(),
+  executionCards: await page.locator("#trading-execution-console .runtime-control-card").count(),
+  previewButtons: await page.locator("#trading-plan-lists [data-preview-execution], #trading-execution-console [data-preview-execution]").count()
+};
+
 await page.click('button.side-link[data-view="alerts"]');
 await page.waitForSelector('[data-view-panel="alerts"].is-active', { timeout: 10_000 });
 await page
@@ -121,6 +135,7 @@ const report = {
   ],
   overview,
   markets,
+  trading,
   signalDrawer,
   consoleIssues
 };

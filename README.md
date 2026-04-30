@@ -146,7 +146,7 @@ The intended dashboard flow is:
 - Use `Fundamentals` / `Fundamentals V2` to inspect why a stock is `eligible`, `watch`, `reject`, or still waiting for live SEC coverage.
 - Use `Markets` for active-conviction comparison only. It intentionally hides fundamentals-only names with no fresh signal evidence.
 - Use `Signals` / `Alerts` to inspect the source, timestamp, evidence quality, and reason behind each signal before trusting it.
-- Use the Trade Setup Agent's `Buy Candidates`, `Short / Sell Candidates`, and `Watch List` as the compiled trading lists. These are generated from fresh sentiment evidence, fundamentals screen, macro regime, risk limits, runtime reliability, and execution policy.
+- Use `Trading Plan` as the main action workspace. It shows the compiled `Buy Candidates`, `Short / Sell Candidates`, and `Watch List`, plus Alpaca paper readiness, risk status, open positions, and execution preview controls.
 - Use Execution/Risk/Position endpoints or dashboard controls to preview Alpaca paper orders. Order submission remains blocked unless credentials, safety flags, risk approval, and confirmation phrase are present.
 
 ## Execution Agent and Alpaca integration

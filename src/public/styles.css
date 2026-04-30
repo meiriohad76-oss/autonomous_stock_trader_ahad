@@ -284,6 +284,18 @@ input:focus-visible {
   grid-column: span 12;
 }
 
+.trading-workspace-grid .trading-flow-panel {
+  grid-column: span 12;
+}
+
+.trading-workspace-grid .trading-list-panel {
+  grid-column: span 5;
+}
+
+.trading-workspace-grid .trading-execution-panel {
+  grid-column: span 7;
+}
+
 .panel {
   background: rgba(18, 18, 18, 0.74);
   backdrop-filter: blur(20px);
@@ -828,6 +840,28 @@ input:focus-visible {
   text-align: left;
 }
 
+.trade-list-row-with-action {
+  padding: 6px;
+}
+
+.trade-list-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  text-align: left;
+}
+
+.trade-list-row-with-action .panel-action {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+}
+
 .trade-list-row small {
   color: var(--text-soft);
   font-size: 11px;
@@ -896,6 +930,48 @@ input:focus-visible {
 .decision-flow-list span {
   color: var(--text-soft);
   font-size: 11px;
+  line-height: 1.45;
+}
+
+.trading-flow-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.trading-flow-step {
+  position: relative;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(145deg, rgba(0, 132, 255, 0.08), rgba(255, 255, 255, 0.035));
+}
+
+.trading-flow-step span {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(0, 132, 255, 0.12);
+  border: 1px solid rgba(0, 132, 255, 0.35);
+  font-weight: 850;
+}
+
+.trading-flow-step strong {
+  display: block;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.trading-flow-step p {
+  margin: 8px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -1900,8 +1976,15 @@ input:focus-visible {
   .column-right,
   .workspace-panel:nth-child(1),
   .workspace-panel:nth-child(2),
-  .workspace-panel:nth-child(3) {
+  .workspace-panel:nth-child(3),
+  .trading-workspace-grid .trading-flow-panel,
+  .trading-workspace-grid .trading-list-panel,
+  .trading-workspace-grid .trading-execution-panel {
     grid-column: span 12;
+  }
+
+  .trading-flow-map {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .feed-list {
@@ -1995,7 +2078,8 @@ input:focus-visible {
   .mini-metrics,
   .sector-strip,
   .health-grid,
-  .summary-grid {
+  .summary-grid,
+  .trading-flow-map {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -2084,9 +2168,20 @@ input:focus-visible {
   .health-panel,
   .leaderboard-panel,
   .detail-panel,
+  .decision-flow-panel,
+  .trade-agent-panel,
   .feed-panel,
   .workspace-panel {
     padding: 18px;
+  }
+
+  .trading-flow-map {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-nav-link {
+    font-size: 9px;
+    letter-spacing: 0.04em;
   }
 
   .mini-metrics,

@@ -36,6 +36,7 @@
           <a class="topnav-link" href="/fundamentals.html">Fundamentals</a>
           <a class="topnav-link" href="/fundamentals-v2.html">Fundamentals V2</a>
           <button class="topnav-link" data-view="alerts" type="button">Signals</button>
+          <button class="topnav-link" data-view="trading" type="button">Trading Plan</button>
           <button class="topnav-link" data-view="system" type="button">Settings</button>
         </nav>
       </div>
@@ -103,6 +104,10 @@
       <button class="side-link" data-view="alerts" type="button">
         <span class="material-symbols-outlined">crisis_alert</span>
         <span>Signals</span>
+      </button>
+      <button class="side-link" data-view="trading" type="button">
+        <span class="material-symbols-outlined">assignment</span>
+        <span>Trading Plan</span>
       </button>
       <button class="side-link" data-view="system" type="button">
         <span class="material-symbols-outlined">memory</span>
@@ -469,6 +474,62 @@
         </div>
       </section>
 
+      <section class="view" data-view-panel="trading">
+        <div class="workspace-grid trading-workspace-grid">
+          <article class="panel workspace-panel trading-flow-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Trading Workflow</h2>
+                <p>One place to see how ideas become buy, short/sell, watch, or blocked execution previews.</p>
+              </div>
+            </div>
+            <div class="trading-flow-map">
+              <div class="trading-flow-step">
+                <span>1</span>
+                <strong>Universe Screen</strong>
+                <p>Fundamentals classifies each tracked name before it is allowed into the trade funnel.</p>
+              </div>
+              <div class="trading-flow-step">
+                <span>2</span>
+                <strong>Fresh Evidence</strong>
+                <p>News, SEC, insider, macro, and flow evidence must be fresh and sourced.</p>
+              </div>
+              <div class="trading-flow-step">
+                <span>3</span>
+                <strong>Trade Lists</strong>
+                <p>The Trade Setup Agent compiles buy, short/sell, and watch candidates.</p>
+              </div>
+              <div class="trading-flow-step">
+                <span>4</span>
+                <strong>Risk + Alpaca</strong>
+                <p>Execution previews pass through broker readiness and Portfolio Risk before paper orders.</p>
+              </div>
+            </div>
+            <div id="trading-plan-summary" class="workspace-detail-grid"></div>
+          </article>
+
+          <article class="panel workspace-panel trading-list-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Compiled Trading Lists</h2>
+                <p>These are the current lists produced by the Trade Setup Agent. Preview before any paper order.</p>
+              </div>
+            </div>
+            <div id="trading-plan-lists"></div>
+          </article>
+
+          <article class="panel workspace-panel trading-execution-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Execution And Risk Console</h2>
+                <p>Alpaca paper status, risk limits, position monitor, and preview actions.</p>
+              </div>
+            </div>
+            <div id="trading-execution-console"></div>
+          </article>
+        </div>
+      </section>
+
       <section class="view" data-view-panel="system">
         <div class="workspace-grid">
           <article class="panel workspace-panel">
@@ -559,6 +620,10 @@
       <button class="mobile-nav-link" data-view="alerts" type="button">
         <span class="material-symbols-outlined">crisis_alert</span>
         <span>Alerts</span>
+      </button>
+      <button class="mobile-nav-link" data-view="trading" type="button">
+        <span class="material-symbols-outlined">assignment</span>
+        <span>Plan</span>
       </button>
       <button class="mobile-nav-link" data-view="system" type="button">
         <span class="material-symbols-outlined">settings</span>

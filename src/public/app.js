@@ -110,6 +110,9 @@ const elements = {
   alertsSummaryStrip: document.querySelector("#alerts-summary-strip"),
   alertsHighImpact: document.querySelector("#alerts-high-impact"),
   alertsMoneyFlow: document.querySelector("#alerts-money-flow"),
+  tradingPlanSummary: document.querySelector("#trading-plan-summary"),
+  tradingPlanLists: document.querySelector("#trading-plan-lists"),
+  tradingExecutionConsole: document.querySelector("#trading-execution-console"),
   systemOverview: document.querySelector("#system-overview"),
   systemSourceQuality: document.querySelector("#system-source-quality"),
   systemNotes: document.querySelector("#system-notes"),
@@ -1548,17 +1551,11 @@ function renderTradeSetups() {
     elements.tradeSetupList.appendChild(article);
   });
 
-  for (const button of elements.tradeSetupSummary.querySelectorAll("[data-trade-list-ticker]")) {
-    button.addEventListener("click", () => {
-      const setup = setups.find((item) => item.ticker === button.dataset.tradeListTicker);
-      if (setup) {
-        openSignalDrawer(buildSignalFromTradeSetup(setup));
-      }
-    });
-  }
+  attachTradeListActions(elements.tradeSetupSummary, setups);
 }
 
-function renderTradeLists(setups = []) {
+function renderTradeLists(setups = [], options = {}) {
+  const includePreview = Boolean(options.includePreview);
   const groups = [
     {
       key: "long",
@@ -1598,10 +1595,20 @@ function renderTradeLists(setups = []) {
                     ? group.items
                         .map(
                           (setup) => `
-                            <button type="button" class="trade-list-row" data-trade-list-ticker="${setup.ticker}">
-                              <span>${setup.ticker}</span>
-                              <small>${formatNumber((setup.conviction || 0) * 100, 0)}% conv · ${prettyLabel(setup.setup_label)}</small>
-                            </button>
+                            ${
+                              includePreview
+                                ? `<div class="trade-list-row trade-list-row-with-action">
+                                    <button type="button" class="trade-list-main" data-trade-list-ticker="${setup.ticker}">
+                                      <span>${setup.ticker}</span>
+                                      <small>${formatNumber((setup.conviction || 0) * 100, 0)}% conv - ${prettyLabel(setup.setup_label)}</small>
+                                    </button>
+                                    <button type="button" class="panel-action compact-action" data-preview-execution="${setup.ticker}">Preview</button>
+                                  </div>`
+                                : `<button type="button" class="trade-list-row" data-trade-list-ticker="${setup.ticker}">
+                                    <span>${setup.ticker}</span>
+                                    <small>${formatNumber((setup.conviction || 0) * 100, 0)}% conv - ${prettyLabel(setup.setup_label)}</small>
+                                  </button>`
+                            }
                           `
                         )
                         .join("")
@@ -1614,6 +1621,20 @@ function renderTradeLists(setups = []) {
       </div>
     </div>
   `;
+}
+
+function attachTradeListActions(container, setups = []) {
+  if (!container) {
+    return;
+  }
+  for (const button of container.querySelectorAll("[data-trade-list-ticker]")) {
+    button.addEventListener("click", () => {
+      const setup = setups.find((item) => item.ticker === button.dataset.tradeListTicker);
+      if (setup) {
+        openSignalDrawer(buildSignalFromTradeSetup(setup));
+      }
+    });
+  }
 }
 
 function buildPath(points, width, height) {
@@ -2185,7 +2206,7 @@ function renderAlertsView() {
                 </div>
                 ${sourceStamp(sourceName, timestamp)}
                 <p>${alert.headline || "State-based alert trigger"}</p>
-                <small>${formatNumber(alert.confidence * 100, 0)}% confidence · generated ${relativeTime(alert.created_at)}</small>
+                <small>${formatNumber(alert.confidence * 100, 0)}% confidence - generated ${relativeTime(alert.created_at)}</small>
                 <div class="mini-bar-track"><div class="mini-bar-fill ${alert.alert_type.includes("negative") ? "bearish" : "bullish"}" style="width:${Math.max(10, Math.round(alert.confidence * 100))}%"></div></div>
               </article>
             `;
@@ -2534,7 +2555,7 @@ function renderExecutionConsolePanel() {
                           <span class="sentiment-badge ${setupActionClass(candidate.action)}">${prettyLabel(candidate.action)}</span>
                         </div>
                         <span>${escapeHtml(candidate.summary || "Trade setup candidate.")}</span>
-                        <span>${formatNumber((candidate.conviction || 0) * 100, 0)}% conviction · ${candidate.tradable ? "tradable setup" : `preview explains block: ${prettyLabel(candidate.blocked_reason)}`}</span>
+                        <span>${formatNumber((candidate.conviction || 0) * 100, 0)}% conviction - ${candidate.tradable ? "tradable setup" : `preview explains block: ${prettyLabel(candidate.blocked_reason)}`}</span>
                         <div class="setup-action-row">
                           <button type="button" class="panel-action compact-action" data-preview-execution="${escapeHtml(candidate.ticker)}">Preview</button>
                           <button type="button" class="panel-action compact-action danger-action" data-submit-paper="${escapeHtml(candidate.ticker)}" ${submitEnabled && candidate.tradable ? "" : "disabled"}>Paper Submit</button>
@@ -2594,6 +2615,42 @@ function renderExecutionConsolePanel() {
       }
     </div>
   `;
+}
+
+function renderTradingView() {
+  const payload = state.tradeSetups || { counts: {}, setups: [] };
+  const setups = payload.setups || [];
+  const counts = payload.counts || {};
+  const execution = state.executionStatus || {};
+  const broker = execution.broker || state.positionMonitor?.broker || {};
+  const risk = state.riskSnapshot || {};
+  const monitor = state.positionMonitor || {};
+  const tradableSetups = setups.filter((setup) => ["long", "short"].includes(setup.action));
+  const watchSetups = setups.filter((setup) => setup.action === "watch");
+  const blockedSetups = setups.filter((setup) => !["long", "short", "watch"].includes(setup.action));
+  const brokerReady = broker.ready_for_order_submission;
+
+  if (elements.tradingPlanSummary) {
+    elements.tradingPlanSummary.innerHTML = `
+      <div class="workspace-stat-card"><span>Buy Candidates</span><strong>${counts.long || tradableSetups.filter((setup) => setup.action === "long").length}</strong></div>
+      <div class="workspace-stat-card"><span>Short / Sell</span><strong>${counts.short || tradableSetups.filter((setup) => setup.action === "short").length}</strong></div>
+      <div class="workspace-stat-card"><span>Watch</span><strong>${counts.watch || watchSetups.length}</strong></div>
+      <div class="workspace-stat-card"><span>Blocked / No Trade</span><strong>${blockedSetups.length}</strong></div>
+      <div class="workspace-stat-card"><span>Broker</span><strong>${brokerReady ? "Paper Ready" : prettyLabel(broker.blocked_reason || broker.status || "guarded")}</strong></div>
+      <div class="workspace-stat-card"><span>Risk</span><strong>${prettyLabel(risk.status || monitor.risk_status || "unknown")}</strong></div>
+      <div class="workspace-stat-card"><span>Positions</span><strong>${monitor.position_count ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>Open Orders</span><strong>${monitor.open_order_count ?? 0}</strong></div>
+    `;
+  }
+
+  if (elements.tradingPlanLists) {
+    elements.tradingPlanLists.innerHTML = renderTradeLists(setups, { includePreview: true });
+    attachTradeListActions(elements.tradingPlanLists, setups);
+  }
+
+  if (elements.tradingExecutionConsole) {
+    elements.tradingExecutionConsole.innerHTML = renderExecutionConsolePanel();
+  }
 }
 
 function renderSystemView() {
@@ -2668,7 +2725,7 @@ function renderSystemView() {
               <span>${sourceStatusMeaning(source.status)}</span>
               <span>${source.reason}</span>
               <span>${source.notes}</span>
-              <small>Action: ${prettyLabel(source.action)} · Last success: ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}</small>
+              <small>Action: ${prettyLabel(source.action)} - Last success: ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}</small>
             </div>
           `
         )
@@ -2864,6 +2921,8 @@ function renderActiveView() {
     renderWatchView();
   } else if (state.activeView === "alerts") {
     renderAlertsView();
+  } else if (state.activeView === "trading") {
+    renderTradingView();
   } else if (state.activeView === "system") {
     renderSystemView();
   }
@@ -2875,6 +2934,28 @@ function render() {
   elements.alertCount.textContent = state.alerts.length;
   renderScreenFilterTabLabels();
   updateFilterButtons(elements.fundamentalFilterTabs, "screenFilter", state.screenFilter);
+}
+
+async function handleExecutionConsoleClick(event) {
+  const focusButton = event.target.closest("[data-focus-ticker]");
+  if (focusButton) {
+    await focusTicker(focusButton.dataset.focusTicker, "overview");
+    return true;
+  }
+
+  const previewButton = event.target.closest("[data-preview-execution]");
+  if (previewButton) {
+    await previewTradeExecution(previewButton.dataset.previewExecution);
+    return true;
+  }
+
+  const submitButton = event.target.closest("[data-submit-paper]");
+  if (submitButton && !submitButton.disabled) {
+    await submitPaperTrade(submitButton.dataset.submitPaper);
+    return true;
+  }
+
+  return false;
 }
 
 function updateWindowButtons() {
@@ -3047,21 +3128,7 @@ function attachEvents() {
   });
 
   elements.systemNotes?.addEventListener("click", async (event) => {
-    const focusButton = event.target.closest("[data-focus-ticker]");
-    if (focusButton) {
-      await focusTicker(focusButton.dataset.focusTicker, "overview");
-      return;
-    }
-
-    const previewButton = event.target.closest("[data-preview-execution]");
-    if (previewButton) {
-      await previewTradeExecution(previewButton.dataset.previewExecution);
-      return;
-    }
-
-    const submitButton = event.target.closest("[data-submit-paper]");
-    if (submitButton && !submitButton.disabled) {
-      await submitPaperTrade(submitButton.dataset.submitPaper);
+    if (await handleExecutionConsoleClick(event)) {
       return;
     }
 
@@ -3076,6 +3143,14 @@ function attachEvents() {
     }
 
     await runRuntimeAction(button.dataset.runtimeAction, button.dataset.runtimeSource || null);
+  });
+
+  elements.tradingExecutionConsole?.addEventListener("click", async (event) => {
+    await handleExecutionConsoleClick(event);
+  });
+
+  elements.tradingPlanLists?.addEventListener("click", async (event) => {
+    await handleExecutionConsoleClick(event);
   });
 
   elements.signalBackdrop?.addEventListener("click", closeSignalDrawer);
