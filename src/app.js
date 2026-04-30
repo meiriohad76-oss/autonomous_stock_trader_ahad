@@ -1001,6 +1001,21 @@ export function createSentimentApp() {
         throw new Error(`Unsupported runtime action: ${action}`);
       }
 
+      const shouldAutoSaveLightweightState =
+        config.lightweightStateEnabled &&
+        !config.databaseEnabled &&
+        !["snapshot", "apply_profile", "save_lightweight_state", "backup_now"].includes(action);
+
+      if (shouldAutoSaveLightweightState) {
+        await persistence.saveStoreSnapshot(store);
+        await refreshBackupStatus();
+        result = {
+          ...(result && typeof result === "object" && !Array.isArray(result) ? result : { value: result }),
+          lightweight_state_saved: true,
+          lightweight_state_status: store.health.databaseBackup
+        };
+      }
+
       return {
         ok: true,
         action,

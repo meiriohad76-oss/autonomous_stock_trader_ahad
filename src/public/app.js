@@ -304,17 +304,18 @@ function sourceStatusMeaning(status) {
 }
 
 function runtimeActionSummary(action, result = {}) {
+  const savedSuffix = result.lightweight_state_saved ? " Lightweight state saved." : "";
   if (action === "poll_once" && result.refreshBatchSize !== undefined) {
-    return `SEC batch refreshed ${result.ingested || 0}/${result.refreshBatchSize} names. ${result.liveCompanies || 0} live SEC-backed, ${result.pendingBootstrapCompanies || 0} still bootstrap.`;
+    return `SEC batch refreshed ${result.ingested || 0}/${result.refreshBatchSize} names. ${result.liveCompanies || 0} live SEC-backed, ${result.pendingBootstrapCompanies || 0} still bootstrap.${savedSuffix}`;
   }
   if (action === "poll_once" && result.ingested_documents !== undefined) {
-    return `Poll completed with ${result.ingested_documents} ingested document${result.ingested_documents === 1 ? "" : "s"}.`;
+    return `Poll completed with ${result.ingested_documents} ingested document${result.ingested_documents === 1 ? "" : "s"}.${savedSuffix}`;
   }
   if (action === "poll_once" && result.refreshed_companies !== undefined) {
-    return `Fundamental market reference refreshed for ${result.refreshed_companies} companies.`;
+    return `Fundamental market reference refreshed for ${result.refreshed_companies} companies.${savedSuffix}`;
   }
   if (action === "refresh_universe") {
-    return `Universe refreshed: ${result?.counts?.combined || 0} tracked companies.`;
+    return `Universe refreshed: ${result?.counts?.combined || 0} tracked companies.${savedSuffix}`;
   }
   if (action === "save_lightweight_state") {
     return `Lightweight state saved to ${result.status?.last_backup_path || "runtime-state.json"}.`;

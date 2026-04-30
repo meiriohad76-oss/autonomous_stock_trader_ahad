@@ -123,6 +123,14 @@ const saveStateAction = await app.runRuntimeReliabilityAction({ action: "save_li
 assert(saveStateAction.ok, "Lightweight state save action failed.");
 assert(saveStateAction.result?.status?.provider === "json", "Lightweight state action should return JSON state status.");
 
+const refreshUniverseAction = await app.runRuntimeReliabilityAction({ action: "refresh_universe" });
+assert(refreshUniverseAction.ok, "Universe refresh action failed.");
+assert(refreshUniverseAction.result?.lightweight_state_saved === true, "State-changing runtime actions should auto-save lightweight state.");
+assert(
+  refreshUniverseAction.result?.lightweight_state_status?.provider === "json",
+  "Auto-save should return the lightweight JSON state status."
+);
+
 const profilePreview = await app.runRuntimeReliabilityAction({
   action: "apply_profile",
   profile: "live_news_only",

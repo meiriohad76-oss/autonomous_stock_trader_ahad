@@ -116,10 +116,11 @@ The expected Pi workflow is:
 1. Keep `pi_light` active.
 2. Run one SEC fundamentals batch.
 3. Watch runtime pressure and live SEC coverage.
-4. Save lightweight state.
-5. Repeat later until bootstrap names are replaced by SEC-backed fundamentals.
+4. Repeat later until bootstrap names are replaced by SEC-backed fundamentals.
 
 This gives the system forward progress without returning to the heavy SQLite backup loop that overloaded the Pi.
+
+State-changing one-shot actions auto-save the lightweight JSON snapshot when `LIGHTWEIGHT_STATE_ENABLED=true` and `DATABASE_ENABLED=false`. The separate Save Lightweight State button remains available as a manual checkpoint, but normal SEC/news/flow one-shot actions no longer require a second save click.
 
 ## Trade Setup integration
 
