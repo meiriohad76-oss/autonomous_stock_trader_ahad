@@ -69,6 +69,14 @@ assert(
 );
 assert(health.runtime_reliability?.status === runtime.status, "Health runtime summary is out of sync.");
 assert(
+  health.live_sources?.sec_fundamentals?.tracked_companies === 168,
+  "SEC fundamentals health should expose tracked company count before the first manual batch."
+);
+assert(
+  health.live_sources?.sec_fundamentals?.pending_bootstrap_companies === 168,
+  "SEC fundamentals health should expose pending bootstrap count before the first manual batch."
+);
+assert(
   health.live_sources?.fundamental_universe?.sec_directory_source === "unavailable_fallback",
   "Fundamental universe should survive SEC directory fetch failures."
 );

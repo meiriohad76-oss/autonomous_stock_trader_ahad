@@ -650,6 +650,38 @@ function buildSecFundamentalsQueue(store, config, options = {}) {
   };
 }
 
+function refreshSecFundamentalsHealthPreview(store, config) {
+  const companies = store.fundamentals?.leaderboard || [];
+  const liveCompanies = companies.filter((company) => company.data_source === "live_sec_filing");
+  const pendingCompanies = companies.filter((company) => company.data_source !== "live_sec_filing");
+  const existing = store.health.liveSources.sec_fundamentals || {};
+  const refreshCursor = Math.max(0, Math.floor(Number(existing.refresh_cursor || 0)));
+  const nextBatch = selectSecFundamentalsRefreshBatch(companies, config, refreshCursor);
+  const configuredLimit = Number(config.fundamentalSecMaxCompaniesPerPoll || 0);
+  const refreshLimit = companies.length
+    ? configuredLimit > 0
+      ? Math.min(Math.floor(configuredLimit), companies.length)
+      : companies.length
+    : null;
+
+  store.health.liveSources.sec_fundamentals = {
+    enabled: config.fundamentalSecEnabled,
+    polling: Boolean(existing.polling),
+    last_poll_at: existing.last_poll_at || null,
+    last_success_at: existing.last_success_at || null,
+    last_error: existing.last_error || null,
+    polls: Number(existing.polls || 0),
+    tracked_companies: companies.length,
+    live_companies: liveCompanies.length,
+    refresh_limit: refreshLimit,
+    refresh_batch_size: existing.polling ? Number(existing.refresh_batch_size || 0) : nextBatch.length,
+    refresh_cursor: refreshCursor,
+    pending_bootstrap_companies: pendingCompanies.length
+  };
+
+  return store.health.liveSources.sec_fundamentals;
+}
+
 async function buildTickerDetail(store, marketDataService, ticker) {
   const fundamentalsByTicker = new Map((store.fundamentals?.leaderboard || []).map((row) => [row.ticker, row]));
   const tickerMeta = TICKER_LOOKUP.get(ticker);
@@ -935,6 +967,7 @@ export function createSentimentApp() {
       };
     },
     getHealth() {
+      refreshSecFundamentalsHealthPreview(store, config);
       const runtimeReliability = runtimeReliabilityAgent.getSnapshot();
       return {
         status: store.health.systemStatus,
@@ -961,9 +994,11 @@ export function createSentimentApp() {
       return buildPerformanceSnapshot(config, store);
     },
     getRuntimeReliability() {
+      refreshSecFundamentalsHealthPreview(store, config);
       return runtimeReliabilityAgent.getSnapshot();
     },
     getSecFundamentalsQueue(options = {}) {
+      refreshSecFundamentalsHealthPreview(store, config);
       return buildSecFundamentalsQueue(store, config, options);
     },
     async runRuntimeReliabilityAction(payload = {}) {
