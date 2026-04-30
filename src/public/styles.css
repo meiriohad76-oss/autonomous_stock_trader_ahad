@@ -707,6 +707,98 @@ input:focus-visible {
   line-height: 1.45;
 }
 
+.trade-setup-runtime-summary {
+  margin: 8px 0 0;
+  color: #adc6ff;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.setup-explain {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.setup-score-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.setup-score-row span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.setup-score-row b {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.setup-score-rail {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.setup-score-rail span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+}
+
+.setup-score-rail .raw {
+  background: rgba(173, 198, 255, 0.2);
+}
+
+.setup-score-rail .final {
+  background: linear-gradient(90deg, var(--blue), var(--green));
+}
+
+.setup-runtime-copy {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.setup-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.setup-chip-row span {
+  padding: 5px 7px;
+  border-radius: 999px;
+  color: #adc6ff;
+  background: rgba(173, 198, 255, 0.1);
+  border: 1px solid rgba(173, 198, 255, 0.16);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.setup-mini-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .leaderboard-shell {
   overflow: auto;
   margin-top: 18px;

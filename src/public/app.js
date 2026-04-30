@@ -1105,6 +1105,53 @@ function renderFeed() {
   });
 }
 
+function tradeSetupRuntimeExplain(setup) {
+  const runtime = setup.runtime_reliability || {};
+  const score = setup.score_components || {};
+  const rawEdge = Math.max(Number(score.raw_long || 0), Number(score.raw_short || 0));
+  const finalConviction = Number(setup.conviction || 0);
+  const multiplier = Number(runtime.adjustment_multiplier || 1);
+  const haircutPct = Math.max(0, Math.round((1 - multiplier) * 100));
+  const rawPct = Math.round(rawEdge * 100);
+  const finalPct = Math.round(finalConviction * 100);
+  const issues = (runtime.degraded_sources || []).slice(0, 3);
+  const drivers = [
+    ...(setup.evidence?.positive || []),
+    ...(setup.evidence?.negative || []),
+    ...(setup.thesis || [])
+  ].slice(0, 3);
+  const runtimeText = haircutPct
+    ? `Runtime trust reduced the raw setup by ${haircutPct}% because source health is ${prettyLabel(runtime.status || "unknown")}.`
+    : "Runtime reliability is not reducing this setup right now.";
+
+  return `
+    <div class="setup-explain">
+      <div class="setup-score-row">
+        <span>Raw edge <b>${rawPct}%</b></span>
+        <span>Runtime haircut <b>${haircutPct ? `-${haircutPct}%` : "0%"}</b></span>
+        <span>Final <b>${finalPct}%</b></span>
+      </div>
+      <div class="setup-score-rail" aria-label="Raw edge to final conviction">
+        <span class="raw" style="width: ${Math.min(100, Math.max(0, rawPct))}%"></span>
+        <span class="final" style="width: ${Math.min(100, Math.max(0, finalPct))}%"></span>
+      </div>
+      <p class="setup-runtime-copy">${runtimeText}</p>
+      ${
+        issues.length
+          ? `<div class="setup-chip-row">${issues
+              .map((source) => `<span title="${source.reason || ""}">${source.label}: ${prettyLabel(source.status)}</span>`)
+              .join("")}</div>`
+          : ""
+      }
+      ${
+        drivers.length
+          ? `<ul class="setup-mini-list">${drivers.map((item) => `<li>${item}</li>`).join("")}</ul>`
+          : ""
+      }
+    </div>
+  `;
+}
+
 function renderTradeSetups() {
   const payload = state.tradeSetups || { counts: {}, setups: [] };
   const macro = state.macroRegime || {};
@@ -1129,6 +1176,11 @@ function renderTradeSetups() {
       <div class="summary-card"><span>Watch</span><strong>${counts.watch || 0}</strong></div>
     </div>
     ${macro.summary ? `<p class="trade-setup-macro-summary">${macro.summary}</p>` : ""}
+    ${
+      payload.runtime_reliability?.summary
+        ? `<p class="trade-setup-runtime-summary">Runtime guardrail: ${payload.runtime_reliability.summary}</p>`
+        : ""
+    }
   `;
 
   elements.tradeSetupList.innerHTML = "";
@@ -1158,6 +1210,7 @@ function renderTradeSetups() {
         <span>${setup.current_price ? `$${formatNumber(setup.current_price)}` : "Price n/a"}</span>
         <span>runtime x${formatNumber(setup.runtime_reliability?.adjustment_multiplier || 1, 2)}</span>
       </div>
+      ${tradeSetupRuntimeExplain(setup)}
     `;
     article.addEventListener("click", async () => {
       if (setup.ticker) {
