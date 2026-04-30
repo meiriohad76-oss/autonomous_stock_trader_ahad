@@ -122,6 +122,24 @@ This gives the system forward progress without returning to the heavy SQLite bac
 
 State-changing one-shot actions auto-save the lightweight JSON snapshot when `LIGHTWEIGHT_STATE_ENABLED=true` and `DATABASE_ENABLED=false`. The separate Save Lightweight State button remains available as a manual checkpoint, but normal SEC/news/flow one-shot actions no longer require a second save click.
 
+For hands-off but still bounded SEC progress, use the catch-up CLI instead of pressing the System tab button repeatedly:
+
+```bash
+npm run sec:catchup -- --max-batches 5 --delay-ms 2000
+```
+
+The helper calls the same one-shot runtime action as the dashboard. It does not enable background polling and it does not rewrite `.env`. On the Pi, each batch uses `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL`, so `pi_light` normally refreshes up to 8 names per batch. The command prints one progress line per batch, then a final JSON summary with live SEC count, remaining bootstrap count, runtime status, and lightweight-state save status.
+
+Useful variants:
+
+```bash
+npm run sec:catchup -- --max-batches 1
+npm run sec:catchup -- --max-batches 10 --delay-ms 5000
+npm run sec:catchup -- --force-universe --max-batches 3
+```
+
+Stop after any run if runtime pressure rises, Cloudflare starts returning 502, or the SEC action reports repeated error-only batches. The point is steady coverage progress, not maximum throughput.
+
 ## Trade Setup integration
 
 The Trade Setup Agent consumes the Runtime Reliability Agent as an engine input. It does not merely display runtime status.

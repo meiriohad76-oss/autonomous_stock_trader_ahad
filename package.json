@@ -13,6 +13,7 @@
     "check:runtime-reliability": "node scripts/check-runtime-reliability.js",
     "sqlite:backup": "node scripts/sqlite-backup.js",
     "sqlite:health": "node scripts/sqlite-health.js",
+    "sec:catchup": "node scripts/sec-fundamentals-catchup.js",
     "runtime:profiles": "node scripts/runtime-profile.js list",
     "runtime:profile": "node scripts/runtime-profile.js"
   },
