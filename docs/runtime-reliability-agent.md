@@ -30,7 +30,7 @@ Collectors and persistence
 Downstream components should use it as a guardrail:
 
 - dashboards show whether data is live, stale, fallback, disabled, or manual
-- trade setup logic can reduce conviction when key sources are degraded
+- trade setup logic reduces conviction when key sources are degraded, fallback, stale, disabled, or intentionally manual
 - deploy scripts can check whether the Pi is safe before enabling heavy collectors
 - future scheduler/orchestrator logic can use the `collector_plan`
 
@@ -120,6 +120,29 @@ The expected Pi workflow is:
 5. Repeat later until bootstrap names are replaced by SEC-backed fundamentals.
 
 This gives the system forward progress without returning to the heavy SQLite backup loop that overloaded the Pi.
+
+## Trade Setup integration
+
+The Trade Setup Agent consumes the Runtime Reliability Agent as an engine input. It does not merely display runtime status.
+
+For each setup, the agent calculates a runtime adjustment from:
+
+- source status: healthy, fallback, manual, pending, stale, degraded, error, or disabled
+- source criticality: critical, high, medium, or low
+- runtime pressure: Pi performance mode, memory pressure, and load pressure
+- overall runtime status: optimal, caution, constrained, or degraded
+
+Storage-only sources are excluded from the trade penalty, because a disabled database changes durability, not current signal quality.
+
+The final setup contains:
+
+- `runtime_reliability.adjustment_multiplier`
+- `runtime_reliability.penalty`
+- `runtime_reliability.degraded_sources`
+- `score_components.raw_long` and `score_components.raw_short`
+- `score_components.runtime_multiplier`
+
+Conviction and position size are calculated after this adjustment. That means a setup can move from long/short to watch, or shrink its position size, when the system is running on fallback data or constrained Pi resources.
 
 ## SEC fundamentals batching
 

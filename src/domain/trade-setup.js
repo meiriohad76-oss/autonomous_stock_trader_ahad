@@ -20,6 +20,25 @@ const BEARISH_FLOW_EVENT_TYPES = new Set([
   "smart_money_stacking_negative"
 ]);
 
+const RUNTIME_STATUS_PENALTIES = {
+  healthy: 0,
+  fallback: 0.05,
+  manual: 0.035,
+  pending: 0.05,
+  polling: 0.015,
+  stale: 0.08,
+  degraded: 0.1,
+  error: 0.14,
+  disabled: 0.12
+};
+
+const RUNTIME_CRITICALITY_MULTIPLIERS = {
+  critical: 1.2,
+  high: 1,
+  medium: 0.75,
+  low: 0.45
+};
+
 function buildDocumentLookup(store) {
   return new Map(store.normalizedDocuments.map((doc) => [doc.doc_id, doc]));
 }
@@ -163,13 +182,100 @@ function summarizeSetup(action, setupLabelValue, ticker, conviction) {
   return `${ticker} does not currently justify a trade.`;
 }
 
+function runtimeSourcePenalty(source) {
+  if (!source || source.category === "storage") {
+    return 0;
+  }
+
+  const basePenalty = RUNTIME_STATUS_PENALTIES[source.status] ?? 0.04;
+  const criticalityMultiplier = RUNTIME_CRITICALITY_MULTIPLIERS[source.criticality] ?? 0.75;
+  return basePenalty * criticalityMultiplier;
+}
+
+function buildRuntimeReliabilityAdjustment(runtimeReliabilitySnapshot) {
+  if (!runtimeReliabilitySnapshot) {
+    return {
+      status: "unknown",
+      adjustment_multiplier: 1,
+      penalty: 0,
+      source_penalty: 0,
+      pressure_penalty: 0,
+      constrained: false,
+      degraded_sources: [],
+      reason_codes: []
+    };
+  }
+
+  const sources = runtimeReliabilitySnapshot.sources || [];
+  const sourcePenalties = sources
+    .filter((source) => source.category !== "storage")
+    .map((source) => ({
+      key: source.key,
+      label: source.label,
+      status: source.status,
+      action: source.action,
+      penalty: runtimeSourcePenalty(source),
+      reason: source.reason
+    }))
+    .filter((source) => source.penalty > 0)
+    .sort((a, b) => b.penalty - a.penalty);
+
+  const sourcePenalty = clamp(
+    sourcePenalties.reduce((sum, source) => sum + source.penalty, 0),
+    0,
+    0.32
+  );
+  const pressure = runtimeReliabilitySnapshot.pressure || {};
+  const statusPenalty =
+    runtimeReliabilitySnapshot.status === "degraded"
+      ? 0.08
+      : ["constrained", "caution"].includes(runtimeReliabilitySnapshot.status)
+        ? 0.035
+        : 0;
+  const pressurePenalty = (pressure.isConstrained ? 0.04 : 0) + statusPenalty;
+  const penalty = clamp(sourcePenalty + pressurePenalty, 0, 0.42);
+  const reasonCodes = [];
+
+  if (pressure.isConstrained) {
+    reasonCodes.push("runtime_constrained");
+  }
+  if (sourcePenalties.some((source) => source.status === "fallback")) {
+    reasonCodes.push("fallback_source_active");
+  }
+  if (sourcePenalties.some((source) => source.status === "manual")) {
+    reasonCodes.push("manual_source_active");
+  }
+  if (sourcePenalties.some((source) => ["stale", "degraded", "error", "disabled"].includes(source.status))) {
+    reasonCodes.push("source_health_penalty");
+  }
+
+  return {
+    status: runtimeReliabilitySnapshot.status || "unknown",
+    adjustment_multiplier: round(clamp(1 - penalty, 0.58, 1), 3),
+    penalty: round(penalty, 3),
+    source_penalty: round(sourcePenalty, 3),
+    pressure_penalty: round(pressurePenalty, 3),
+    constrained: Boolean(pressure.isConstrained),
+    degraded_sources: sourcePenalties.slice(0, 5).map((source) => ({
+      key: source.key,
+      label: source.label,
+      status: source.status,
+      action: source.action,
+      penalty: round(source.penalty, 3),
+      reason: source.reason
+    })),
+    reason_codes: reasonCodes
+  };
+}
+
 function computeSetup({
   ticker,
   sentimentRow,
   fundamentalRow,
   docs,
   alerts,
-  macroRegimeSnapshot
+  macroRegimeSnapshot,
+  runtimeReliabilitySnapshot
 }) {
   const companyName = fundamentalRow?.company_name || sentimentRow?.entity_name || ticker;
   const sector = fundamentalRow?.sector || "Unknown";
@@ -311,6 +417,20 @@ function computeSetup({
   longScore = clamp(longScore, 0, 1);
   shortScore = clamp(shortScore, 0, 1);
 
+  const rawLongScore = round(longScore, 3);
+  const rawShortScore = round(shortScore, 3);
+  const runtimeAdjustment = buildRuntimeReliabilityAdjustment(runtimeReliabilitySnapshot);
+  const runtimeMultiplier = runtimeAdjustment.adjustment_multiplier;
+
+  if (runtimeMultiplier < 0.995) {
+    longScore = clamp(longScore * runtimeMultiplier, 0, 1);
+    shortScore = clamp(shortScore * runtimeMultiplier, 0, 1);
+    riskFlags.push(`runtime reliability reduces conviction by ${Math.round((1 - runtimeMultiplier) * 100)}%`);
+    runtimeAdjustment.degraded_sources.slice(0, 3).forEach((source) => {
+      riskFlags.push(`${source.label} is ${source.status.replace(/_/g, " ")}`);
+    });
+  }
+
   if (weightedSentiment >= 0.25) {
     thesis.push("short-term sentiment is supportive");
   } else if (weightedSentiment <= -0.25) {
@@ -372,8 +492,12 @@ function computeSetup({
     score_components: {
       long: round(longScore, 3),
       short: round(shortScore, 3),
-      gap: scoreGap
+      gap: scoreGap,
+      raw_long: rawLongScore,
+      raw_short: rawShortScore,
+      runtime_multiplier: runtimeMultiplier
     },
+    runtime_reliability: runtimeAdjustment,
     macro_regime: macroRegimeSnapshot
       ? {
           regime_label: macroRegimeSnapshot.regime_label,
@@ -431,7 +555,17 @@ function actionRank(action) {
   return 3;
 }
 
-export function buildTradeSetupsSnapshot(store, { window = "1h", limit = 12, minConviction = 0.35, action = null, macroRegimeSnapshot = null } = {}) {
+export function buildTradeSetupsSnapshot(
+  store,
+  {
+    window = "1h",
+    limit = 12,
+    minConviction = 0.35,
+    action = null,
+    macroRegimeSnapshot = null,
+    runtimeReliabilitySnapshot = null
+  } = {}
+) {
   const sentimentByTicker = buildSentimentByTicker(store, window);
   const fundamentalsByTicker = buildFundamentalsByTicker(store);
   const allTickers = [...new Set([...sentimentByTicker.keys(), ...fundamentalsByTicker.keys()])];
@@ -448,7 +582,8 @@ export function buildTradeSetupsSnapshot(store, { window = "1h", limit = 12, min
         alerts: store.alertHistory
           .filter((item) => item.entity_key === ticker)
           .sort((a, b) => new Date(latestAlertTimestamp(b) || 0) - new Date(latestAlertTimestamp(a) || 0)),
-        macroRegimeSnapshot: regimeSnapshot
+        macroRegimeSnapshot: regimeSnapshot,
+        runtimeReliabilitySnapshot
       })
     )
     .filter((setup) => setup.conviction >= minConviction)
@@ -469,6 +604,14 @@ export function buildTradeSetupsSnapshot(store, { window = "1h", limit = 12, min
       bias_label: regimeSnapshot.bias_label,
       exposure_multiplier: regimeSnapshot.exposure_multiplier
     },
+    runtime_reliability: runtimeReliabilitySnapshot
+      ? {
+          status: runtimeReliabilitySnapshot.status,
+          summary: runtimeReliabilitySnapshot.summary,
+          source_counts: runtimeReliabilitySnapshot.source_counts,
+          pressure: runtimeReliabilitySnapshot.pressure
+        }
+      : null,
     counts: {
       tracked_tickers: allTickers.length,
       sentiment_tickers: sentimentByTicker.size,
@@ -482,11 +625,12 @@ export function buildTradeSetupsSnapshot(store, { window = "1h", limit = 12, min
   };
 }
 
-export function createTradeSetupAgent({ store, getMacroRegime }) {
+export function createTradeSetupAgent({ store, getMacroRegime, getRuntimeReliability }) {
   function getTradeSetups(options = {}) {
     return buildTradeSetupsSnapshot(store, {
       ...options,
-      macroRegimeSnapshot: getMacroRegime ? getMacroRegime({ window: options.window || "1h" }) : null
+      macroRegimeSnapshot: getMacroRegime ? getMacroRegime({ window: options.window || "1h" }) : null,
+      runtimeReliabilitySnapshot: getRuntimeReliability ? getRuntimeReliability() : null
     });
   }
 

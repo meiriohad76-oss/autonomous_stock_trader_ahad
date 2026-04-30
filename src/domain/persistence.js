@@ -809,6 +809,7 @@ function buildAgentRows(store, config) {
     evidence_negative: setup.evidence?.negative || [],
     score_metadata: {
       score_components: setup.score_components || {},
+      runtime_reliability: setup.runtime_reliability || null,
       sentiment: setup.sentiment || null,
       fundamentals: setup.fundamentals || null,
       recent_documents: setup.recent_documents || [],

@@ -375,6 +375,7 @@ const tickerDetail = topTicker ? await app.getTickerDetail(topTicker) : null;
 const fundamentals = app.getFundamentalsSnapshot();
 const topFundamental = fundamentals.leaderboard[0]?.ticker;
 const fundamentalDetail = topFundamental ? app.getFundamentalsTickerDetail(topFundamental) : null;
+const tradeSetups = app.getTradeSetups({ limit: 8, minConviction: 0 });
 const warehouseSummary = app.getFundamentalPersistenceSummary();
 const warehouseTicker = topFundamental ? app.getFundamentalPersistenceTicker(topFundamental) : null;
 const baseFundamentalCompany = topFundamental ? app.getTrackedFundamentalCompanies().find((item) => item.ticker === topFundamental) : null;
@@ -428,6 +429,14 @@ if (!fundamentalDetail?.factor_cards?.length || !fundamentalDetail?.score_histor
   throw new Error("Fundamental detail is missing factor cards or score history.");
 }
 
+if (!tradeSetups.setups.length || !tradeSetups.setups[0].runtime_reliability) {
+  throw new Error("Trade setup engine is missing runtime reliability adjustment metadata.");
+}
+
+if (!Number.isFinite(tradeSetups.setups[0].score_components?.runtime_multiplier)) {
+  throw new Error("Trade setup engine did not expose a runtime adjustment multiplier.");
+}
+
 if (!warehouseSummary.coverage_universe || !warehouseSummary.fundamental_scores || !warehouseSummary.fundamental_states) {
   throw new Error("Fundamental warehouse summary is missing expected materialized rows.");
 }
@@ -462,6 +471,8 @@ console.log(
       ticker_history_points: tickerDetail.price_history.length,
       fundamentals_count: fundamentals.leaderboard.length,
       sectors_count: fundamentals.sectors.length,
+      trade_setups: tradeSetups.setups.length,
+      trade_setup_runtime_multiplier: tradeSetups.setups[0].score_components.runtime_multiplier,
       fundamental_change_events: app.getFundamentalsChanges(20).length,
       warehouse_coverage_rows: warehouseSummary.coverage_universe,
       warehouse_fact_rows: warehouseSummary.financial_facts,

@@ -783,11 +783,12 @@ export function createSentimentApp() {
   }
 
   const macroRegimeAgent = createMacroRegimeAgent({ store });
+  const runtimeReliabilityAgent = createRuntimeReliabilityAgent({ config, store });
   const tradeSetupAgent = createTradeSetupAgent({
     store,
-    getMacroRegime: (options = {}) => macroRegimeAgent.getMacroRegime(options)
+    getMacroRegime: (options = {}) => macroRegimeAgent.getMacroRegime(options),
+    getRuntimeReliability: () => runtimeReliabilityAgent.getSnapshot()
   });
-  const runtimeReliabilityAgent = createRuntimeReliabilityAgent({ config, store });
 
   const app = {
     config,

@@ -1110,6 +1110,10 @@ function renderTradeSetups() {
   const macro = state.macroRegime || {};
   const counts = payload.counts || {};
   const setups = payload.setups || [];
+  const runtimeStatus = payload.runtime_reliability?.status || "unknown";
+  const averageRuntimeMultiplier = setups.length
+    ? setups.reduce((sum, setup) => sum + Number(setup.runtime_reliability?.adjustment_multiplier || 1), 0) / setups.length
+    : 1;
 
   elements.tradeSetupSummary.innerHTML = `
     <div class="summary-grid">
@@ -1117,6 +1121,8 @@ function renderTradeSetups() {
       <div class="summary-card"><span>Bias</span><strong>${prettyLabel(macro.bias_label || "balanced")}</strong></div>
       <div class="summary-card"><span>Exposure</span><strong>${formatNumber((macro.exposure_multiplier || 0) * 100, 0)}%</strong></div>
       <div class="summary-card"><span>Macro Conf</span><strong>${formatNumber((macro.conviction || 0) * 100, 0)}%</strong></div>
+      <div class="summary-card"><span>Runtime</span><strong>${prettyLabel(runtimeStatus)}</strong></div>
+      <div class="summary-card"><span>Trust Adj.</span><strong>${formatNumber(averageRuntimeMultiplier * 100, 0)}%</strong></div>
       <div class="summary-card"><span>Tracked</span><strong>${counts.tracked_tickers || 0}</strong></div>
       <div class="summary-card"><span>Long</span><strong>${counts.long || 0}</strong></div>
       <div class="summary-card"><span>Short</span><strong>${counts.short || 0}</strong></div>
@@ -1150,6 +1156,7 @@ function renderTradeSetups() {
       <div class="feed-meta">
         <span>${setup.timeframe.replace(/_/g, " ")}</span>
         <span>${setup.current_price ? `$${formatNumber(setup.current_price)}` : "Price n/a"}</span>
+        <span>runtime x${formatNumber(setup.runtime_reliability?.adjustment_multiplier || 1, 2)}</span>
       </div>
     `;
     article.addEventListener("click", async () => {
