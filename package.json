@@ -11,6 +11,7 @@
     "check": "node scripts/check.js",
     "check:evidence-quality": "node scripts/check-evidence-quality.js",
     "check:alpaca-mcp": "node scripts/check-alpaca-mcp.js",
+    "check:alpaca-mcp-broker": "node scripts/check-alpaca-mcp-broker.js",
     "check:execution": "node scripts/check-execution-agent.js",
     "check:positions": "node scripts/check-position-monitor.js",
     "check:risk": "node scripts/check-risk-agent.js",

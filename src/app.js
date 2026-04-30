@@ -25,6 +25,7 @@ import { createMacroRegimeAgent } from "./domain/macro-regime.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
 import { RUNTIME_PROFILES, createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
 import { createAlpacaBroker } from "./domain/broker-alpaca.js";
+import { createAlpacaMcpBroker } from "./domain/broker-alpaca-mcp.js";
 import { createExecutionAgent } from "./domain/execution-agent.js";
 import { createRiskAgent } from "./domain/risk-agent.js";
 import { createPositionMonitorAgent } from "./domain/position-monitor-agent.js";
@@ -898,7 +899,9 @@ export function createSentimentApp() {
     getMacroRegime: (options = {}) => macroRegimeAgent.getMacroRegime(options),
     getRuntimeReliability: () => runtimeReliabilityAgent.getSnapshot()
   });
-  const broker = createAlpacaBroker({ config });
+  const broker = config.brokerAdapter === "mcp"
+    ? createAlpacaMcpBroker({ config })
+    : createAlpacaBroker({ config });
   const riskAgent = createRiskAgent({
     config,
     broker,
@@ -1017,6 +1020,7 @@ export function createSentimentApp() {
         sec_form4_enabled: config.secForm4Enabled,
         sec_13f_enabled: config.sec13fEnabled,
         auto_start_sec_13f: config.autoStartSec13f,
+        broker_adapter: config.brokerAdapter,
         execution: executionAgent.getStatus(),
         risk: {
           max_gross_exposure_pct: config.riskMaxGrossExposurePct,

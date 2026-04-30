@@ -67,6 +67,7 @@ function bracketLegs(setup, action) {
 export function summarizeExecutionConfig(config) {
   return {
     provider: config.brokerProvider,
+    adapter: config.brokerAdapter,
     mode: config.brokerTradingMode,
     submit_enabled: Boolean(config.brokerSubmitEnabled),
     min_conviction: config.executionMinConviction,
@@ -213,6 +214,19 @@ export function createExecutionAgent({ config, broker, getTradeSetup, evaluateRi
 
   function getStatus() {
     const brokerStatus = broker.getStatus();
+    const submitRequires = [
+      "valid Alpaca credentials",
+      "BROKER_SUBMIT_ENABLED=true",
+      "paper mode or explicit ALPACA_ALLOW_LIVE_TRADING=true",
+      "confirmation phrase: paper-trade or live-trade",
+      "trade setup action long/short with enough conviction"
+    ];
+
+    if (config.brokerAdapter === "mcp") {
+      submitRequires[2] = "MCP paper mode with ALPACA_PAPER_TRADE=true";
+      submitRequires[3] = "confirmation phrase: paper-trade";
+    }
+
     return {
       as_of: new Date().toISOString(),
       status: brokerStatus.ready_for_order_submission ? "ready" : brokerStatus.configured ? "guarded" : "not_configured",
@@ -220,13 +234,7 @@ export function createExecutionAgent({ config, broker, getTradeSetup, evaluateRi
       safety: summarizeExecutionConfig(config),
       order_submission_policy: {
         default: "preview_only",
-        submit_requires: [
-          "valid Alpaca credentials",
-          "BROKER_SUBMIT_ENABLED=true",
-          "paper mode or explicit ALPACA_ALLOW_LIVE_TRADING=true",
-          "confirmation phrase: paper-trade or live-trade",
-          "trade setup action long/short with enough conviction"
-        ]
+        submit_requires: submitRequires
       }
     };
   }

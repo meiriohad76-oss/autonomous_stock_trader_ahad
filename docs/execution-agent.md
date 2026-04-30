@@ -30,8 +30,10 @@ The Execution Agent does not decide whether a stock is interesting. That remains
 The default mode is preview-only. No order can be submitted unless all of these are true:
 
 - `BROKER_PROVIDER=alpaca`
+- `BROKER_ADAPTER=rest` or `BROKER_ADAPTER=mcp`
 - `BROKER_TRADING_MODE=paper` for paper trading, or `live` for live trading
-- `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY` are configured
+- direct REST mode has `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY` configured
+- MCP mode has `.vscode/mcp.json` or MCP environment credentials configured
 - `BROKER_SUBMIT_ENABLED=true`
 - live trading additionally requires `ALPACA_ALLOW_LIVE_TRADING=true`
 - the API caller sends `confirm="paper-trade"` or `confirm="live-trade"`
@@ -42,9 +44,9 @@ The default mode is preview-only. No order can be submitted unless all of these 
 
 Short selling is blocked unless `EXECUTION_ALLOW_SHORTS=true`.
 
-## Alpaca adapter
+## Alpaca adapters
 
-The first broker adapter is Alpaca Trading API:
+The default broker adapter is direct Alpaca Trading API:
 
 - paper base URL: `https://paper-api.alpaca.markets`
 - live base URL: `https://api.alpaca.markets`
@@ -57,6 +59,17 @@ The adapter uses Alpaca's documented key headers:
 
 - `APCA-API-KEY-ID`
 - `APCA-API-SECRET-KEY`
+
+The optional MCP adapter uses Alpaca's official MCP server. It exposes the same project broker contract to the Execution, Risk, and Position Monitor agents:
+
+- account tool: `get_account_info`
+- positions tool: `get_all_positions`
+- orders tool: `get_orders`
+- submit tool: `place_stock_order`
+
+The project adapter intentionally calls only `place_stock_order` for submission. Crypto and options order tools may exist on the MCP server, but the execution path does not use them.
+
+The MCP adapter is currently paper-only. Keep `BROKER_TRADING_MODE=paper` and `ALPACA_PAPER_TRADE=true` for this path.
 
 ## Order construction
 
@@ -81,6 +94,7 @@ The estimated notional is capped by:
 
 ```bash
 BROKER_PROVIDER=alpaca
+BROKER_ADAPTER=rest
 BROKER_TRADING_MODE=paper
 BROKER_SUBMIT_ENABLED=false
 BROKER_REQUEST_TIMEOUT_MS=12000
@@ -89,6 +103,10 @@ ALPACA_API_SECRET_KEY=
 ALPACA_PAPER_BASE_URL=https://paper-api.alpaca.markets
 ALPACA_LIVE_BASE_URL=https://api.alpaca.markets
 ALPACA_ALLOW_LIVE_TRADING=false
+ALPACA_MCP_CONFIG_PATH=.vscode/mcp.json
+ALPACA_MCP_SERVER_NAME=alpaca-paper
+ALPACA_MCP_REQUEST_TIMEOUT_MS=30000
+ALPACA_PAPER_TRADE=true
 EXECUTION_MIN_CONVICTION=0.62
 EXECUTION_MIN_NOTIONAL_USD=25
 EXECUTION_MAX_ORDER_NOTIONAL_USD=1000

@@ -34,6 +34,7 @@ export function buildAlpacaBrokerStatus(config) {
 
   return {
     provider: "alpaca",
+    adapter: "rest",
     mode,
     base_url: trimTrailingSlash(baseUrlForMode(config)),
     configured,

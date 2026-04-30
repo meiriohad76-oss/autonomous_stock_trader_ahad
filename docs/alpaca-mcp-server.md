@@ -77,9 +77,49 @@ npm run check:alpaca-mcp
 
 The check starts the MCP server, lists tools, calls only `get_account_info`, and prints a sanitized account status. It never places orders and never prints keys.
 
+## App broker adapter
+
+The production app can also route the existing Execution, Risk, and Position Monitor agents through the MCP server instead of direct Alpaca REST. This keeps one safety path for preview, risk review, confirmation, and paper order submission.
+
+Set these values in `.env`:
+
+```env
+BROKER_PROVIDER=alpaca
+BROKER_ADAPTER=mcp
+BROKER_TRADING_MODE=paper
+BROKER_SUBMIT_ENABLED=false
+ALPACA_MCP_CONFIG_PATH=.vscode/mcp.json
+ALPACA_MCP_SERVER_NAME=alpaca-paper
+ALPACA_MCP_REQUEST_TIMEOUT_MS=30000
+ALPACA_PAPER_TRADE=true
+```
+
+Then run the read-only broker-adapter check:
+
+```powershell
+npm run check:alpaca-mcp-broker
+```
+
+This calls account, positions, and open orders through the MCP adapter. It does not place orders.
+
+After restarting the service, confirm the app sees the MCP adapter:
+
+```powershell
+curl -s http://127.0.0.1:3000/api/execution/status
+```
+
+Look for:
+
+```json
+"adapter": "mcp"
+```
+
 ## Safety
 
 - Use paper keys only.
 - Keep `ALPACA_PAPER_TRADE=true`.
+- The app MCP adapter is currently paper-only. Use the direct REST adapter for any future separately approved live-trading path.
 - Do not add live keys until the project has a separate live-trading approval gate.
+- Keep `BROKER_SUBMIT_ENABLED=false` until account, positions, risk, and preview checks pass.
+- The app MCP adapter only calls `place_stock_order`; it does not call crypto or options order tools.
 - MCP tools can place/cancel orders, so use them through the same project workflow: setup review, risk review, preview, then paper order.

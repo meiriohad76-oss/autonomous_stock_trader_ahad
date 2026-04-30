@@ -145,6 +145,7 @@ Default behavior is preview-only:
 
 ```bash
 BROKER_PROVIDER=alpaca
+BROKER_ADAPTER=rest
 BROKER_TRADING_MODE=paper
 BROKER_SUBMIT_ENABLED=false
 ALPACA_API_KEY_ID=
@@ -173,6 +174,15 @@ Contract check:
 ```bash
 npm run check:execution
 ```
+
+Alpaca MCP paper-trading checks:
+
+```bash
+npm run check:alpaca-mcp
+npm run check:alpaca-mcp-broker
+```
+
+Set `BROKER_ADAPTER=mcp` to route the Execution, Risk, and Position Monitor agents through the official Alpaca MCP server instead of direct REST. The MCP path still uses the same preview, risk, and confirmation gates.
 
 The full design is documented in [docs/execution-agent.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/execution-agent.md).
 
