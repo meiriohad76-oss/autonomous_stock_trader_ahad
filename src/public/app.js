@@ -37,6 +37,7 @@ const state = {
   config: null,
   health: null,
   runtimeReliability: null,
+  secQueue: null,
   snapshot: null,
   macroRegime: null,
   tradeSetups: null,
@@ -357,6 +358,64 @@ function runtimeActionCard({ title, body, metric, submetric, action, source, lab
       ${progress !== null ? `<div class="runtime-progress"><span style="width: ${Math.min(100, Math.max(0, progress))}%"></span></div>` : ""}
       ${submetric ? `<p class="workspace-copy">${submetric}</p>` : ""}
       ${runtimeActionButton(action, source, label, icon)}
+    </div>
+  `;
+}
+
+function renderSecQueuePanel(secQueue) {
+  if (!secQueue) {
+    return `
+      <div class="runtime-action-panel">
+        <div class="section-kicker">SEC Coverage Queue</div>
+        <p class="workspace-copy">SEC queue details are not available yet. Refresh runtime telemetry, then retry.</p>
+      </div>
+    `;
+  }
+
+  const coveragePct = Math.round((secQueue.coverage_ratio || 0) * 100);
+  const nextBatch = secQueue.next_batch || [];
+  const pendingSectors = (secQueue.pending_by_sector || []).slice(0, 8);
+  const lastRun = secQueue.last_success_at ? relativeTime(secQueue.last_success_at) : "not run yet";
+
+  return `
+    <div class="runtime-action-panel sec-queue-panel">
+      <div class="section-kicker">SEC Coverage Queue</div>
+      <h3>What the next fundamentals batch will try</h3>
+      <p class="workspace-copy">${secQueue.explanation}</p>
+      <div class="workspace-detail-grid">
+        <div class="workspace-stat-card"><span>Tracked</span><strong>${secQueue.tracked_companies || 0}</strong></div>
+        <div class="workspace-stat-card"><span>SEC Live</span><strong>${secQueue.live_sec_companies || 0}</strong></div>
+        <div class="workspace-stat-card"><span>Bootstrap Pending</span><strong>${secQueue.pending_bootstrap_companies || 0}</strong></div>
+        <div class="workspace-stat-card"><span>Coverage</span><strong>${coveragePct}%</strong></div>
+        <div class="workspace-stat-card"><span>Next Batch</span><strong>${secQueue.next_batch_size || 0}</strong></div>
+        <div class="workspace-stat-card"><span>Last SEC Run</span><strong>${lastRun}</strong></div>
+      </div>
+      <div class="runtime-progress"><span style="width: ${Math.min(100, Math.max(0, coveragePct))}%"></span></div>
+      ${
+        nextBatch.length
+          ? `<div class="workspace-card-grid compact-grid">
+              ${nextBatch
+                .map(
+                  (company) => `
+                    <button type="button" class="workspace-card" data-focus-ticker="${company.ticker}">
+                      <span>${company.ticker}</span>
+                      <strong>${company.company_name || company.ticker}</strong>
+                      <small>${company.sector || "Unknown"} - ${sourceLabel(company.data_source)} - ${prettyLabel(company.screen_stage || "unscored")}</small>
+                    </button>
+                  `
+                )
+                .join("")}
+            </div>`
+          : `<div class="workspace-empty">No next SEC batch is queued. Either the universe is complete, or SEC fundamentals are disabled.</div>`
+      }
+      ${
+        pendingSectors.length
+          ? `<ul class="workspace-list inline-list">
+              ${pendingSectors.map((item) => `<li>${item.sector}: ${item.count} pending</li>`).join("")}
+            </ul>`
+          : ""
+      }
+      ${secQueue.last_error ? `<p class="workspace-copy">Latest SEC queue warning: ${secQueue.last_error}</p>` : ""}
     </div>
   `;
 }
@@ -889,12 +948,14 @@ async function loadConfig() {
 }
 
 async function loadHealth() {
-  const [health, runtimeReliability] = await Promise.all([
+  const [health, runtimeReliability, secQueue] = await Promise.all([
     getJson("/api/health"),
-    getJson("/api/runtime-reliability").catch(() => null)
+    getJson("/api/runtime-reliability").catch(() => null),
+    getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null)
   ]);
   state.health = health;
   state.runtimeReliability = runtimeReliability || health.runtime_reliability || null;
+  state.secQueue = secQueue;
   elements.healthStatus.textContent = healthLabel(health.status);
   elements.healthUpdate.textContent = formatTime(health.last_update);
   elements.healthQueue.textContent = health.queue_depth;
@@ -2056,10 +2117,11 @@ function renderSystemView() {
   const runtimeActions = runtimeReliability?.available_actions || [];
   const runtimeProfiles = runtimeReliability?.runtime_profiles || {};
   const recommendedProfile = runtimeProfiles.profiles?.find((profile) => profile.key === runtimeProfiles.recommended) || null;
+  const secQueue = state.secQueue;
   const screenerOverview = state.snapshot?.screener_overview || {};
   const fullUniverse = screenerOverview.full_universe || {};
   const allUniverse = screenerOverview.all_universe || fullUniverse || {};
-  const totalUniverse = allUniverse.tracked || fullUniverse.tracked || state.health?.fundamental_companies_scored || 0;
+  const totalUniverse = secQueue?.tracked_companies || allUniverse.tracked || fullUniverse.tracked || state.health?.fundamental_companies_scored || 0;
   const liveNews = state.health?.live_sources?.google_news_rss || null;
   const marketData = state.health?.live_sources?.market_data || null;
   const marketFlow = state.health?.live_sources?.market_flow || null;
@@ -2069,9 +2131,13 @@ function renderSystemView() {
   const lightweightState = state.health?.live_sources?.lightweight_state || null;
   const evidenceQuality = state.health?.evidence_quality || null;
   const backup = state.health?.database_backup || state.config?.database_backup || null;
-  const secLiveCount = secFundamentals?.live_companies ?? screenerOverview.fundamental_sec_live ?? 0;
-  const pendingBootstrap = secFundamentals?.pending_bootstrap_companies ?? screenerOverview.bootstrap ?? 0;
-  const secProgress = totalUniverse ? Math.round((secLiveCount / totalUniverse) * 100) : 0;
+  const secLiveCount = secQueue?.live_sec_companies ?? secFundamentals?.live_companies ?? screenerOverview.fundamental_sec_live ?? 0;
+  const pendingBootstrap = secQueue?.pending_bootstrap_companies ?? secFundamentals?.pending_bootstrap_companies ?? screenerOverview.bootstrap ?? 0;
+  const secProgress = secQueue?.coverage_ratio !== undefined
+    ? Math.round(secQueue.coverage_ratio * 100)
+    : totalUniverse
+      ? Math.round((secLiveCount / totalUniverse) * 100)
+      : 0;
   const persistenceMode = state.config?.database_enabled
     ? `${state.config.database_provider || "database"} persistent`
     : state.config?.lightweight_state_enabled
@@ -2140,12 +2206,13 @@ function renderSystemView() {
       <div class="section-kicker">Runtime Control Console</div>
       <h3>Safe one-shot operations</h3>
       <p class="workspace-copy">Use this panel to advance live coverage without turning on heavy background loops. On the Pi, this is the control room: one batch, observe pressure, save state.</p>
+      ${renderSecQueuePanel(secQueue)}
       <div class="runtime-control-grid">
         ${runtimeActionCard({
           title: "SEC fundamentals batch",
           body: "Refresh the next slice of companies from SEC submissions and Company Facts.",
           metric: `${secLiveCount}/${totalUniverse || 0}`,
-          submetric: `${pendingBootstrap} names still bootstrap. Current batch size: ${secFundamentals?.refresh_batch_size || state.config?.fundamental_sec_max_companies_per_poll || 8}.`,
+          submetric: `${pendingBootstrap} names still bootstrap. Next batch size: ${secQueue?.next_batch_size || secFundamentals?.refresh_batch_size || state.config?.fundamental_sec_max_companies_per_poll || 8}.`,
           action: "poll_once",
           source: "sec_fundamentals",
           label: "Poll SEC Batch",
@@ -2393,6 +2460,7 @@ async function runRuntimeAction(action, source) {
     state.health = payload.health || state.health;
     state.runtimeActionResult = payload.result || null;
     state.runtimeActionState = runtimeActionSummary(action, payload.result || {});
+    await loadHealth();
     await loadSnapshot();
   } catch (error) {
     state.runtimeActionResult = null;
@@ -2491,6 +2559,12 @@ function attachEvents() {
   });
 
   elements.systemNotes?.addEventListener("click", async (event) => {
+    const focusButton = event.target.closest("[data-focus-ticker]");
+    if (focusButton) {
+      await focusTicker(focusButton.dataset.focusTicker, "overview");
+      return;
+    }
+
     const button = event.target.closest("[data-runtime-action]");
     if (!button || button.disabled) {
       return;
