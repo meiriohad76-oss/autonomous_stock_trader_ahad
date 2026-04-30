@@ -11,12 +11,6 @@ const server = createServer((request, response) => {
 });
 
 async function start() {
-  await app.initialize();
-  if (!(await app.hasPersistedData())) {
-    await app.replay({ reset: false, intervalMs: 180, skipFundamentals: true });
-  }
-  await app.startLiveSources();
-
   server.listen(app.config.port, app.config.host, () => {
     const databaseTarget =
       app.config.databaseProvider === "postgres"
@@ -24,6 +18,21 @@ async function start() {
         : app.config.databasePath;
     console.log(`Sentiment Analyst listening on http://${app.config.host}:${app.config.port}`);
     console.log(`Persistence provider: ${app.config.databaseProvider} (${databaseTarget})`);
+  });
+
+  try {
+    await app.initialize();
+    if (!(await app.hasPersistedData())) {
+      await app.replay({ reset: false, intervalMs: 180, skipFundamentals: true });
+    }
+  } catch (error) {
+    console.error("Failed to initialize Sentiment Analyst:", error);
+    server.close(() => process.exit(1));
+    return;
+  }
+
+  app.startLiveSources().catch((error) => {
+    console.error("Live source startup failed:", error);
   });
 }
 
