@@ -71,6 +71,42 @@ if (!tsla || tsla.monitor_action !== "close_candidate") {
   throw new Error("Position monitor should mark a position with no-trade setup as a close candidate.");
 }
 
+const planningSnapshot = buildPositionMonitorSnapshot({
+  brokerStatus: {
+    provider: "alpaca",
+    mode: "paper",
+    configured: false,
+    submit_enabled: false
+  },
+  tradeSetups: [
+    {
+      ticker: "MSFT",
+      action: "watch",
+      setup_label: "watch",
+      conviction: 0.44,
+      summary: "MSFT is a watch item."
+    },
+    {
+      ticker: "AMZN",
+      action: "long",
+      setup_label: "tactical_long",
+      conviction: 0.66,
+      summary: "AMZN is tradable."
+    }
+  ],
+  riskSnapshot: {
+    status: "ok"
+  }
+});
+
+if (planningSnapshot.planning_candidates.length !== 2) {
+  throw new Error("Position monitor should return planning candidates even when the broker is not configured.");
+}
+
+if (planningSnapshot.planning_candidates[0].tradable !== false || planningSnapshot.planning_candidates[1].tradable !== true) {
+  throw new Error("Position monitor should label planning candidates as tradable or blocked.");
+}
+
 console.log(
   JSON.stringify(
     {
@@ -79,7 +115,8 @@ console.log(
       position_count: snapshot.position_count,
       open_order_count: snapshot.open_order_count,
       review_count: snapshot.review_count,
-      close_candidate_count: snapshot.close_candidate_count
+      close_candidate_count: snapshot.close_candidate_count,
+      planning_candidates: planningSnapshot.planning_candidates.length
     },
     null,
     2

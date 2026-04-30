@@ -20,7 +20,7 @@ The agent compares current positions with the latest trade setup view:
 - `review`: setup has weakened, runtime/risk pressure matters, or unrealized P/L is large
 - `close_candidate`: the position conflicts with a current `no_trade` or opposite setup
 
-When Alpaca credentials are missing, the agent returns `not_configured` plus the top planning candidates from the Trade Setup Agent. This keeps the dashboard useful before paper-trading keys are added.
+When Alpaca credentials are missing, the agent returns `not_configured` plus the top planning candidates from the Trade Setup Agent. These candidates are labeled with `tradable=true` for `long`/`short` setups and `tradable=false` for `watch`/`no_trade` setups, so the dashboard can still explain why an idea is blocked before paper-trading keys are added.
 
 ## Inputs
 
@@ -35,6 +35,7 @@ When Alpaca credentials are missing, the agent returns `not_configured` plus the
 - A position becomes `close_candidate` when the latest setup is `no_trade` or conflicts with the held side.
 - A position becomes `review` when no current setup exists, portfolio risk is blocked, or unrealized P/L is large enough to deserve human attention.
 - Current setup risk flags are copied into the monitor reasons so the dashboard explains why a position needs attention.
+- Planning candidates remain visible even when they are not tradable; the Execution Agent preview explains the block instead of hiding the idea.
 
 The monitor does not close positions by itself. It is an engine that produces review actions for the dashboard and future guarded close/rebalance workflows.
 

@@ -2290,6 +2290,9 @@ function renderExecutionConsolePanel() {
           .map((setup) => ({
             ticker: setup.ticker,
             action: setup.action,
+            setup_label: setup.setup_label,
+            tradable: ["long", "short"].includes(setup.action),
+            blocked_reason: ["long", "short"].includes(setup.action) ? null : "setup_action_is_not_tradable",
             conviction: setup.conviction,
             summary: setup.summary
           }));
@@ -2374,10 +2377,10 @@ function renderExecutionConsolePanel() {
                           <span class="sentiment-badge ${setupActionClass(candidate.action)}">${prettyLabel(candidate.action)}</span>
                         </div>
                         <span>${escapeHtml(candidate.summary || "Trade setup candidate.")}</span>
-                        <span>${formatNumber((candidate.conviction || 0) * 100, 0)}% conviction</span>
+                        <span>${formatNumber((candidate.conviction || 0) * 100, 0)}% conviction · ${candidate.tradable ? "tradable setup" : `preview explains block: ${prettyLabel(candidate.blocked_reason)}`}</span>
                         <div class="setup-action-row">
                           <button type="button" class="panel-action compact-action" data-preview-execution="${escapeHtml(candidate.ticker)}">Preview</button>
-                          <button type="button" class="panel-action compact-action danger-action" data-submit-paper="${escapeHtml(candidate.ticker)}" ${submitEnabled ? "" : "disabled"}>Paper Submit</button>
+                          <button type="button" class="panel-action compact-action danger-action" data-submit-paper="${escapeHtml(candidate.ticker)}" ${submitEnabled && candidate.tradable ? "" : "disabled"}>Paper Submit</button>
                         </div>
                       </div>
                     `

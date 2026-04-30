@@ -85,6 +85,22 @@ function summarizeOpenOrder(order) {
   };
 }
 
+function summarizePlanningCandidate(setup) {
+  const tradable = ["long", "short"].includes(setup.action);
+  return {
+    ticker: setup.ticker,
+    action: setup.action,
+    setup_label: setup.setup_label || null,
+    tradable,
+    blocked_reason: tradable ? null : "setup_action_is_not_tradable",
+    conviction: setup.conviction,
+    current_price: setup.current_price ?? null,
+    timeframe: setup.timeframe || null,
+    position_size_pct: setup.position_size_pct ?? null,
+    summary: setup.summary
+  };
+}
+
 export function buildPositionMonitorSnapshot({
   brokerStatus,
   account = null,
@@ -140,14 +156,8 @@ export function buildPositionMonitorSnapshot({
     open_orders: openOrders,
     planning_candidates: !brokerStatus?.configured
       ? tradeSetups
-          .filter((setup) => ["long", "short"].includes(setup.action))
-          .slice(0, 5)
-          .map((setup) => ({
-            ticker: setup.ticker,
-            action: setup.action,
-            conviction: setup.conviction,
-            summary: setup.summary
-          }))
+          .slice(0, 8)
+          .map(summarizePlanningCandidate)
       : []
   };
 }
