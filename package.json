@@ -16,6 +16,7 @@
     "check:positions": "node scripts/check-position-monitor.js",
     "check:risk": "node scripts/check-risk-agent.js",
     "check:runtime-reliability": "node scripts/check-runtime-reliability.js",
+    "ux:smoke": "node scripts/ux-smoke.js",
     "sqlite:backup": "node scripts/sqlite-backup.js",
     "sqlite:health": "node scripts/sqlite-health.js",
     "sec:catchup": "node scripts/sec-fundamentals-catchup.js",
@@ -27,5 +28,8 @@
   },
   "dependencies": {
     "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.1"
   }
 }

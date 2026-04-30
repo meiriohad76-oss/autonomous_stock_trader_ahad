@@ -174,7 +174,7 @@
                 <span id="universe-name">Universe</span>
                 <span id="health-docs">0 docs</span>
               </div>
-              <button id="replay-button" class="primary-action" type="button">Replay Feed</button>
+              <button id="replay-button" class="primary-action" type="button">Refresh Live</button>
             </article>
           </section>
 
@@ -287,6 +287,29 @@
                   <strong id="alert-count">0</strong>
                 </div>
               </div>
+            </article>
+
+            <article class="panel decision-flow-panel">
+              <div class="section-kicker">Decision Flow</div>
+              <h2>How A Trade Reaches The List</h2>
+              <ol class="decision-flow-list">
+                <li>
+                  <strong>Fundamentals screen the universe</strong>
+                  <span>Each tracked stock becomes eligible, watch, reject, or unscored before sentiment can promote it.</span>
+                </li>
+                <li>
+                  <strong>Fresh evidence updates sentiment</strong>
+                  <span>Only fresh, sourced market signals are allowed into decision-making. Seed/demo data is blocked in production mode.</span>
+                </li>
+                <li>
+                  <strong>Trade Setup Agent builds lists</strong>
+                  <span>Buy, short/sell, and watch lists combine fundamentals, sentiment, macro, risk, and runtime guardrails.</span>
+                </li>
+                <li>
+                  <strong>Execution stays gated</strong>
+                  <span>Alpaca paper orders require broker credentials, risk approval, and an explicit confirmation phrase.</span>
+                </li>
+              </ol>
             </article>
 
             <article class="panel trade-agent-panel">
@@ -530,7 +553,7 @@
         <span class="material-symbols-outlined">terminal</span>
         <span>Feed</span>
       </button>
-      <button class="mobile-fab" type="button" aria-label="Replay feed">
+      <button class="mobile-fab" type="button" aria-label="Refresh live signals">
         <span class="material-symbols-outlined">bolt</span>
       </button>
       <button class="mobile-nav-link" data-view="alerts" type="button">

@@ -138,6 +138,17 @@ GET /api/trade-setups/storage/summary
 GET /api/trade-setups/storage/ticker/NVDA
 ```
 
+## User workflow
+
+The intended dashboard flow is:
+
+- Start on `Dashboard` to see the current market pulse, ticker leaderboard, decision flow, and Trade Setup Agent lists.
+- Use `Fundamentals` / `Fundamentals V2` to inspect why a stock is `eligible`, `watch`, `reject`, or still waiting for live SEC coverage.
+- Use `Markets` for active-conviction comparison only. It intentionally hides fundamentals-only names with no fresh signal evidence.
+- Use `Signals` / `Alerts` to inspect the source, timestamp, evidence quality, and reason behind each signal before trusting it.
+- Use the Trade Setup Agent's `Buy Candidates`, `Short / Sell Candidates`, and `Watch List` as the compiled trading lists. These are generated from fresh sentiment evidence, fundamentals screen, macro regime, risk limits, runtime reliability, and execution policy.
+- Use Execution/Risk/Position endpoints or dashboard controls to preview Alpaca paper orders. Order submission remains blocked unless credentials, safety flags, risk approval, and confirmation phrase are present.
+
 ## Execution Agent and Alpaca integration
 
 The Execution Agent sits after the Trade Setup Agent. It turns a qualified `long` or `short` setup into a broker-ready order preview, then blocks actual submission unless Alpaca credentials and explicit safety flags are present.

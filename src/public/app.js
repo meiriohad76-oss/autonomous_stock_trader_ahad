@@ -1031,6 +1031,19 @@ function applyMarketFilter(rows) {
   return rows.filter((row) => row.sentiment_regime === state.marketFilter);
 }
 
+function activeMarketSignalRows(rows) {
+  return rows.filter(
+    (row) =>
+      row.sentiment_visible &&
+      (
+        Number(row.doc_count || 0) > 0 ||
+        Number(row.unique_story_count || 0) > 0 ||
+        Number(row.weighted_confidence || 0) > 0 ||
+        Math.abs(Number(row.momentum_delta || 0)) > 0
+      )
+  );
+}
+
 function applyAlertFilter(alerts) {
   if (state.alertFilter === "all") {
     return alerts;
@@ -1475,6 +1488,7 @@ function renderTradeSetups() {
         ? `<p class="trade-setup-runtime-summary">Runtime guardrail: ${payload.runtime_reliability.summary}</p>`
         : ""
     }
+    ${renderTradeLists(setups)}
   `;
 
   elements.tradeSetupList.innerHTML = "";
@@ -1533,6 +1547,73 @@ function renderTradeSetups() {
     });
     elements.tradeSetupList.appendChild(article);
   });
+
+  for (const button of elements.tradeSetupSummary.querySelectorAll("[data-trade-list-ticker]")) {
+    button.addEventListener("click", () => {
+      const setup = setups.find((item) => item.ticker === button.dataset.tradeListTicker);
+      if (setup) {
+        openSignalDrawer(buildSignalFromTradeSetup(setup));
+      }
+    });
+  }
+}
+
+function renderTradeLists(setups = []) {
+  const groups = [
+    {
+      key: "long",
+      label: "Buy Candidates",
+      empty: "No buy candidates clear the final threshold.",
+      items: setups.filter((setup) => setup.action === "long")
+    },
+    {
+      key: "short",
+      label: "Short / Sell Candidates",
+      empty: "No short candidates clear the final threshold.",
+      items: setups.filter((setup) => setup.action === "short")
+    },
+    {
+      key: "watch",
+      label: "Watch List",
+      empty: "No monitored candidates right now.",
+      items: setups.filter((setup) => setup.action === "watch").slice(0, 4)
+    }
+  ];
+
+  return `
+    <div class="trade-list-shell">
+      <div class="section-kicker">Trading Lists</div>
+      <p class="trade-list-copy">The Trade Setup Agent compiles these from fresh sentiment evidence, fundamentals screen, macro regime, risk/runtime guardrails, and current execution rules.</p>
+      <div class="trade-list-grid">
+        ${groups
+          .map(
+            (group) => `
+              <section class="trade-list-card ${group.key}">
+                <div class="trade-list-head">
+                  <strong>${group.label}</strong>
+                  <span>${group.items.length}</span>
+                </div>
+                ${
+                  group.items.length
+                    ? group.items
+                        .map(
+                          (setup) => `
+                            <button type="button" class="trade-list-row" data-trade-list-ticker="${setup.ticker}">
+                              <span>${setup.ticker}</span>
+                              <small>${formatNumber((setup.conviction || 0) * 100, 0)}% conv · ${prettyLabel(setup.setup_label)}</small>
+                            </button>
+                          `
+                        )
+                        .join("")
+                    : `<p>${group.empty}</p>`
+                }
+              </section>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 function buildPath(points, width, height) {
@@ -1687,6 +1768,7 @@ function renderMarketsView() {
   const rows = state.selectedSector
     ? allRows.filter((row) => (row.sector || tickerSector(row.entity_key)) === state.selectedSector)
     : allRows;
+  const activeRows = activeMarketSignalRows(rows);
   const bullishCount = sectors.filter((sector) => sector.sentiment_regime === "bullish").length;
   const bearishCount = sectors.filter((sector) => sector.sentiment_regime === "bearish").length;
   const neutralCount = sectors.filter((sector) => sector.sentiment_regime === "neutral").length;
@@ -1699,6 +1781,7 @@ function renderMarketsView() {
     <div class="workspace-stat-card"><span>Neutral Sectors</span><strong>${neutralCount}</strong></div>
     <div class="workspace-stat-card"><span>Bearish Sectors</span><strong>${bearishCount}</strong></div>
     <div class="workspace-stat-card"><span>${activeSector ? "Sector Names" : "Filtered Names"}</span><strong>${rows.length}</strong></div>
+    <div class="workspace-stat-card"><span>Fresh Signal Names</span><strong>${activeRows.length}</strong></div>
   `;
 
   renderMarketsSectorChart(filteredSectors);
@@ -1779,7 +1862,7 @@ function renderMarketsView() {
     );
   }
 
-  const comparisonRows = rows
+  const comparisonRows = activeRows
     .slice()
     .map((row) => ({ row, activeScore: activeConvictionScore(row) }))
     .sort((a, b) => b.activeScore - a.activeScore)
@@ -1798,10 +1881,10 @@ function renderMarketsView() {
           `
         )
         .join("")
-    : `<div class="workspace-empty">No comparison tickers available.</div>`;
+    : `<div class="workspace-empty">No fresh market-signal names are available for this filter. Screen-only fundamentals rows are intentionally hidden here so stale or zero-signal names do not look actionable.</div>`;
 
-  elements.marketsTableBody.innerHTML = rows.length
-    ? rows
+  elements.marketsTableBody.innerHTML = activeRows.length
+    ? activeRows
         .map(
           (row) => `
           <tr data-ticker="${row.entity_key}">
@@ -1818,7 +1901,7 @@ function renderMarketsView() {
           `
         )
         .join("")
-    : `<tr class="empty-row"><td colspan="4">No market rows available.</td></tr>`;
+    : `<tr class="empty-row"><td colspan="4">No fresh market-comparison rows. Run live news / market flow, or clear filters. Fundamentals-only names stay visible in the leaderboard but are excluded from this active-conviction table.</td></tr>`;
 
   elements.marketsDetail.innerHTML = state.tickerDetail
     ? `
@@ -2291,6 +2374,8 @@ function renderSignalDrawer() {
     elements.signalDrawerContext.innerHTML = "<li>No context available.</li>";
     elements.signalFocusButton.disabled = true;
     elements.signalSourceButton.disabled = true;
+    elements.signalSourceButton.textContent = "Open Source";
+    elements.signalSourceButton.title = "";
     return;
   }
 
@@ -2329,6 +2414,10 @@ function renderSignalDrawer() {
   elements.signalDrawerContext.innerHTML = contextItems.filter(Boolean).map((item) => `<li>${item}</li>`).join("");
   elements.signalFocusButton.disabled = !signal.ticker;
   elements.signalSourceButton.disabled = !signal.url;
+  elements.signalSourceButton.textContent = signal.url ? "Open Source" : "No Source URL";
+  elements.signalSourceButton.title = signal.url
+    ? "Open the original source in a new tab."
+    : "This signal does not include an original source URL, so it should be treated as lower-trust context.";
 }
 
 function monitorActionClass(action) {
@@ -3009,12 +3098,14 @@ function attachEvents() {
   });
 
   async function triggerReplay() {
-    await fetch("/api/replay", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ interval_ms: 220 })
-    });
-    scheduleRefresh(200);
+    const refreshActions = ["live_news", "sec_form4", "market_flow"].map((source) =>
+      postJson("/api/runtime-reliability/actions", {
+        action: "poll_once",
+        source
+      })
+    );
+    await Promise.allSettled(refreshActions);
+    await performRefresh();
   }
 
   elements.replayButton.addEventListener("click", triggerReplay);

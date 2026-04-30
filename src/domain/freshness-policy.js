@@ -19,6 +19,22 @@ function timestampMs(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function evidenceUrl(item = {}) {
+  return (
+    item.url ||
+    item.canonical_url ||
+    item.payload?.url ||
+    item.payload?.canonical_url ||
+    item.evidence_quality?.url ||
+    item.payload?.evidence_quality?.url ||
+    null
+  );
+}
+
+function sourceMetadata(item = {}) {
+  return item.source_metadata || item.payload?.source_metadata || item.evidence_quality?.source_metadata || item.payload?.evidence_quality?.source_metadata || {};
+}
+
 export function evidenceTimestamp(item = {}) {
   return (
     item.published_at ||
@@ -52,7 +68,9 @@ export function freshnessStatus(item = {}, config = {}, now = Date.now()) {
   const timestamp = evidenceTimestamp(item);
   const observedMs = timestampMs(timestamp);
   const exempt = isLongHorizonEvidence(item);
-  const seedData = Boolean(item.source_metadata?.seed_data || item.payload?.source_metadata?.seed_data);
+  const metadata = sourceMetadata(item);
+  const url = String(evidenceUrl(item) || "").toLowerCase();
+  const seedData = Boolean(metadata.seed_data || metadata.published_offset_minutes !== undefined || url.includes("example.com/"));
 
   if (seedData && !config.seedDataInDecisions) {
     return {
