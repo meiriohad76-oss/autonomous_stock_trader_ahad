@@ -54,6 +54,7 @@ const state = {
   config: null,
   health: null,
   runtimeReliability: null,
+  agencyCycle: null,
   secQueue: null,
   workflowStatus: null,
   executionStatus: null,
@@ -422,6 +423,24 @@ function runtimeActionButton(action, source, label, icon = "play_arrow") {
       ${label}
     </button>
   `;
+}
+
+function agencyActionButton(action, className = "panel-action runtime-action-button") {
+  if (!action) {
+    return "";
+  }
+  if (action.kind === "runtime") {
+    return runtimeActionButton(action.action, action.source || null, action.label || "Run", action.icon || "play_arrow");
+  }
+  if (action.kind === "view") {
+    return `
+      <button type="button" class="${className}" data-agent-view="${escapeHtml(action.view || "overview")}">
+        <span class="material-symbols-outlined">${escapeHtml(action.icon || "open_in_new")}</span>
+        ${escapeHtml(action.label || "Open")}
+      </button>
+    `;
+  }
+  return "";
 }
 
 function runtimeActionCard({ title, body, metric, submetric, action, source, label, icon = "play_arrow", progress = null, emphasis = false }) {
@@ -1714,6 +1733,69 @@ function renderAgencyRunLog() {
   `;
 }
 
+function renderAgencyCyclePanel(cycle) {
+  if (!cycle?.workers?.length) {
+    return `
+      <section class="agency-cycle-panel panel">
+        <div class="agent-process-head">
+          <div>
+            <div class="section-kicker">Autonomous Cycle</div>
+            <h2>Cycle state is loading</h2>
+            <p>The agency is preparing the worker-by-worker operating flow.</p>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  const currentWorker = cycle.workers.find((worker) => worker.key === cycle.current_worker_key) || cycle.workers[0];
+
+  return `
+    <section class="agency-cycle-panel panel">
+      <div class="agency-cycle-head">
+        <div>
+          <div class="section-kicker">Autonomous Cycle</div>
+          <h2>${escapeHtml(currentWorker?.label || "Agency")} is the current stage</h2>
+          <p>${escapeHtml(cycle.summary || "")}</p>
+        </div>
+        <span class="sentiment-badge ${cycle.status_class || "neutral"}">${escapeHtml(prettyLabel(cycle.mode_label || cycle.status || "observing"))}</span>
+      </div>
+      <div class="agency-cycle-focus">
+        <div class="agency-cycle-current ${currentWorker?.status_class || "neutral"}">
+          <span>Step ${String(cycle.current_worker_step || currentWorker?.step || 1).padStart(2, "0")}</span>
+          <strong>${escapeHtml(currentWorker?.label || "Current Worker")}</strong>
+          <p>${escapeHtml(currentWorker?.detail || "Waiting for telemetry.")}</p>
+          <small>${escapeHtml(cycle.supervision || "")}</small>
+        </div>
+        <div class="agency-cycle-actions">
+          <strong>Next Action</strong>
+          <ul>
+            ${(cycle.next_actions || []).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+          <div class="process-action-row">
+            ${agencyActionButton(cycle.primary_action)}
+            ${currentWorker?.view ? `<button type="button" class="panel-action runtime-action-button" data-agent-view="${escapeHtml(currentWorker.view)}"><span class="material-symbols-outlined">open_in_new</span>Open Worker</button>` : ""}
+          </div>
+        </div>
+      </div>
+      <div class="agency-cycle-timeline">
+        ${cycle.workers
+          .map(
+            (worker) => `
+              <button type="button" class="agency-cycle-step ${worker.status_class || "neutral"} ${worker.key === cycle.current_worker_key ? "active" : ""}" data-agent-view="${escapeHtml(worker.view || "overview")}">
+                <span>${String(worker.step).padStart(2, "0")}</span>
+                <strong>${escapeHtml(worker.label)}</strong>
+                <small>${escapeHtml(prettyLabel(worker.status))} - ${escapeHtml(worker.metric || "")}</small>
+                <em>${escapeHtml(worker.automation_label || "automatic")}</em>
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
 function buildHelpSignal() {
   const overview = state.snapshot?.screener_overview || {};
   const fullUniverse = overview.full_universe || {};
@@ -2101,9 +2183,10 @@ async function loadConfig() {
 }
 
 async function loadHealth() {
-  const [health, runtimeReliability, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor] = await Promise.all([
+  const [health, runtimeReliability, agencyCycle, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor] = await Promise.all([
     getJson("/api/health"),
     getJson("/api/runtime-reliability").catch(() => null),
+    getJson(`/api/agency/cycle?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
     getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null),
     getJson(`/api/trading-workflow/status?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
     getJson("/api/execution/status").catch(() => null),
@@ -2113,6 +2196,7 @@ async function loadHealth() {
   ]);
   state.health = health;
   state.runtimeReliability = runtimeReliability || health.runtime_reliability || null;
+  state.agencyCycle = agencyCycle;
   state.secQueue = secQueue;
   state.workflowStatus = workflowStatus;
   state.executionStatus = executionStatus || health.execution || null;
@@ -4228,6 +4312,7 @@ function renderAgencyCommandCenter() {
         <div class="runtime-progress"><span style="width:${Math.min(100, Math.max(8, ((monitor.total_position_value || 0) / Math.max(1, risk.equity || monitor.account?.equity || 1)) * 100))}%"></span></div>
       </div>
     </section>
+    ${renderAgencyCyclePanel(state.agencyCycle)}
     <section class="agent-roster">
       ${agents
         .map(
