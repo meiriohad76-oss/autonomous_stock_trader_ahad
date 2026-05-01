@@ -984,7 +984,8 @@ input:focus-visible {
 .workflow-readiness-card,
 .workflow-step-card,
 .workflow-data-card,
-.workflow-action-card {
+.workflow-action-card,
+.workflow-control-card {
   min-width: 0;
   border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
@@ -1125,6 +1126,40 @@ input:focus-visible {
   gap: 6px;
   margin: 0;
   padding-left: 18px;
+}
+
+.workflow-control-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(0, 132, 255, 0.13), transparent 34%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.workflow-control-card strong {
+  display: block;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.workflow-control-card p,
+.workflow-control-card small {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workflow-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 620px;
 }
 
 .setup-explain {
@@ -2245,7 +2280,16 @@ input:focus-visible {
     flex-direction: column;
   }
 
+  .workflow-control-card {
+    flex-direction: column;
+  }
+
   .workflow-readiness-flags {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .workflow-control-actions {
     justify-content: flex-start;
     max-width: none;
   }

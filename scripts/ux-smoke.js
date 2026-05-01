@@ -97,6 +97,7 @@ await page
 const trading = {
   flowSteps: await page.locator(".trading-flow-step").count(),
   workflowSteps: await page.locator("#trading-workflow-status .workflow-step-card").count(),
+  workflowActionButtons: await page.locator("#trading-workflow-status [data-runtime-action]").count(),
   workflowStatusText: (await page.locator("#trading-workflow-status").innerText().catch(() => "")).slice(0, 500),
   tradeLists: await page.locator('#trading-plan-lists .trade-list-card').count(),
   summaryCards: await page.locator("#trading-plan-summary .workspace-stat-card").count(),

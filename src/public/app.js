@@ -2713,6 +2713,20 @@ function renderTradingWorkflowStatus() {
           </div>`
         : ""
     }
+    <div class="workflow-control-card">
+      <div>
+        <strong>One-Shot Live Refresh</strong>
+        <p>Use these when the workflow says fresh evidence, pricing, or SEC coverage is missing. They do not enable permanent background polling.</p>
+        ${state.runtimeActionState ? `<small>${escapeHtml(state.runtimeActionState)}</small>` : ""}
+      </div>
+      <div class="workflow-control-actions">
+        ${runtimeActionButton("poll_once", "live_news", "Poll News", "newspaper")}
+        ${runtimeActionButton("poll_once", "sec_form4", "Poll Form 4", "badge")}
+        ${runtimeActionButton("poll_once", "market_flow", "Poll Flow", "monitoring")}
+        ${runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database")}
+        ${runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")}
+      </div>
+    </div>
   `;
 }
 
@@ -3115,7 +3129,7 @@ function setActiveView(view) {
 async function runRuntimeAction(action, source) {
   state.runtimeActionState = "running";
   state.runtimeActionResult = null;
-  renderSystemView();
+  render();
 
   try {
     const response = await fetch("/api/runtime-reliability/actions", {
@@ -3137,7 +3151,7 @@ async function runRuntimeAction(action, source) {
   } catch (error) {
     state.runtimeActionResult = null;
     state.runtimeActionState = error.message;
-    renderSystemView();
+    render();
   }
 }
 
@@ -3254,6 +3268,15 @@ function attachEvents() {
 
   elements.tradingPlanLists?.addEventListener("click", async (event) => {
     await handleExecutionConsoleClick(event);
+  });
+
+  elements.tradingWorkflowStatus?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-runtime-action]");
+    if (!button || button.disabled) {
+      return;
+    }
+
+    await runRuntimeAction(button.dataset.runtimeAction, button.dataset.runtimeSource || null);
   });
 
   elements.signalBackdrop?.addEventListener("click", closeSignalDrawer);

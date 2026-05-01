@@ -167,6 +167,8 @@ The Trading Plan screen uses this status to show:
 - `Preview Ready`: the current trade plan can be converted into order previews.
 - `Paper Submit Ready`: Alpaca paper credentials, broker safety flags, risk gates, and confirmation gates are all aligned.
 
+The same panel also exposes one-shot live refresh buttons for News, SEC Form 4, Market Flow, Pricing, and SEC Fundamentals batches. These buttons call the guarded Runtime Reliability action endpoint and do not turn on permanent background polling.
+
 ## Execution Agent and Alpaca integration
 
 The Execution Agent sits after the Trade Setup Agent. It turns a qualified `long` or `short` setup into a broker-ready order preview, then blocks actual submission unless Alpaca credentials and explicit safety flags are present.
