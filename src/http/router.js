@@ -266,7 +266,8 @@ export async function routeRequest(app, request, response) {
       watchlist: app.getWatchlistSnapshot(app.config.defaultWindow),
       fundamentals: app.getFundamentalsSnapshot(),
       macro_regime: app.getMacroRegime(),
-      trade_setups: app.getTradeSetups()
+      trade_setups: app.getTradeSetups(),
+      execution: app.getExecutionState()
     });
 
     const listener = (event) => sseWrite(response, event);
@@ -276,6 +277,78 @@ export async function routeRequest(app, request, response) {
       clearInterval(heartbeat);
       app.store.bus.off("event", listener);
     });
+    return;
+  }
+
+  if (pathname === "/api/execution/state" && request.method === "GET") {
+    sendJson(response, 200, app.getExecutionState());
+    return;
+  }
+
+  if (pathname === "/api/execution/positions" && request.method === "GET") {
+    sendJson(response, 200, { positions: app.getPositions() });
+    return;
+  }
+
+  if (pathname === "/api/execution/orders" && request.method === "GET") {
+    sendJson(response, 200, { orders: app.getOrders(query.status || "all") });
+    return;
+  }
+
+  if (pathname === "/api/execution/log" && request.method === "GET") {
+    sendJson(response, 200, { log: app.getExecutionLog() });
+    return;
+  }
+
+  if (pathname?.startsWith("/api/execution/approve/") && request.method === "POST") {
+    const approvalId = decodeURIComponent(pathname.split("/").pop());
+    try {
+      const result = await app.approveExecution(approvalId);
+      sendJson(response, 200, { ok: true, order_id: result.order.order_id, ticker: result.approval.ticker });
+    } catch (err) {
+      sendJson(response, 400, { ok: false, error: err.message });
+    }
+    return;
+  }
+
+  if (pathname?.startsWith("/api/execution/reject/") && request.method === "POST") {
+    const approvalId = decodeURIComponent(pathname.split("/").pop());
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        const result = app.rejectExecution(approvalId, payload.reason || "");
+        sendJson(response, 200, { ok: true, ticker: result.approval.ticker });
+      } catch (err) {
+        sendJson(response, 400, { ok: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  if (pathname === "/api/execution/kill-switch" && request.method === "POST") {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        if (typeof payload.enabled !== "boolean") {
+          sendJson(response, 400, { ok: false, error: "enabled (boolean) required" });
+          return;
+        }
+        app.setKillSwitch(payload.enabled, payload.reason || "");
+        sendJson(response, 200, { ok: true, kill_switch: payload.enabled });
+      } catch (err) {
+        sendJson(response, 400, { ok: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  if (pathname === "/api/execution/sync" && request.method === "POST") {
+    app.syncExecution().catch(() => {});
+    sendJson(response, 202, { status: "accepted" });
     return;
   }
 
