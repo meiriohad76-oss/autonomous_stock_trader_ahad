@@ -28,6 +28,7 @@
           <button class="topnav-link" data-view="markets" type="button">Analytics</button>
           <a class="topnav-link" href="/fundamentals.html">Fundamentals</a>
           <button class="topnav-link" data-view="setups" type="button">Setups</button>
+          <button class="topnav-link" data-view="trading" type="button">Trading</button>
           <button class="topnav-link" data-view="alerts" type="button">Signals</button>
           <button class="topnav-link" data-view="system" type="button">Settings</button>
         </nav>
@@ -59,6 +60,53 @@
       <span class="macro-regime-staleness" id="macro-regime-staleness" hidden>STALE</span>
       <span class="macro-regime-updated" id="macro-regime-updated"></span>
     </div>
+    <div class="execution-account-bar" id="execution-account-bar" data-enabled="false" data-halted="false">
+      <span class="exec-bar-label">TRADING</span>
+      <span class="exec-bar-status" id="exec-bar-status">DISABLED</span>
+      <span class="exec-bar-divider">|</span>
+      <span class="exec-bar-item">Equity <strong id="exec-bar-equity">—</strong></span>
+      <span class="exec-bar-item">Day P&amp;L <strong id="exec-bar-pnl">—</strong></span>
+      <span class="exec-bar-item">Positions <strong id="exec-bar-positions">0</strong></span>
+      <button class="exec-kill-btn" id="exec-kill-btn" type="button" title="Toggle kill switch">
+        <span class="material-symbols-outlined">emergency_home</span>
+      </button>
+    </div>
+    <div class="approval-overlay" id="approval-overlay" hidden>
+      <div class="approval-card" id="approval-card">
+        <div class="approval-header">
+          <span class="approval-action-badge" id="approval-action-badge">LONG</span>
+          <span class="approval-ticker" id="approval-ticker">—</span>
+          <span class="approval-countdown" id="approval-countdown">10:00</span>
+        </div>
+        <div class="approval-body">
+          <div class="approval-thesis" id="approval-thesis"></div>
+          <div class="approval-risk-flags" id="approval-risk-flags"></div>
+          <div class="approval-prices">
+            <div class="approval-price-item">
+              <span>Entry</span><strong id="approval-entry">—</strong>
+            </div>
+            <div class="approval-price-item">
+              <span>Stop</span><strong id="approval-stop" class="bearish">—</strong>
+            </div>
+            <div class="approval-price-item">
+              <span>Target</span><strong id="approval-target" class="bullish">—</strong>
+            </div>
+          </div>
+          <div class="approval-size">
+            <span id="approval-shares">— shares</span>
+            <span id="approval-dollar">$—</span>
+            <div class="approval-conviction-bar">
+              <div class="approval-conviction-fill" id="approval-conviction-fill"></div>
+            </div>
+            <span id="approval-conviction-label">— conviction</span>
+          </div>
+        </div>
+        <div class="approval-actions">
+          <button class="approval-reject-btn" id="approval-reject-btn" type="button">REJECT</button>
+          <button class="approval-approve-btn" id="approval-approve-btn" type="button">APPROVE</button>
+        </div>
+      </div>
+    </div>
 
     <aside class="side-nav" aria-label="Sections">
       <button class="side-link active" data-view="overview" type="button">
@@ -84,6 +132,10 @@
       <button class="side-link" data-view="setups" type="button">
         <span class="material-symbols-outlined">insights</span>
         <span>Setups</span>
+      </button>
+      <button class="side-link" data-view="trading" type="button">
+        <span class="material-symbols-outlined">candlestick_chart</span>
+        <span>Trading</span>
       </button>
 
       <div class="side-nav-footer">
@@ -458,6 +510,56 @@
             <span class="material-symbols-outlined">close</span>
           </button>
           <div class="setup-drawer-content" id="setup-drawer-content"></div>
+        </div>
+      </section>
+      <section class="view" data-view-panel="trading">
+        <div class="dashboard-shell">
+          <section class="column column-left">
+            <article class="panel">
+              <div class="panel-head">
+                <div><h2>Open Positions</h2><p id="positions-subtitle">No open positions</p></div>
+                <button class="icon-button" id="sync-execution-btn" type="button" title="Sync from Alpaca">
+                  <span class="material-symbols-outlined">sync</span>
+                </button>
+              </div>
+              <div id="positions-table-wrap">
+                <table class="execution-table" id="positions-table">
+                  <thead>
+                    <tr>
+                      <th>Ticker</th><th>Side</th><th>Qty</th>
+                      <th>Entry</th><th>Price</th><th>P&amp;L</th>
+                      <th>Stop</th><th>Target</th>
+                    </tr>
+                  </thead>
+                  <tbody id="positions-tbody"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+          <section class="column column-center">
+            <article class="panel">
+              <div class="panel-head">
+                <div><h2>Order History</h2><p>Placed bracket orders</p></div>
+              </div>
+              <table class="execution-table" id="orders-table">
+                <thead>
+                  <tr>
+                    <th>Ticker</th><th>Side</th><th>Qty</th>
+                    <th>Entry</th><th>Status</th><th>Placed</th>
+                  </tr>
+                </thead>
+                <tbody id="orders-tbody"></tbody>
+              </table>
+            </article>
+          </section>
+          <section class="column column-right">
+            <article class="panel">
+              <div class="panel-head">
+                <div><h2>Execution Log</h2><p>All trade decisions</p></div>
+              </div>
+              <div id="execution-log-list" class="execution-log-list"></div>
+            </article>
+          </section>
         </div>
       </section>
     </main>
