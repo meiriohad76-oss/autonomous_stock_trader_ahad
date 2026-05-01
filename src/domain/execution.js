@@ -112,7 +112,7 @@ export function createExecutionAgent(app) {
       if (setup.action !== "long" && setup.action !== "short") continue;
       if (setup.conviction < config.executionConvictionThreshold) continue;
 
-      const dollar = dollarSize(setup.position_size, accountEquity, config.executionMaxPositionPct);
+      const dollar = dollarSize(setup.position_size_guidance, accountEquity, config.executionMaxPositionPct);
       const guardResult = runAllGuards(setup.ticker, dollar, store, config);
       if (!guardResult.allowed) {
         store.bus.emit("event", {
@@ -123,8 +123,11 @@ export function createExecutionAgent(app) {
         continue;
       }
 
-      const entryPrice = setup.entry_price || setup.guidance?.entry;
+      const entryPrice = setup.entry_guidance;
       if (!entryPrice || entryPrice <= 0) continue;
+      const stop = setup.stop_guidance;
+      const target = setup.target_guidance;
+      if (!stop || !target) continue;
       const shares = Math.floor(dollar / entryPrice);
       if (shares <= 0) continue;
 
@@ -138,11 +141,11 @@ export function createExecutionAgent(app) {
         thesis: setup.thesis || "",
         risk_flags: setup.risk_flags || [],
         entry: entryPrice,
-        stop: setup.stop_price || setup.guidance?.stop,
-        target: setup.target_price || setup.guidance?.target,
+        stop,
+        target,
         dollar_size: dollar,
         shares,
-        position_size: setup.position_size,
+        position_size: setup.position_size_guidance,
         created_at: new Date().toISOString(),
         expires_at: expiresAt,
         status: "pending"
@@ -210,6 +213,10 @@ export function createExecutionAgent(app) {
       if (new Date(approval.expires_at).getTime() <= Date.now()) {
         approval.status = "expired";
         throw new Error(`Approval ${approvalId} has expired`);
+      }
+
+      if (!approval.entry || !approval.stop || !approval.target) {
+        throw new Error(`Approval ${approvalId} missing entry/stop/target — cannot place bracket order`);
       }
 
       const orderParams = {
