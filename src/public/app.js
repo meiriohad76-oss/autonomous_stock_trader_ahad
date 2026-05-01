@@ -114,20 +114,28 @@ const elements = {
   alertsMoneyFlow: document.querySelector("#alerts-money-flow"),
   agencyCommandCenter: document.querySelector("#agency-command-center"),
   universeAgentOverview: document.querySelector("#universe-agent-overview"),
+  universeAgentProcess: document.querySelector("#universe-agent-process"),
   universeAgentCoverage: document.querySelector("#universe-agent-coverage"),
   fundamentalsAgentSummary: document.querySelector("#fundamentals-agent-summary"),
+  fundamentalsAgentProcess: document.querySelector("#fundamentals-agent-process"),
   fundamentalsAgentTable: document.querySelector("#fundamentals-agent-table"),
   universeAgentHandoff: document.querySelector("#universe-agent-handoff"),
+  marketAgentProcess: document.querySelector("#market-agent-process"),
   tradingWorkflowStatus: document.querySelector("#trading-workflow-status"),
+  selectionAgentProcess: document.querySelector("#selection-agent-process"),
   tradingPlanSummary: document.querySelector("#trading-plan-summary"),
   tradingPlanLists: document.querySelector("#trading-plan-lists"),
   tradingExecutionConsole: document.querySelector("#trading-execution-console"),
+  signalsAgentProcess: document.querySelector("#signals-agent-process"),
   riskAgentOverview: document.querySelector("#risk-agent-overview"),
+  riskAgentProcess: document.querySelector("#risk-agent-process"),
   riskAgentDecisions: document.querySelector("#risk-agent-decisions"),
   riskAgentInputs: document.querySelector("#risk-agent-inputs"),
   riskAgentHandoff: document.querySelector("#risk-agent-handoff"),
+  executionAgentProcess: document.querySelector("#execution-agent-process"),
   executionAgentConsole: document.querySelector("#execution-agent-console"),
   portfolioAgentOverview: document.querySelector("#portfolio-agent-overview"),
+  portfolioAgentProcess: document.querySelector("#portfolio-agent-process"),
   portfolioAgentPositions: document.querySelector("#portfolio-agent-positions"),
   portfolioAgentGoal: document.querySelector("#portfolio-agent-goal"),
   portfolioAgentOrders: document.querySelector("#portfolio-agent-orders"),
@@ -836,6 +844,427 @@ function setupCounts() {
     blocked: setups.filter((setup) => !["long", "short", "watch"].includes(setup.action)).length,
     tradable: setups.filter((setup) => ["long", "short"].includes(setup.action))
   };
+}
+
+function processCheck(label, value, status = "neutral", detail = "") {
+  return { label, value, status, detail };
+}
+
+function statusFromBoolean(pass, caution = false) {
+  if (pass) {
+    return caution ? "neutral" : "bullish";
+  }
+  return "bearish";
+}
+
+function topTickersLabel(rows, limit = 3) {
+  const tickers = rows
+    .map((row) => row.entity_key || row.ticker)
+    .filter(Boolean)
+    .slice(0, limit);
+  return tickers.length ? tickers.join(", ") : "none yet";
+}
+
+function latestSignalTime() {
+  return [...state.liveFeed, ...state.highImpact]
+    .map(signalTimestamp)
+    .concat(state.alerts.map(alertEvidenceTimestamp))
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a))[0] || null;
+}
+
+function renderProcessItems(items = []) {
+  return items
+    .map((item) => {
+      if (typeof item === "string") {
+        return `<li>${escapeHtml(item)}</li>`;
+      }
+      return `
+        <li>
+          <strong>${escapeHtml(item.label || "")}</strong>
+          <span>${escapeHtml(item.value || item.detail || "")}</span>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+function renderProcessChecks(checks = []) {
+  return checks
+    .map(
+      (check) => `
+        <div class="process-check ${check.status || "neutral"}">
+          <span>${escapeHtml(check.label)}</span>
+          <strong>${escapeHtml(check.value)}</strong>
+          ${check.detail ? `<small>${escapeHtml(check.detail)}</small>` : ""}
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderAgentProcessPanel(process) {
+  if (!process) {
+    return "";
+  }
+
+  return `
+    <section class="agent-process-panel">
+      <div class="agent-process-head">
+        <div>
+          <div class="section-kicker">${escapeHtml(process.mode || "Process Trace")}</div>
+          <h3>${escapeHtml(process.title)}</h3>
+          <p>${escapeHtml(process.summary)}</p>
+        </div>
+        <span class="sentiment-badge ${process.statusClass || "neutral"}">${escapeHtml(prettyLabel(process.status || "observing"))}</span>
+      </div>
+      <div class="agent-process-grid">
+        <div class="process-block">
+          <strong>Inputs Read</strong>
+          <ul>${renderProcessItems(process.inputs)}</ul>
+        </div>
+        <div class="process-block process-check-block">
+          <strong>Checks Performed</strong>
+          <div class="process-check-grid">${renderProcessChecks(process.checks)}</div>
+        </div>
+        <div class="process-block">
+          <strong>Output Produced</strong>
+          <ul>${renderProcessItems(process.outputs)}</ul>
+        </div>
+        <div class="process-block">
+          <strong>Handoff</strong>
+          <ul>${renderProcessItems(process.handoff)}</ul>
+        </div>
+      </div>
+      ${
+        process.actions?.length
+          ? `<div class="process-action-row">${process.actions.join("")}</div>`
+          : ""
+      }
+    </section>
+  `;
+}
+
+function buildAgentProcess(agentKey) {
+  const counts = screenerUniverseCounts();
+  const secCoverage = secCoverageSummary();
+  const sectors = deriveVisibleSectorSummaries(universeRows());
+  const sectorCoverage = sectorCoverageRows();
+  const rankedRows = rankedFundamentalRows(8);
+  const activeRows = activeMarketSignalRows(filteredLeaderboard());
+  const moneyFlowSignals = collectMoneyFlowSignals();
+  const signalTime = latestSignalTime();
+  const setups = state.tradeSetups?.setups || [];
+  const setupSummary = setupCounts();
+  const workflow = state.workflowStatus || {};
+  const risk = state.riskSnapshot || {};
+  const monitor = state.positionMonitor || {};
+  const execution = state.executionStatus || {};
+  const broker = execution.broker || monitor.broker || risk.broker || {};
+  const brokerReady = Boolean(broker.ready_for_order_submission);
+  const positions = monitor.positions || [];
+  const orders = monitor.open_orders || [];
+  const equity = monitor.account?.portfolio_value || monitor.account?.equity || risk.equity || 0;
+  const unrealized = positions.reduce((sum, position) => sum + Number(position.unrealized_pl || 0), 0);
+  const weeklyPct = equity ? unrealized / equity : 0;
+
+  const definitions = {
+    universe: {
+      title: "Universe Agent Process",
+      mode: "Automatic On Startup + Manual Refresh",
+      status: counts.tracked ? "completed" : "waiting",
+      statusClass: counts.tracked ? "bullish" : "neutral",
+      summary: "Builds the allowed stock universe and keeps the rest of the agency inside the S&P 100 plus QQQ holdings boundary.",
+      inputs: [
+        `Scope rule: ${AGENCY_UNIVERSE_LABEL}`,
+        `${counts.tracked || 0} tracked rows in the current dashboard payload`,
+        `${secCoverage.secLive} SEC-backed rows and ${secCoverage.pending} bootstrap rows`
+      ],
+      checks: [
+        processCheck("Universe loaded", `${counts.tracked || 0} names`, statusFromBoolean(counts.tracked > 0)),
+        processCheck("Eligibility gate", `${counts.eligible || 0} eligible`, statusFromBoolean(counts.eligible > 0, counts.eligible < 10)),
+        processCheck("SEC queue", `${secCoverage.percent}% live`, secCoverage.pending ? "neutral" : "bullish", `${state.secQueue?.next_batch_size || 0} names in next batch`)
+      ],
+      outputs: [
+        `${counts.eligible || 0} eligible, ${counts.watch || 0} watch, ${counts.reject || 0} rejected`,
+        `${sectorCoverage.length} sector buckets prepared`,
+        `Next queue sample: ${topTickersLabel((state.secQueue?.next_batch || []).map((item) => ({ ticker: item.ticker })), 5)}`
+      ],
+      handoff: [
+        "Market Agent receives sector membership and breadth.",
+        "Signals Agent receives the allowed ticker boundary.",
+        "Selection Agent receives eligibility stage for every candidate."
+      ],
+      actions: [
+        runtimeActionButton("refresh_universe", null, "Refresh Universe", "sync"),
+        runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")
+      ]
+    },
+    fundamentals: {
+      title: "Fundamentals Agent Process",
+      mode: "Automatic Scoring From Loaded Fundamentals",
+      status: rankedRows.length ? "ranked" : "waiting",
+      statusClass: rankedRows.length ? "bullish" : "neutral",
+      summary: "Ranks the allowed universe by business quality, valuation, growth, stability, and confidence before candidates can become trades.",
+      inputs: [
+        `${counts.tracked || 0} universe rows`,
+        `${secCoverage.secLive} official SEC-backed rows`,
+        "Market-reference pricing and sector-relative scoring"
+      ],
+      checks: [
+        processCheck("Composite score", `${rankedRows.length} ranked rows`, statusFromBoolean(rankedRows.length > 0)),
+        processCheck("Reporting confidence", `${secCoverage.pending} pending`, secCoverage.pending ? "neutral" : "bullish", "Bootstrap rows stay visible but lower confidence."),
+        processCheck("Eligible supply", `${counts.eligible || 0} pass`, statusFromBoolean(counts.eligible > 0))
+      ],
+      outputs: [
+        `Top ranked: ${topTickersLabel(rankedRows)}`,
+        `${counts.eligible || 0} names allowed to graduate to Selection`,
+        `${counts.watch || 0} names kept for confirmation`
+      ],
+      handoff: [
+        "Selection Agent uses the score and screen stage.",
+        "Market Agent uses sector and industry tags.",
+        "Rejected names stay blocked unless manually reviewed."
+      ],
+      actions: [
+        runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database"),
+        runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")
+      ]
+    },
+    market: {
+      title: "Market Agent Process",
+      mode: "Automatic On Latest Market Snapshot",
+      status: sectors.length ? "analyzed" : "waiting",
+      statusClass: sectors.length ? "bullish" : "neutral",
+      summary: "Reads regime, sector breadth, momentum, and active conviction so the agency knows which areas have tailwind or pressure.",
+      inputs: [
+        `${sectors.length} sector summaries`,
+        `${activeRows.length} names with fresh market signal`,
+        `Macro regime: ${prettyLabel(state.macroRegime?.regime_label || state.snapshot?.market_pulse?.sentiment_regime || "unknown")}`
+      ],
+      checks: [
+        processCheck("Bullish sectors", `${sectors.filter((sector) => sector.sentiment_regime === "bullish").length}`, "bullish"),
+        processCheck("Bearish sectors", `${sectors.filter((sector) => sector.sentiment_regime === "bearish").length}`, sectors.some((sector) => sector.sentiment_regime === "bearish") ? "bearish" : "neutral"),
+        processCheck("Fresh conviction", `${activeRows.length} names`, statusFromBoolean(activeRows.length > 0, activeRows.length < 3))
+      ],
+      outputs: [
+        `Strongest sectors: ${topTickersLabel(sectors.map((sector) => ({ entity_key: sector.entity_key })), 4)}`,
+        `Active names: ${topTickersLabel(activeRows, 4)}`,
+        `Market bias: ${prettyLabel(state.macroRegime?.bias_label || "balanced")}`
+      ],
+      handoff: [
+        "Selection Agent receives sector tailwind/headwind context.",
+        "Risk Manager receives macro exposure context.",
+        "Signals Agent can be filtered by sector focus."
+      ],
+      actions: [
+        runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database"),
+        runtimeActionButton("poll_once", "market_flow", "Poll Flow", "monitoring")
+      ]
+    },
+    signals: {
+      title: "Signals Agent Process",
+      mode: "Automatic From Enabled Collectors + One-Shot Polls",
+      status: state.alerts.length || state.highImpact.length || moneyFlowSignals.length ? "active" : "quiet",
+      statusClass: state.alerts.length || state.highImpact.length || moneyFlowSignals.length ? "bullish" : "neutral",
+      summary: "Collects and normalizes alerts, news, insider activity, institutional traces, unusual volume, block prints, and money-flow evidence.",
+      inputs: [
+        `${state.liveFeed.length} recent feed items`,
+        `${state.alerts.length} active alerts`,
+        `${moneyFlowSignals.length} money-flow signals`
+      ],
+      checks: [
+        processCheck("Freshness", signalTime ? relativeTime(signalTime) : "n/a", signalTime ? "bullish" : "neutral"),
+        processCheck("Alert pressure", `${state.alerts.length} alerts`, state.alerts.length ? "bullish" : "neutral"),
+        processCheck("Money flow", `${moneyFlowSignals.length} signals`, moneyFlowSignals.length ? "bullish" : "neutral")
+      ],
+      outputs: [
+        `${state.highImpact.length} high-impact signals`,
+        `${moneyFlowSignals.filter((item) => INSIDER_FLOW_EVENT_TYPES.has(item.event_type)).length} insider signals`,
+        `${moneyFlowSignals.filter((item) => TAPE_FLOW_EVENT_TYPES.has(item.event_type)).length} tape-flow signals`
+      ],
+      handoff: [
+        "Selection Agent receives signal strength and evidence quality.",
+        "Market Agent receives sector-linked evidence.",
+        "Risk Manager uses source reliability before allowing execution."
+      ],
+      actions: [
+        runtimeActionButton("poll_once", "live_news", "Poll News", "newspaper"),
+        runtimeActionButton("poll_once", "sec_form4", "Poll Form 4", "badge"),
+        runtimeActionButton("poll_once", "trade_prints", "Poll Prints", "receipt_long")
+      ]
+    },
+    selection: {
+      title: "Selection Agent Process",
+      mode: "Automatic After Latest Inputs Refresh",
+      status: workflow.status || (setups.length ? "ready" : "waiting"),
+      statusClass: workflowStatusClass(workflow.status || (setups.length ? "ready" : "not_ready")),
+      summary: "Combines Fundamentals, Market, and Signals outputs into ranked buy, sell, watch, and blocked recommendations.",
+      inputs: [
+        `${counts.eligible || 0} eligible fundamentals names`,
+        `${activeRows.length} fresh market-signal names`,
+        `${state.alerts.length + state.highImpact.length + moneyFlowSignals.length} signal items`
+      ],
+      checks: [
+        processCheck("Workflow", prettyLabel(workflow.status || "unknown"), workflowStatusClass(workflow.status || "not_ready"), workflow.summary || ""),
+        processCheck("Buy candidates", `${setupSummary.long}`, setupSummary.long ? "bullish" : "neutral"),
+        processCheck("Sell candidates", `${setupSummary.short}`, setupSummary.short ? "bearish" : "neutral"),
+        processCheck("Watch candidates", `${setupSummary.watch}`, setupSummary.watch ? "neutral" : "bullish")
+      ],
+      outputs: [
+        `${setupSummary.long} buy, ${setupSummary.short} sell, ${setupSummary.watch} watch, ${setupSummary.blocked} blocked`,
+        `Top candidates: ${topTickersLabel(setups.map((setup) => ({ ticker: setup.ticker })), 5)}`,
+        `Runtime trust: ${prettyLabel(state.tradeSetups?.runtime_reliability?.status || "unknown")}`
+      ],
+      handoff: [
+        "Risk Manager receives only ranked recommendations.",
+        "Execution Agent can preview only buy/sell candidates.",
+        "Watch candidates stay out of Alpaca tickets."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="risk"><span class="material-symbols-outlined">shield</span>Open Risk</button>`,
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="execution"><span class="material-symbols-outlined">order_approve</span>Open Execution</button>`
+      ]
+    },
+    risk: {
+      title: "Risk Manager Process",
+      mode: "Automatic Status Check + Per-Preview Evaluation",
+      status: risk.status || monitor.risk_status || "unknown",
+      statusClass: monitorActionClass(risk.status || monitor.risk_status),
+      summary: "Reviews recommendations against buying power, gross exposure, single-name exposure, open orders, source reliability, and runtime pressure.",
+      inputs: [
+        `Equity basis: ${formatUsdCompact(risk.equity || monitor.account?.equity || 0)}`,
+        `${risk.positions?.length || monitor.position_count || 0} positions`,
+        `${risk.open_orders ?? monitor.open_order_count ?? 0} open orders`
+      ],
+      checks: [
+        processCheck("Gross exposure", `${formatNumber((risk.gross_exposure_pct || 0) * 100, 1)}%`, risk.status === "blocked" ? "bearish" : "bullish"),
+        processCheck("Runtime pressure", risk.runtime_constrained ? "constrained" : "normal", risk.runtime_constrained ? "neutral" : "bullish"),
+        processCheck("Hard blocks", `${risk.hard_blocks?.length || 0}`, risk.hard_blocks?.length ? "bearish" : "bullish"),
+        processCheck("Warnings", `${risk.warnings?.length || 0}`, risk.warnings?.length ? "neutral" : "bullish")
+      ],
+      outputs: [
+        `Risk status: ${prettyLabel(risk.status || "unknown")}`,
+        `Buying power: ${formatUsdCompact(risk.buying_power || monitor.account?.buying_power || 0)}`,
+        `Largest position: ${risk.largest_position?.symbol || "none"}`
+      ],
+      handoff: [
+        "Approved previews can move to Execution Agent.",
+        "Blocked previews show the reason in the signal drawer.",
+        "Portfolio Monitor receives close/review context."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="execution"><span class="material-symbols-outlined">order_approve</span>Open Execution</button>`
+      ]
+    },
+    execution: {
+      title: "Execution Agent Process",
+      mode: "Automatic Preview, Manual Paper Approval",
+      status: brokerReady ? "paper ready" : "gated",
+      statusClass: brokerReady ? "bullish" : "neutral",
+      summary: "Builds Alpaca paper tickets from approved recommendations. Actual submission remains gated by broker readiness and the explicit paper-trade confirmation phrase.",
+      inputs: [
+        `${setupSummary.tradable.length} buy/sell candidates`,
+        `Broker mode: ${prettyLabel(broker.mode || "paper")}`,
+        `Submit flag: ${broker.submit_enabled ? "enabled" : "disabled"}`
+      ],
+      checks: [
+        processCheck("Broker configured", broker.configured ? "yes" : "no", broker.configured ? "bullish" : "neutral"),
+        processCheck("Paper mode", prettyLabel(broker.mode || "paper"), (broker.mode || "paper") === "paper" ? "bullish" : "bearish"),
+        processCheck("Submission guard", brokerReady ? "ready" : "gated", brokerReady ? "bullish" : "neutral"),
+        processCheck("Open orders", `${monitor.open_order_count ?? orders.length}`, "neutral")
+      ],
+      outputs: [
+        "Preview converts ticker recommendation into side, shares/notional, and risk result.",
+        brokerReady ? "Paper Submit is available after confirmation phrase." : "Paper Submit is still disabled by guardrails.",
+        `${orders.length} open broker orders visible`
+      ],
+      handoff: [
+        "Submitted paper orders go to Alpaca.",
+        "Portfolio Monitor watches positions and orders after execution.",
+        "Live trading is not exposed in this dashboard flow."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="portfolio"><span class="material-symbols-outlined">account_balance_wallet</span>Open Portfolio</button>`
+      ]
+    },
+    portfolio: {
+      title: "Portfolio Monitor Process",
+      mode: "Automatic Broker Monitor When Configured",
+      status: monitor.status || "waiting",
+      statusClass: monitorActionClass(monitor.status),
+      summary: "Compares positions and open orders against the latest recommendations, highlights sell/reduce candidates, and tracks weekly target progress.",
+      inputs: [
+        `${positions.length} visible positions`,
+        `${orders.length} open orders`,
+        `Visible equity: ${formatUsdCompact(equity)}`
+      ],
+      checks: [
+        processCheck("Position review", `${monitor.review_count || 0}`, monitor.review_count ? "neutral" : "bullish"),
+        processCheck("Close candidates", `${monitor.close_candidate_count || 0}`, monitor.close_candidate_count ? "bearish" : "bullish"),
+        processCheck("Weekly progress", formatSignedPercent(weeklyPct), weeklyPct >= 0.03 ? "bullish" : weeklyPct < 0 ? "bearish" : "neutral"),
+        processCheck("Broker account", monitor.account ? "visible" : "not configured", monitor.account ? "bullish" : "neutral")
+      ],
+      outputs: [
+        `Open P/L: ${formatUsdCompact(unrealized)}`,
+        `3% target dollars: ${formatUsdCompact(equity * 0.03)}`,
+        `${monitor.close_candidate_count || 0} possible sells/reductions`
+      ],
+      handoff: [
+        "Selection Agent sees whether current holdings still match recommendations.",
+        "Risk Manager receives exposure and close-candidate context.",
+        "User reviews sell/reduce recommendations before acting."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="trading"><span class="material-symbols-outlined">assignment</span>Open Selection</button>`
+      ]
+    }
+  };
+
+  return definitions[agentKey] || null;
+}
+
+function renderAgencyRunLog() {
+  const keys = ["universe", "fundamentals", "market", "signals", "selection", "risk", "execution", "portfolio"];
+  const viewByKey = {
+    universe: "universe",
+    fundamentals: "universe",
+    market: "markets",
+    signals: "alerts",
+    selection: "trading",
+    risk: "risk",
+    execution: "execution",
+    portfolio: "portfolio"
+  };
+  const items = keys.map((key, index) => ({ key, index: index + 1, process: buildAgentProcess(key) }));
+  const asOf = state.snapshot?.as_of || state.health?.last_update || state.tradeSetups?.as_of || new Date().toISOString();
+
+  return `
+    <section class="agency-run-log panel">
+      <div class="agent-process-head">
+        <div>
+          <div class="section-kicker">Autonomous Cycle Log</div>
+          <h2>Latest worker cycle reconstructed from live telemetry</h2>
+          <p>Each worker updates automatically when its inputs refresh. Heavy collectors can also be advanced with safe one-shot actions.</p>
+        </div>
+        <span class="section-kicker">${escapeHtml(relativeTime(asOf))}</span>
+      </div>
+      <div class="process-log-grid">
+        ${items
+          .map(
+            ({ key, index, process }) => `
+              <button type="button" class="process-log-item ${process?.statusClass || "neutral"}" data-agent-view="${viewByKey[key]}">
+                <span>${String(index).padStart(2, "0")}</span>
+                <strong>${escapeHtml(process?.title?.replace(" Process", "") || prettyLabel(key))}</strong>
+                <small>${escapeHtml(process?.mode || "Automatic")}</small>
+                <b>${escapeHtml(prettyLabel(process?.status || "observing"))}</b>
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
 }
 
 function buildHelpSignal() {
@@ -1948,6 +2377,10 @@ function renderMarketsView() {
     <div class="workspace-stat-card"><span>Fresh Signal Names</span><strong>${activeRows.length}</strong></div>
   `;
 
+  if (elements.marketAgentProcess) {
+    elements.marketAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("market"));
+  }
+
   renderMarketsSectorChart(filteredSectors);
 
   elements.marketsSectorGrid.innerHTML = sectors.length
@@ -2334,6 +2767,10 @@ function renderAlertsView() {
     <div class="workspace-stat-card"><span>Newest Alert</span><strong>${newestAlertAt ? relativeTime(newestAlertAt) : "n/a"}</strong></div>
     <div class="workspace-stat-card"><span>Newest Flow</span><strong>${newestFlowAt ? relativeTime(newestFlowAt) : "n/a"}</strong></div>
   `;
+
+  if (elements.signalsAgentProcess) {
+    elements.signalsAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("signals"));
+  }
 
   elements.alertsCritical.innerHTML = filteredAlerts.length
     ? filteredAlerts
@@ -2902,6 +3339,10 @@ function renderTradingView() {
     elements.tradingWorkflowStatus.innerHTML = renderTradingWorkflowStatus();
   }
 
+  if (elements.selectionAgentProcess) {
+    elements.selectionAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("selection"));
+  }
+
   if (elements.tradingPlanLists) {
     elements.tradingPlanLists.innerHTML = renderTradeLists(setups, { includePreview: true });
     attachTradeListActions(elements.tradingPlanLists, setups);
@@ -3353,6 +3794,7 @@ function renderAgencyCommandCenter() {
         )
         .join("")}
     </section>
+    ${renderAgencyRunLog()}
     <section class="agent-flow panel">
       <div>
         <div class="section-kicker">Operating Flow</div>
@@ -3386,6 +3828,10 @@ function renderUniverseAgentView() {
       ${agentMetricCard("SEC Coverage", `${secCoverage.percent}%`, `${secCoverage.secLive} live, ${secCoverage.pending} pending`)}
       ${agentMetricCard("Next SEC Batch", state.secQueue?.next_batch_size || nextBatch.length || 0, "One-shot runtime action")}
     `;
+  }
+
+  if (elements.universeAgentProcess) {
+    elements.universeAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("universe"));
   }
 
   if (elements.universeAgentCoverage) {
@@ -3453,6 +3899,10 @@ function renderUniverseAgentView() {
       ${agentMetricCard("Bootstrap Pending", secCoverage.pending, "Still needs SEC refresh")}
       ${agentMetricCard("Fundamental Gate", `${counts.eligible}/${counts.tracked}`, "Eligible over tracked")}
     `;
+  }
+
+  if (elements.fundamentalsAgentProcess) {
+    elements.fundamentalsAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("fundamentals"));
   }
 
   if (elements.fundamentalsAgentTable) {
@@ -3554,6 +4004,10 @@ function renderRiskAgentView() {
       ${agentMetricCard("Runtime Pressure", risk.runtime_constrained ? "Constrained" : "Normal", "Source pressure gate")}
       ${agentMetricCard("Largest Position", risk.largest_position?.symbol || "n/a", risk.largest_position ? `${formatNumber(risk.largest_position.exposure_pct * 100, 1)}% exposure` : "No open position")}
     `;
+  }
+
+  if (elements.riskAgentProcess) {
+    elements.riskAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("risk"));
   }
 
   if (elements.riskAgentDecisions) {
@@ -3666,6 +4120,10 @@ function renderRiskAgentView() {
 }
 
 function renderExecutionAgentView() {
+  if (elements.executionAgentProcess) {
+    elements.executionAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("execution"));
+  }
+
   if (elements.executionAgentConsole) {
     elements.executionAgentConsole.innerHTML = renderExecutionConsolePanel();
   }
@@ -3691,6 +4149,10 @@ function renderPortfolioAgentView() {
       ${agentMetricCard("Close Candidates", monitor.close_candidate_count || 0, "Sell or reduce review")}
       ${agentMetricCard("Open Orders", monitor.open_order_count ?? orders.length, "Broker-visible orders")}
     `;
+  }
+
+  if (elements.portfolioAgentProcess) {
+    elements.portfolioAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("portfolio"));
   }
 
   if (elements.portfolioAgentPositions) {
@@ -4051,16 +4513,24 @@ function attachEvents() {
   [
     elements.agencyCommandCenter,
     elements.universeAgentOverview,
+    elements.universeAgentProcess,
     elements.universeAgentCoverage,
     elements.fundamentalsAgentSummary,
+    elements.fundamentalsAgentProcess,
     elements.fundamentalsAgentTable,
     elements.universeAgentHandoff,
+    elements.marketAgentProcess,
+    elements.signalsAgentProcess,
+    elements.selectionAgentProcess,
     elements.riskAgentOverview,
+    elements.riskAgentProcess,
     elements.riskAgentDecisions,
     elements.riskAgentInputs,
     elements.riskAgentHandoff,
+    elements.executionAgentProcess,
     elements.executionAgentConsole,
     elements.portfolioAgentOverview,
+    elements.portfolioAgentProcess,
     elements.portfolioAgentPositions,
     elements.portfolioAgentGoal,
     elements.portfolioAgentOrders

@@ -522,6 +522,198 @@ input:focus-visible {
   letter-spacing: 0;
 }
 
+.agent-process-slot {
+  margin-top: 14px;
+}
+
+.agent-process-panel,
+.agency-run-log {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--surface-border);
+}
+
+.agent-process-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.agent-process-head > div {
+  min-width: 0;
+}
+
+.agent-process-head h2,
+.agent-process-head h3 {
+  margin: 6px 0 6px;
+  color: var(--text);
+  font-size: 1.1rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.agent-process-head p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.agent-process-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr 1fr 1fr;
+  gap: 12px;
+}
+
+.process-block {
+  min-width: 0;
+  padding: 13px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--surface-border);
+}
+
+.process-block > strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.process-block ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.process-block li {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.process-block li strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.process-block li span {
+  overflow-wrap: anywhere;
+}
+
+.process-check-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.process-check {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(173, 198, 255, 0.14);
+  background: rgba(173, 198, 255, 0.055);
+}
+
+.process-check.bullish {
+  border-color: rgba(19, 255, 67, 0.2);
+  background: rgba(19, 255, 67, 0.06);
+}
+
+.process-check.bearish {
+  border-color: rgba(255, 84, 75, 0.24);
+  background: rgba(255, 84, 75, 0.06);
+}
+
+.process-check span,
+.process-check small,
+.process-log-item small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.process-check strong {
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.process-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.process-log-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.process-log-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 13px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(173, 198, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  text-align: left;
+}
+
+.process-log-item.bullish {
+  border-color: rgba(19, 255, 67, 0.22);
+}
+
+.process-log-item.bearish {
+  border-color: rgba(255, 84, 75, 0.24);
+}
+
+.process-log-item > span {
+  grid-row: span 3;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--green);
+  background: rgba(19, 255, 67, 0.1);
+  border: 1px solid rgba(19, 255, 67, 0.16);
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.process-log-item strong,
+.process-log-item b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.process-log-item strong {
+  font-size: 13px;
+}
+
+.process-log-item b {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .panel {
   background: rgba(18, 18, 18, 0.74);
   backdrop-filter: blur(20px);
@@ -2409,6 +2601,10 @@ input:focus-visible {
     flex-direction: column;
   }
 
+  .agent-process-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workflow-live-data-grid {
     grid-template-columns: 1fr;
   }
@@ -2632,13 +2828,20 @@ input:focus-visible {
   .agent-roster,
   .agent-handoff-grid,
   .agent-decision-grid,
-  .next-batch-strip {
+  .next-batch-strip,
+  .agent-process-grid {
     grid-template-columns: 1fr;
   }
 
   .agency-hero,
-  .agent-flow {
+  .agent-flow,
+  .agent-process-panel,
+  .agency-run-log {
     padding: 18px;
+  }
+
+  .agent-process-head {
+    flex-direction: column;
   }
 
   .agent-card {
@@ -3175,6 +3378,10 @@ input:focus-visible {
 .ahad-theme .agent-card,
 .ahad-theme .agency-goal-card,
 .ahad-theme .portfolio-goal-card,
+.ahad-theme .agent-process-panel,
+.ahad-theme .agency-run-log,
+.ahad-theme .process-block,
+.ahad-theme .process-log-item,
 .ahad-theme .summary-list,
 .ahad-theme .money-flow-card,
 .ahad-theme .money-flow-section,
@@ -3207,6 +3414,11 @@ input:focus-visible {
   background: rgba(255, 255, 255, 0.052);
 }
 
+.ahad-theme .agent-process-head h2,
+.ahad-theme .agent-process-head h3 {
+  font-family: var(--font-body);
+}
+
 .ahad-theme .mini-card strong,
 .ahad-theme .window-card strong,
 .ahad-theme .engine-stat strong,
@@ -3219,6 +3431,8 @@ input:focus-visible {
 .ahad-theme .agent-step,
 .ahad-theme .agent-card-metric b,
 .ahad-theme .agency-goal-card strong,
+.ahad-theme .process-check strong,
+.ahad-theme .process-log-item > span,
 .ahad-theme .stock-cell strong,
 .ahad-theme .conf-cell,
 .ahad-theme .momentum {
