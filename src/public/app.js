@@ -58,6 +58,7 @@ const state = {
   health: null,
   runtimeReliability: null,
   agencyCycle: null,
+  agencyCycleError: "",
   secQueue: null,
   workflowStatus: null,
   executionStatus: null,
@@ -1791,15 +1792,26 @@ function renderAgencyRunLog() {
 
 function renderAgencyCyclePanel(cycle) {
   if (!cycle?.workers?.length) {
+    const error = state.agencyCycleError;
     return `
       <section class="agency-cycle-panel panel">
         <div class="agent-process-head">
           <div>
             <div class="section-kicker">Autonomous Cycle</div>
-            <h2>Cycle state is loading</h2>
-            <p>The agency is preparing the worker-by-worker operating flow.</p>
+            <h2>${error ? "Cycle state is unavailable" : "Cycle state is loading"}</h2>
+            <p>${error ? `The agency cycle endpoint did not return worker data: ${escapeHtml(error)}` : "The agency is preparing the worker-by-worker operating flow."}</p>
           </div>
         </div>
+        ${
+          error
+            ? `<div class="process-action-row">
+                <button type="button" class="panel-action runtime-action-button" data-agent-view="system">
+                  <span class="material-symbols-outlined">settings</span>
+                  Open System
+                </button>
+              </div>`
+            : ""
+        }
       </section>
     `;
   }
@@ -2315,7 +2327,7 @@ async function loadHealth() {
   const [health, runtimeReliability, agencyCycle, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor, portfolioPolicy] = await Promise.all([
     getJson("/api/health"),
     getJson("/api/runtime-reliability").catch(() => null),
-    getJson(`/api/agency/cycle?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
+    getJson(`/api/agency/cycle?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch((error) => ({ __error: error.message })),
     getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null),
     getJson(`/api/trading-workflow/status?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
     getJson("/api/execution/status").catch(() => null),
@@ -2326,7 +2338,8 @@ async function loadHealth() {
   ]);
   state.health = health;
   state.runtimeReliability = runtimeReliability || health.runtime_reliability || null;
-  state.agencyCycle = agencyCycle;
+  state.agencyCycleError = agencyCycle?.__error || "";
+  state.agencyCycle = agencyCycle?.__error ? null : agencyCycle;
   state.secQueue = secQueue;
   state.workflowStatus = workflowStatus;
   state.executionStatus = executionStatus || health.execution || null;
