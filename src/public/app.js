@@ -61,6 +61,10 @@ const state = {
   executionLog: [],
   riskSnapshot: null,
   positionMonitor: null,
+  portfolioPolicy: null,
+  portfolioPolicySettings: {},
+  portfolioPolicySaveState: "",
+  finalSelection: null,
   snapshot: null,
   macroRegime: null,
   tradeSetups: null,
@@ -143,6 +147,7 @@ const elements = {
   marketAgentProcess: document.querySelector("#market-agent-process"),
   tradingWorkflowStatus: document.querySelector("#trading-workflow-status"),
   selectionAgentProcess: document.querySelector("#selection-agent-process"),
+  selectionFinalProcedure: document.querySelector("#selection-final-procedure"),
   tradingPlanSummary: document.querySelector("#trading-plan-summary"),
   tradingPlanLists: document.querySelector("#trading-plan-lists"),
   tradingExecutionConsole: document.querySelector("#trading-execution-console"),
@@ -156,6 +161,7 @@ const elements = {
   executionAgentConsole: document.querySelector("#execution-agent-console"),
   portfolioAgentOverview: document.querySelector("#portfolio-agent-overview"),
   portfolioAgentProcess: document.querySelector("#portfolio-agent-process"),
+  portfolioAgentPolicy: document.querySelector("#portfolio-agent-policy"),
   portfolioAgentPositions: document.querySelector("#portfolio-agent-positions"),
   portfolioAgentGoal: document.querySelector("#portfolio-agent-goal"),
   portfolioAgentOrders: document.querySelector("#portfolio-agent-orders"),
@@ -1410,6 +1416,9 @@ function buildAgentProcess(agentKey) {
   const moneyFlowSignals = collectMoneyFlowSignals();
   const signalTime = latestSignalTime();
   const setups = state.tradeSetups?.setups || [];
+  const finalSelection = state.finalSelection || {};
+  const finalCounts = finalSelection.counts || {};
+  const finalCandidates = finalSelection.candidates || [];
   const setupSummary = setupCounts();
   const workflow = state.workflowStatus || {};
   const risk = state.riskSnapshot || {};
@@ -1422,6 +1431,7 @@ function buildAgentProcess(agentKey) {
   const equity = monitor.account?.portfolio_value || monitor.account?.equity || risk.equity || 0;
   const unrealized = positions.reduce((sum, position) => sum + Number(position.unrealized_pl || 0), 0);
   const weeklyPct = equity ? unrealized / equity : 0;
+  const weeklyTargetPct = Number(state.portfolioPolicySettings.portfolioWeeklyTargetPct || monitor.portfolio_policy?.weekly_target_pct || 0.03);
   const learning = buildLearningAnalysis();
 
   const definitions = {
@@ -1553,29 +1563,30 @@ function buildAgentProcess(agentKey) {
     selection: {
       title: "Selection Agent Process",
       mode: "Automatic After Latest Inputs Refresh",
-      status: workflow.status || (setups.length ? "ready" : "waiting"),
-      statusClass: workflowStatusClass(workflow.status || (setups.length ? "ready" : "not_ready")),
-      summary: "Combines Fundamentals, Market, and Signals outputs into ranked buy, sell, watch, and blocked recommendations.",
+      status: finalCounts.executable ? "finalized" : workflow.status || (setups.length ? "review" : "waiting"),
+      statusClass: finalCounts.executable ? "bullish" : workflowStatusClass(workflow.status || (setups.length ? "ready" : "not_ready")),
+      summary: "Runs deterministic and LLM selection lanes in parallel, then applies the portfolio policy before any candidate reaches Risk or Execution.",
       inputs: [
         `${counts.eligible || 0} eligible fundamentals names`,
         `${activeRows.length} fresh market-signal names`,
-        `${state.alerts.length + state.highImpact.length + moneyFlowSignals.length} signal items`
+        `${state.alerts.length + state.highImpact.length + moneyFlowSignals.length} signal items`,
+        `Portfolio max position: ${formatNumber((finalSelection.portfolio_policy?.max_position_pct || state.portfolioPolicySettings.portfolioMaxPositionPct || 0) * 100, 1)}%`
       ],
       checks: [
         processCheck("Workflow", prettyLabel(workflow.status || "unknown"), workflowStatusClass(workflow.status || "not_ready"), workflow.summary || ""),
-        processCheck("Buy candidates", `${setupSummary.long}`, setupSummary.long ? "bullish" : "neutral"),
-        processCheck("Sell candidates", `${setupSummary.short}`, setupSummary.short ? "bearish" : "neutral"),
-        processCheck("Watch candidates", `${setupSummary.watch}`, setupSummary.watch ? "neutral" : "bullish")
+        processCheck("Deterministic buy/sell", `${setupSummary.long + setupSummary.short}`, setupSummary.tradable.length ? "bullish" : "neutral"),
+        processCheck("LLM mode", prettyLabel(finalSelection.llm_agent?.mode || "shadow"), "neutral"),
+        processCheck("Final executable", `${finalCounts.executable || 0}`, finalCounts.executable ? "bullish" : "neutral")
       ],
       outputs: [
-        `${setupSummary.long} buy, ${setupSummary.short} sell, ${setupSummary.watch} watch, ${setupSummary.blocked} blocked`,
-        `Top candidates: ${topTickersLabel(setups.map((setup) => ({ ticker: setup.ticker })), 5)}`,
+        `${finalCounts.final_buy || 0} final buy, ${finalCounts.final_sell || 0} final sell, ${finalCounts.review || 0} review`,
+        `Top final candidates: ${topTickersLabel(finalCandidates.map((candidate) => ({ ticker: candidate.ticker })), 5)}`,
         `Runtime trust: ${prettyLabel(state.tradeSetups?.runtime_reliability?.status || "unknown")}`
       ],
       handoff: [
-        "Risk Manager receives only ranked recommendations.",
-        "Execution Agent can preview only buy/sell candidates.",
-        "Watch candidates stay out of Alpaca tickets."
+        "Risk Manager receives final-selected recommendations.",
+        "Execution Agent previews only final buy/sell candidates that passed policy.",
+        "LLM-only promotions stay on watch or review; they do not reach Alpaca by themselves."
       ],
       actions: [
         `<button type="button" class="panel-action runtime-action-button" data-agent-view="risk"><span class="material-symbols-outlined">shield</span>Open Risk</button>`,
@@ -1620,7 +1631,7 @@ function buildAgentProcess(agentKey) {
       statusClass: brokerReady ? "bullish" : "neutral",
       summary: "Builds Alpaca paper tickets from approved recommendations. Actual submission remains gated by broker readiness and the explicit paper-trade confirmation phrase.",
       inputs: [
-        `${setupSummary.tradable.length} buy/sell candidates`,
+        `${finalCounts.executable || setupSummary.tradable.length} final buy/sell candidates`,
         `Broker mode: ${prettyLabel(broker.mode || "paper")}`,
         `Submit flag: ${broker.submit_enabled ? "enabled" : "disabled"}`
       ],
@@ -1658,12 +1669,12 @@ function buildAgentProcess(agentKey) {
       checks: [
         processCheck("Position review", `${monitor.review_count || 0}`, monitor.review_count ? "neutral" : "bullish"),
         processCheck("Close candidates", `${monitor.close_candidate_count || 0}`, monitor.close_candidate_count ? "bearish" : "bullish"),
-        processCheck("Weekly progress", formatSignedPercent(weeklyPct), weeklyPct >= 0.03 ? "bullish" : weeklyPct < 0 ? "bearish" : "neutral"),
+        processCheck("Weekly progress", formatSignedPercent(weeklyPct), weeklyPct >= weeklyTargetPct ? "bullish" : weeklyPct < 0 ? "bearish" : "neutral"),
         processCheck("Broker account", monitor.account ? "visible" : "not configured", monitor.account ? "bullish" : "neutral")
       ],
       outputs: [
         `Open P/L: ${formatUsdCompact(unrealized)}`,
-        `3% target dollars: ${formatUsdCompact(equity * 0.03)}`,
+        `${formatNumber(weeklyTargetPct * 100, 1)}% target dollars: ${formatUsdCompact(equity * weeklyTargetPct)}`,
         `${monitor.close_candidate_count || 0} possible sells/reductions`
       ],
       handoff: [
@@ -1988,6 +1999,52 @@ function buildSignalFromTradeSetup(setup) {
   };
 }
 
+function buildSignalFromFinalSelection(candidate) {
+  const deterministic = candidate.deterministic_explanation || {};
+  const llm = candidate.llm_explanation || {};
+  const gates = candidate.policy_gates || [];
+  const failedGates = gates.filter((gate) => !gate.pass);
+  const contextItems = [
+    `Deterministic: ${prettyLabel(candidate.deterministic_action)} at ${formatNumber((candidate.deterministic_conviction || 0) * 100, 0)}%.`,
+    `LLM lane: ${prettyLabel(candidate.llm_action)}${candidate.llm_confidence !== null && candidate.llm_confidence !== undefined ? ` at ${formatNumber(candidate.llm_confidence * 100, 0)}%` : ""}.`,
+    `Agreement: ${prettyLabel(candidate.agreement)}.`,
+    `Policy size: ${formatNumber((candidate.position_size_pct || 0) * 100, 1)}%.`,
+    ...(deterministic.thesis || []).slice(0, 3).map((item) => `Deterministic thesis: ${item}`),
+    ...(llm.supporting_factors || []).slice(0, 3).map((item) => `LLM support: ${item}`),
+    ...(llm.concerns || []).slice(0, 3).map((item) => `LLM concern: ${item}`),
+    ...(failedGates || []).slice(0, 3).map((gate) => `Policy gate: ${gate.detail}`)
+  ].filter(Boolean);
+
+  return {
+    ticker: candidate.ticker || null,
+    title: `${candidate.ticker}: ${prettyLabel(candidate.final_action)}`,
+    subtitle: "Final Selector",
+    label: candidate.execution_allowed ? "Executable Candidate" : prettyLabel(candidate.final_action),
+    badgeClass: finalActionClass(candidate.final_action, candidate.execution_allowed),
+    confidence: candidate.final_conviction || 0,
+    timestamp: state.finalSelection?.as_of || null,
+    sourceName: "Final Selector",
+    headline: candidate.final_reason || "Final selector decision",
+    explanation:
+      `${candidate.final_reason || "The final selector combined the deterministic and LLM lanes."} Deterministic action was ${prettyLabel(candidate.deterministic_action)}, LLM action was ${prettyLabel(candidate.llm_action)}, and final conviction is ${formatNumber((candidate.final_conviction || 0) * 100, 0)}%.`,
+    eventType: "final_selection",
+    url: null,
+    sourceMetadata: null,
+    downstreamWeight: candidate.final_conviction || 0,
+    contextItems,
+    statsHtml: `
+      <div class="workspace-stat-card"><span>Ticker</span><strong>${candidate.ticker || "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>Final</span><strong>${prettyLabel(candidate.final_action)}</strong></div>
+      <div class="workspace-stat-card"><span>Executable</span><strong>${candidate.execution_allowed ? "Yes" : "No"}</strong></div>
+      <div class="workspace-stat-card"><span>Final Score</span><strong>${formatNumber((candidate.final_conviction || 0) * 100, 0)}%</strong></div>
+      <div class="workspace-stat-card"><span>Deterministic</span><strong>${prettyLabel(candidate.deterministic_action)}</strong></div>
+      <div class="workspace-stat-card"><span>LLM</span><strong>${prettyLabel(candidate.llm_action)}</strong></div>
+      <div class="workspace-stat-card"><span>Agreement</span><strong>${prettyLabel(candidate.agreement)}</strong></div>
+      <div class="workspace-stat-card"><span>Policy Gates</span><strong>${gates.filter((gate) => gate.pass).length}/${gates.length}</strong></div>
+    `
+  };
+}
+
 function buildSignalFromExecutionPreview(ticker, payload, submitted = null) {
   const intent = payload.intent || payload.preview?.intent || {};
   const risk = payload.risk || payload.preview?.risk || null;
@@ -2222,12 +2279,13 @@ async function loadConfig() {
   state.config = await getJson("/api/config");
   state.activeWindow = state.config.default_window || "1h";
   state.marketFlowSettings = { ...(state.config.market_flow_settings || {}) };
+  state.portfolioPolicySettings = { ...(state.config.portfolio_policy_settings || {}) };
   elements.universeName.textContent = AGENCY_UNIVERSE_LABEL;
   updateWindowButtons();
 }
 
 async function loadHealth() {
-  const [health, runtimeReliability, agencyCycle, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor] = await Promise.all([
+  const [health, runtimeReliability, agencyCycle, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor, portfolioPolicy] = await Promise.all([
     getJson("/api/health"),
     getJson("/api/runtime-reliability").catch(() => null),
     getJson(`/api/agency/cycle?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
@@ -2236,7 +2294,8 @@ async function loadHealth() {
     getJson("/api/execution/status").catch(() => null),
     getJson("/api/execution/log").catch(() => []),
     getJson("/api/risk/status").catch(() => null),
-    getJson(`/api/positions/monitor?window=${encodeURIComponent(state.activeWindow)}&limit=12`).catch(() => null)
+    getJson(`/api/positions/monitor?window=${encodeURIComponent(state.activeWindow)}&limit=12`).catch(() => null),
+    getJson("/api/portfolio/policy").catch(() => null)
   ]);
   state.health = health;
   state.runtimeReliability = runtimeReliability || health.runtime_reliability || null;
@@ -2247,6 +2306,10 @@ async function loadHealth() {
   state.executionLog = Array.isArray(executionLog) ? executionLog : [];
   state.riskSnapshot = riskSnapshot;
   state.positionMonitor = positionMonitor;
+  state.portfolioPolicy = portfolioPolicy;
+  if (portfolioPolicy?.settings) {
+    state.portfolioPolicySettings = { ...portfolioPolicy.settings };
+  }
   elements.healthStatus.textContent = healthLabel(health.status);
   elements.healthUpdate.textContent = formatTime(health.last_update);
   elements.healthQueue.textContent = health.queue_depth;
@@ -2286,12 +2349,13 @@ async function ensureTickerDetail(force = false) {
 async function loadSnapshot() {
   const loadToken = ++snapshotLoadToken;
   const params = new URLSearchParams({ window: state.activeWindow });
-  const [snapshotResult, liveFeedResult, highImpactResult, macroRegimeResult, tradeSetupsResult] = await Promise.allSettled([
+  const [snapshotResult, liveFeedResult, highImpactResult, macroRegimeResult, tradeSetupsResult, finalSelectionResult] = await Promise.allSettled([
     getJson(`/api/sentiment/watchlist?${params.toString()}`),
     getJson("/api/news/recent?limit=12"),
     getJson("/api/events/high-impact?limit=10"),
     getJson(`/api/macro-regime?window=${encodeURIComponent(state.activeWindow)}`),
-    getJson(`/api/trade-setups?window=${encodeURIComponent(state.activeWindow)}&limit=6`)
+    getJson(`/api/trade-setups?window=${encodeURIComponent(state.activeWindow)}&limit=6`),
+    getJson(`/api/final-selection?window=${encodeURIComponent(state.activeWindow)}&limit=12`)
   ]);
   if (snapshotResult.status !== "fulfilled") {
     throw snapshotResult.reason;
@@ -2304,6 +2368,7 @@ async function loadSnapshot() {
   state.highImpact = highImpactResult.status === "fulfilled" ? highImpactResult.value : [];
   state.macroRegime = macroRegimeResult.status === "fulfilled" ? macroRegimeResult.value : null;
   state.tradeSetups = tradeSetupsResult.status === "fulfilled" ? tradeSetupsResult.value : { counts: {}, setups: [] };
+  state.finalSelection = finalSelectionResult.status === "fulfilled" ? finalSelectionResult.value : null;
   state.alerts = state.snapshot.alerts || [];
 
   const currentRows = filteredLeaderboard();
@@ -2515,11 +2580,19 @@ function renderFeed() {
   });
 }
 
+function finalSelectionExecutionSetup(ticker) {
+  const normalized = String(ticker || "").toUpperCase();
+  const candidate = (state.finalSelection?.candidates || []).find((item) => item.ticker === normalized);
+  return candidate?.setup_for_execution || null;
+}
+
 async function previewTradeExecution(ticker) {
   try {
+    const setup = finalSelectionExecutionSetup(ticker);
     const payload = await postJson("/api/execution/preview", {
       ticker,
-      window: state.activeWindow
+      window: state.activeWindow,
+      ...(setup ? { setup } : {})
     });
     openSignalDrawer(buildSignalFromExecutionPreview(ticker, payload));
     state.executionStatus = await getJson("/api/execution/status").catch(() => state.executionStatus);
@@ -2543,10 +2616,12 @@ async function submitPaperTrade(ticker) {
   }
 
   try {
+    const setup = finalSelectionExecutionSetup(ticker);
     const payload = await postJson("/api/execution/orders", {
       ticker,
       window: state.activeWindow,
-      confirm: "paper-trade"
+      confirm: "paper-trade",
+      ...(setup ? { setup } : {})
     });
     openSignalDrawer(buildSignalFromExecutionPreview(ticker, payload, payload));
     await loadHealth();
@@ -2781,6 +2856,171 @@ function attachTradeListActions(container, setups = []) {
       const setup = setups.find((item) => item.ticker === button.dataset.tradeListTicker);
       if (setup) {
         openSignalDrawer(buildSignalFromTradeSetup(setup));
+      }
+    });
+  }
+}
+
+function finalActionClass(action, executionAllowed = false) {
+  if (executionAllowed && action === "long") {
+    return "bullish";
+  }
+  if (executionAllowed && action === "short") {
+    return "bearish";
+  }
+  if (action === "review") {
+    return "neutral";
+  }
+  return setupActionClass(action);
+}
+
+function renderSelectionLanes(finalSelection) {
+  if (!finalSelection) {
+    return `<div class="workspace-empty">Final selection is loading.</div>`;
+  }
+  const deterministic = finalSelection.deterministic_agent || {};
+  const llm = finalSelection.llm_agent || {};
+  const counts = finalSelection.counts || {};
+  const policy = finalSelection.portfolio_policy || {};
+
+  return `
+    <div class="selector-lane-grid">
+      <div class="selector-lane-card">
+        <div class="section-kicker">Lane A</div>
+        <h3>Deterministic Selector</h3>
+        <p>${escapeHtml(deterministic.summary || "Rules-based score engine.")}</p>
+        <div class="setup-chip-row">
+          <span>Buy ${deterministic.counts?.long || 0}</span>
+          <span>Sell ${deterministic.counts?.short || 0}</span>
+          <span>Watch ${deterministic.counts?.watch || 0}</span>
+        </div>
+      </div>
+      <div class="selector-lane-card">
+        <div class="section-kicker">Lane B</div>
+        <h3>LLM Selector</h3>
+        <p>${escapeHtml(prettyLabel(llm.status || "shadow"))}: ${escapeHtml(prettyLabel(llm.mode || "local qualitative review"))}.</p>
+        <div class="setup-chip-row">
+          <span>${escapeHtml(llm.model || "shadow reviewer")}</span>
+          <span>Buy ${llm.counts?.long || 0}</span>
+          <span>Watch ${llm.counts?.watch || 0}</span>
+        </div>
+      </div>
+      <div class="selector-lane-card">
+        <div class="section-kicker">Final</div>
+        <h3>Policy Arbiter</h3>
+        <p>Promotes only aligned names, then applies user portfolio rules before Risk and Execution.</p>
+        <div class="setup-chip-row">
+          <span>Executable ${counts.executable || 0}</span>
+          <span>Review ${counts.review || 0}</span>
+          <span>Max pos ${formatNumber((policy.max_position_pct || 0) * 100, 1)}%</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderFinalSelectionProcedure(finalSelection) {
+  if (!finalSelection) {
+    return `<div class="workspace-empty">Final selector output is loading.</div>`;
+  }
+  const steps = finalSelection.algorithm?.steps || [];
+  return `
+    <div class="final-selection-procedure">
+      ${renderSelectionLanes(finalSelection)}
+      <div class="runtime-control-card">
+        <div class="runtime-source-head">
+          <strong>Final Selection Procedure</strong>
+          <span class="sentiment-badge neutral">${escapeHtml(prettyLabel(finalSelection.algorithm?.name || "dual selector"))}</span>
+        </div>
+        <ol class="workspace-list final-procedure-list">
+          ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+        </ol>
+      </div>
+    </div>
+  `;
+}
+
+function renderFinalSelectionLists(finalSelection, options = {}) {
+  if (!finalSelection) {
+    return `<div class="workspace-empty">Final selection has not loaded yet.</div>`;
+  }
+
+  const includePreview = Boolean(options.includePreview);
+  const candidates = finalSelection.candidates || [];
+  const groups = [
+    {
+      key: "long",
+      label: "Final Buy",
+      empty: "No buy candidate has both selector agreement and policy clearance.",
+      items: candidates.filter((item) => item.execution_allowed && item.final_action === "long")
+    },
+    {
+      key: "short",
+      label: "Final Sell / Short",
+      empty: "No sell or short candidate has both selector agreement and policy clearance.",
+      items: candidates.filter((item) => item.execution_allowed && item.final_action === "short")
+    },
+    {
+      key: "review",
+      label: "Review / Watch",
+      empty: "No review items right now.",
+      items: candidates.filter((item) => !item.execution_allowed).slice(0, 8)
+    }
+  ];
+
+  return `
+    <div class="trade-list-shell final-selection-shell">
+      <div class="section-kicker">Final Selection</div>
+      <p class="trade-list-copy">This is the list that should feed Risk and Alpaca preview: deterministic selector + LLM selector + user portfolio policy.</p>
+      <div class="trade-list-grid">
+        ${groups
+          .map(
+            (group) => `
+              <section class="trade-list-card ${group.key}">
+                <div class="trade-list-head">
+                  <strong>${group.label}</strong>
+                  <span>${group.items.length}</span>
+                </div>
+                ${
+                  group.items.length
+                    ? group.items
+                        .map(
+                          (candidate) => `
+                            <div class="trade-list-row trade-list-row-with-action final-selection-row">
+                              <button type="button" class="trade-list-main" data-final-selection-ticker="${escapeHtml(candidate.ticker)}">
+                                <span>${escapeHtml(candidate.ticker)}</span>
+                                <small>${formatNumber((candidate.final_conviction || 0) * 100, 0)}% final - ${prettyLabel(candidate.agreement)} - ${prettyLabel(candidate.final_action)}</small>
+                              </button>
+                              ${
+                                includePreview
+                                  ? `<button type="button" class="panel-action compact-action" data-preview-execution="${escapeHtml(candidate.ticker)}" ${candidate.execution_allowed ? "" : "disabled"}>Preview</button>`
+                                  : ""
+                              }
+                            </div>
+                            <p class="final-selection-reason">${escapeHtml(candidate.final_reason || "")}</p>
+                          `
+                        )
+                        .join("")
+                    : `<p>${group.empty}</p>`
+                }
+              </section>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function attachFinalSelectionActions(container) {
+  if (!container) {
+    return;
+  }
+  for (const button of container.querySelectorAll("[data-final-selection-ticker]")) {
+    button.addEventListener("click", () => {
+      const candidate = (state.finalSelection?.candidates || []).find((item) => item.ticker === button.dataset.finalSelectionTicker);
+      if (candidate) {
+        openSignalDrawer(buildSignalFromFinalSelection(candidate));
       }
     });
   }
@@ -3608,6 +3848,114 @@ function monitorActionClass(action) {
   return "neutral";
 }
 
+function renderPortfolioPolicyEditor() {
+  const policy = state.portfolioPolicy || {};
+  const settings = state.portfolioPolicySettings || policy.settings || {};
+  const fields = policy.fields || [];
+  const guardrails = policy.guardrails || [];
+  const usage = policy.usage || {};
+  const saveLabel = state.portfolioPolicySaveState === "saving"
+    ? "Saving"
+    : state.portfolioPolicySaveState === "saved"
+      ? "Saved"
+      : "Save Policy";
+
+  return `
+    <div class="portfolio-policy-panel">
+      <div class="runtime-source-head">
+        <div>
+          <div class="section-kicker">Portfolio Policy Agent</div>
+          <h3>User Editable Rules</h3>
+        </div>
+        <span class="sentiment-badge ${monitorActionClass(policy.status)}">${prettyLabel(policy.status || "loading")}</span>
+      </div>
+      <p class="workspace-copy">${escapeHtml(policy.summary || "Portfolio rules are loading.")}</p>
+      <div class="workspace-detail-grid">
+        ${agentMetricCard("Weekly Target", formatSignedPercent(settings.portfolioWeeklyTargetPct || 0.03), "Progress target, not a promise")}
+        ${agentMetricCard("Max Drawdown", formatSignedPercent(-(settings.portfolioMaxWeeklyDrawdownPct || 0.04)), "New positions blocked past this drawdown")}
+        ${agentMetricCard("Cash Reserve", formatSignedPercent(settings.portfolioCashReservePct || 0), `${formatUsdCompact(usage.buying_power || 0)} buying power`)}
+        ${agentMetricCard("Open Slots", usage.new_position_slots ?? 0, `${usage.position_count || 0} positions / ${usage.open_order_count || 0} orders`)}
+      </div>
+      <div class="policy-rule-grid">
+        ${fields
+          .map((field) => {
+            const value = settings[field.key];
+            if (field.type === "boolean") {
+              return `
+                <label class="policy-rule-card boolean-rule">
+                  <span>${escapeHtml(field.label)}</span>
+                  <input type="checkbox" data-portfolio-policy-setting="${escapeHtml(field.key)}" ${value ? "checked" : ""}>
+                  <small>${escapeHtml(field.help || "")}</small>
+                </label>
+              `;
+            }
+            return `
+              <label class="policy-rule-card">
+                <span>${escapeHtml(field.label)}</span>
+                <input type="number" step="${field.step || 0.01}" min="${field.min ?? ""}" max="${field.max ?? ""}" value="${Number(value ?? 0)}" data-portfolio-policy-setting="${escapeHtml(field.key)}">
+                <small>${escapeHtml(field.help || "")}</small>
+              </label>
+            `;
+          })
+          .join("")}
+      </div>
+      <div class="policy-guardrail-list">
+        ${guardrails
+          .map(
+            (gate) => `
+              <span class="sentiment-badge ${gate.pass ? "bullish" : "bearish"}" title="${escapeHtml(gate.label)}">
+                ${escapeHtml(gate.label)} ${gate.pass ? "ok" : "check"}
+              </span>
+            `
+          )
+          .join("")}
+      </div>
+      <div class="setup-action-row">
+        <button type="button" class="panel-action" id="portfolio-policy-save-button">${saveLabel}</button>
+      </div>
+    </div>
+  `;
+}
+
+function attachPortfolioPolicyActions() {
+  const container = elements.portfolioAgentPolicy;
+  if (!container) {
+    return;
+  }
+
+  for (const input of container.querySelectorAll("[data-portfolio-policy-setting]")) {
+    input.addEventListener("input", () => {
+      state.portfolioPolicySaveState = "";
+      const key = input.dataset.portfolioPolicySetting;
+      state.portfolioPolicySettings[key] = input.type === "checkbox" ? input.checked : Number(input.value);
+    });
+    input.addEventListener("change", () => {
+      const key = input.dataset.portfolioPolicySetting;
+      state.portfolioPolicySettings[key] = input.type === "checkbox" ? input.checked : Number(input.value);
+    });
+  }
+
+  container.querySelector("#portfolio-policy-save-button")?.addEventListener("click", async () => {
+    state.portfolioPolicySaveState = "saving";
+    renderPortfolioAgentView();
+
+    try {
+      const payload = await postJson("/api/settings/portfolio-policy", {
+        ...state.portfolioPolicySettings,
+        persist: true
+      });
+      state.portfolioPolicySettings = { ...(payload.policy?.settings || state.portfolioPolicySettings) };
+      state.portfolioPolicySaveState = "saved";
+      await performRefresh();
+    } catch (error) {
+      console.error(error);
+      state.portfolioPolicySaveState = error.message;
+    }
+
+    renderPortfolioAgentView();
+  });
+}
+
 function renderExecutionConsolePanel() {
   const execution = state.executionStatus || {};
   const monitor = state.positionMonitor || {};
@@ -3616,8 +3964,22 @@ function renderExecutionConsolePanel() {
   const safety = execution.safety || {};
   const positions = monitor.positions || [];
   const orders = monitor.open_orders || [];
+  const finalCandidates = (state.finalSelection?.candidates || [])
+    .filter((candidate) => candidate.execution_allowed)
+    .slice(0, 5)
+    .map((candidate) => ({
+      ticker: candidate.ticker,
+      action: candidate.final_action,
+      setup_label: "final_selection",
+      tradable: Boolean(candidate.execution_allowed),
+      blocked_reason: candidate.execution_allowed ? null : candidate.reason_codes?.[0],
+      conviction: candidate.final_conviction,
+      summary: candidate.final_reason
+    }));
   const planningCandidates =
-    monitor.planning_candidates?.length
+    finalCandidates.length
+      ? finalCandidates
+      : monitor.planning_candidates?.length
       ? monitor.planning_candidates
       : (state.tradeSetups?.setups || [])
           .filter((setup) => ["long", "short"].includes(setup.action))
@@ -3643,7 +4005,7 @@ function renderExecutionConsolePanel() {
     <div class="runtime-action-panel execution-console-panel">
       <div class="section-kicker">Execution Control</div>
       <h3>Paper Trading And Position Monitor</h3>
-      <p class="workspace-copy">This is the guarded execution layer. Preview converts a Selection Agent recommendation into an Alpaca-ready order and risk check. Paper submit stays disabled until Alpaca paper credentials and BROKER_SUBMIT_ENABLED=true are configured.</p>
+      <p class="workspace-copy">This is the guarded execution layer. Preview converts a Final Selector recommendation into an Alpaca-ready order and risk check. Paper submit stays disabled until Alpaca paper credentials and BROKER_SUBMIT_ENABLED=true are configured.</p>
       <div class="workspace-detail-grid execution-status-grid">
         <div class="workspace-stat-card"><span>Broker</span><strong>${prettyLabel(broker.provider || "alpaca")}</strong></div>
         <div class="workspace-stat-card"><span>Mode</span><strong>${prettyLabel(broker.mode || "paper")}</strong></div>
@@ -3698,7 +4060,7 @@ function renderExecutionConsolePanel() {
       <div class="execution-subsection">
         <div>
           <h4>Next Setup Candidates</h4>
-          <p class="workspace-copy">Use Preview Order first. Paper Submit is intentionally gated and only sends to Alpaca paper trading when the backend confirms it is safe.</p>
+          <p class="workspace-copy">Use Preview Order first. These candidates come from the final deterministic + LLM + policy procedure when available.</p>
         </div>
         ${
           planningCandidates.length
@@ -3888,8 +4250,10 @@ function renderTradingWorkflowStatus() {
 
 function renderTradingView() {
   const payload = state.tradeSetups || { counts: {}, setups: [] };
+  const finalSelection = state.finalSelection || null;
   const setups = payload.setups || [];
   const counts = payload.counts || {};
+  const finalCounts = finalSelection?.counts || {};
   const execution = state.executionStatus || {};
   const broker = execution.broker || state.positionMonitor?.broker || {};
   const risk = state.riskSnapshot || {};
@@ -3901,14 +4265,14 @@ function renderTradingView() {
 
   if (elements.tradingPlanSummary) {
     elements.tradingPlanSummary.innerHTML = `
-      <div class="workspace-stat-card"><span>Buy Candidates</span><strong>${counts.long || tradableSetups.filter((setup) => setup.action === "long").length}</strong></div>
-      <div class="workspace-stat-card"><span>Short / Sell</span><strong>${counts.short || tradableSetups.filter((setup) => setup.action === "short").length}</strong></div>
-      <div class="workspace-stat-card"><span>Watch</span><strong>${counts.watch || watchSetups.length}</strong></div>
-      <div class="workspace-stat-card"><span>Blocked / No Trade</span><strong>${blockedSetups.length}</strong></div>
+      <div class="workspace-stat-card"><span>Final Buy</span><strong>${finalCounts.final_buy ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>Final Sell</span><strong>${finalCounts.final_sell ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>Needs Review</span><strong>${finalCounts.review ?? 0}</strong></div>
+      <div class="workspace-stat-card"><span>Deterministic Buy/Sell</span><strong>${(counts.long || tradableSetups.filter((setup) => setup.action === "long").length) + (counts.short || tradableSetups.filter((setup) => setup.action === "short").length)}</strong></div>
+      <div class="workspace-stat-card"><span>LLM Mode</span><strong>${prettyLabel(finalSelection?.llm_agent?.mode || "loading")}</strong></div>
+      <div class="workspace-stat-card"><span>Policy Max Pos</span><strong>${formatNumber((finalSelection?.portfolio_policy?.max_position_pct || state.portfolioPolicySettings.portfolioMaxPositionPct || 0) * 100, 1)}%</strong></div>
       <div class="workspace-stat-card"><span>Broker</span><strong>${brokerReady ? "Paper Ready" : prettyLabel(broker.blocked_reason || broker.status || "guarded")}</strong></div>
       <div class="workspace-stat-card"><span>Risk</span><strong>${prettyLabel(risk.status || monitor.risk_status || "unknown")}</strong></div>
-      <div class="workspace-stat-card"><span>Positions</span><strong>${monitor.position_count ?? 0}</strong></div>
-      <div class="workspace-stat-card"><span>Open Orders</span><strong>${monitor.open_order_count ?? 0}</strong></div>
     `;
   }
 
@@ -3917,12 +4281,16 @@ function renderTradingView() {
   }
 
   if (elements.selectionAgentProcess) {
-    elements.selectionAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("selection"));
+    elements.selectionAgentProcess.innerHTML = `${renderAgentProcessPanel(buildAgentProcess("selection"))}${renderSelectionLanes(finalSelection)}`;
+  }
+
+  if (elements.selectionFinalProcedure) {
+    elements.selectionFinalProcedure.innerHTML = renderFinalSelectionProcedure(finalSelection);
   }
 
   if (elements.tradingPlanLists) {
-    elements.tradingPlanLists.innerHTML = renderTradeLists(setups, { includePreview: true });
-    attachTradeListActions(elements.tradingPlanLists, setups);
+    elements.tradingPlanLists.innerHTML = renderFinalSelectionLists(finalSelection, { includePreview: true });
+    attachFinalSelectionActions(elements.tradingPlanLists);
   }
 
   if (elements.tradingExecutionConsole) {
@@ -4726,9 +5094,11 @@ function renderPortfolioAgentView() {
   const orders = monitor.open_orders || [];
   const account = monitor.account || {};
   const equity = account.portfolio_value || account.equity || risk.equity || 0;
+  const policySettings = state.portfolioPolicySettings || monitor.portfolio_policy || {};
+  const weeklyTargetPct = Number(policySettings.portfolioWeeklyTargetPct || policySettings.weekly_target_pct || 0.03);
   const unrealized = positions.reduce((sum, position) => sum + Number(position.unrealized_pl || 0), 0);
   const weeklyPct = equity ? unrealized / equity : 0;
-  const weeklyProgress = Math.min(100, Math.max(0, (weeklyPct / 0.03) * 100));
+  const weeklyProgress = Math.min(100, Math.max(0, (weeklyPct / Math.max(0.001, weeklyTargetPct)) * 100));
 
   if (elements.portfolioAgentOverview) {
     elements.portfolioAgentOverview.innerHTML = `
@@ -4737,12 +5107,18 @@ function renderPortfolioAgentView() {
       ${agentMetricCard("Buying Power", formatUsdCompact(account.buying_power || risk.buying_power || 0), "Available cash")}
       ${agentMetricCard("Positions", monitor.position_count ?? positions.length, `${monitor.review_count || 0} need review`)}
       ${agentMetricCard("Close Candidates", monitor.close_candidate_count || 0, "Sell or reduce review")}
+      ${agentMetricCard("Reduce Candidates", monitor.reduce_candidate_count || 0, "Policy target or trailing review")}
       ${agentMetricCard("Open Orders", monitor.open_order_count ?? orders.length, "Broker-visible orders")}
     `;
   }
 
   if (elements.portfolioAgentProcess) {
     elements.portfolioAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("portfolio"));
+  }
+
+  if (elements.portfolioAgentPolicy) {
+    elements.portfolioAgentPolicy.innerHTML = renderPortfolioPolicyEditor();
+    attachPortfolioPolicyActions();
   }
 
   if (elements.portfolioAgentPositions) {
@@ -4774,15 +5150,15 @@ function renderPortfolioAgentView() {
         <div class="runtime-source-head">
           <div>
             <div class="section-kicker">Weekly Objective</div>
-            <h3>3% supervised target</h3>
+            <h3>${formatNumber(weeklyTargetPct * 100, 1)}% supervised target</h3>
           </div>
           <span class="sentiment-badge ${weeklyPct >= 0.03 ? "bullish" : weeklyPct < 0 ? "bearish" : "neutral"}">${formatSignedPercent(weeklyPct)}</span>
         </div>
-        <p class="workspace-copy">This progress uses visible unrealized P/L against current account value. It is a target and risk budget, not a promise of return.</p>
+        <p class="workspace-copy">This progress uses visible unrealized P/L against current account value. It is a configurable target and risk budget, not a promise of return.</p>
         <div class="runtime-progress"><span style="width:${weeklyProgress}%"></span></div>
         <div class="workspace-detail-grid">
           ${agentMetricCard("Visible P/L", formatUsdCompact(unrealized), "Open positions only")}
-          ${agentMetricCard("Target Dollars", formatUsdCompact(equity * 0.03), "3% of visible equity")}
+          ${agentMetricCard("Target Dollars", formatUsdCompact(equity * weeklyTargetPct), `${formatNumber(weeklyTargetPct * 100, 1)}% of visible equity`)}
           ${agentMetricCard("Risk State", prettyLabel(risk.status || monitor.risk_status || "unknown"), "Must stay acceptable")}
         </div>
       </div>
@@ -5293,6 +5669,7 @@ function attachEvents() {
     elements.marketAgentProcess,
     elements.signalsAgentProcess,
     elements.selectionAgentProcess,
+    elements.selectionFinalProcedure,
     elements.riskAgentOverview,
     elements.riskAgentProcess,
     elements.riskAgentDecisions,
@@ -5302,6 +5679,7 @@ function attachEvents() {
     elements.executionAgentConsole,
     elements.portfolioAgentOverview,
     elements.portfolioAgentProcess,
+    elements.portfolioAgentPolicy,
     elements.portfolioAgentPositions,
     elements.portfolioAgentGoal,
     elements.portfolioAgentOrders,

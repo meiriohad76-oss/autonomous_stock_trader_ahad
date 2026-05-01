@@ -1,4 +1,5 @@
 import { clamp, round } from "../utils/helpers.js";
+import { effectiveRiskLimits } from "./portfolio-policy.js";
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -29,13 +30,21 @@ function buildEmptyAccount(config) {
 }
 
 export function summarizeRiskConfig(config) {
+  const limits = effectiveRiskLimits(config);
+
   return {
-    max_gross_exposure_pct: config.riskMaxGrossExposurePct,
-    max_single_name_exposure_pct: config.riskMaxSingleNameExposurePct,
-    max_open_orders: config.riskMaxOpenOrders,
+    max_gross_exposure_pct: limits.max_gross_exposure_pct,
+    max_single_name_exposure_pct: limits.max_single_name_exposure_pct,
+    max_open_orders: limits.max_open_orders,
     block_when_runtime_constrained: Boolean(config.riskBlockWhenRuntimeConstrained),
     execution_max_order_notional_usd: config.executionMaxOrderNotionalUsd,
-    execution_max_position_pct: config.executionMaxPositionPct
+    execution_max_position_pct: Math.min(config.executionMaxPositionPct, config.portfolioMaxPositionPct || config.executionMaxPositionPct),
+    portfolio_policy_overlay: {
+      max_gross_exposure_pct: config.portfolioMaxGrossExposurePct,
+      max_position_pct: config.portfolioMaxPositionPct,
+      cash_reserve_pct: config.portfolioCashReservePct,
+      max_positions: config.portfolioMaxPositions
+    }
   };
 }
 
@@ -69,25 +78,26 @@ export function buildPortfolioRiskSnapshot({
   const grossExposurePct = grossExposure / equity;
   const singleNamePct = largestPosition?.exposure_pct || 0;
   const constrainedRuntime = Boolean(runtimeReliability?.pressure?.isConstrained);
+  const limits = effectiveRiskLimits(config);
   const warnings = [];
   const hardBlocks = [];
 
-  if (grossExposurePct >= config.riskMaxGrossExposurePct * 0.85) {
+  if (grossExposurePct >= limits.max_gross_exposure_pct * 0.85) {
     warnings.push("gross exposure is near configured maximum");
   }
-  if (singleNamePct >= config.riskMaxSingleNameExposurePct * 0.85) {
+  if (singleNamePct >= limits.max_single_name_exposure_pct * 0.85) {
     warnings.push("largest single-name exposure is near configured maximum");
   }
-  if (openOrders >= Math.max(1, config.riskMaxOpenOrders - 2)) {
+  if (openOrders >= Math.max(1, limits.max_open_orders - 2)) {
     warnings.push("open order count is near configured maximum");
   }
-  if (grossExposurePct > config.riskMaxGrossExposurePct) {
+  if (grossExposurePct > limits.max_gross_exposure_pct) {
     hardBlocks.push("gross_exposure_limit_exceeded");
   }
-  if (singleNamePct > config.riskMaxSingleNameExposurePct) {
+  if (singleNamePct > limits.max_single_name_exposure_pct) {
     hardBlocks.push("single_name_limit_exceeded");
   }
-  if (openOrders > config.riskMaxOpenOrders) {
+  if (openOrders > limits.max_open_orders) {
     hardBlocks.push("open_order_limit_exceeded");
   }
   if (config.riskBlockWhenRuntimeConstrained && constrainedRuntime) {
@@ -138,24 +148,25 @@ export function evaluateExecutionRisk(intent, portfolioRisk, config) {
     portfolioRisk.positions.find((position) => position.symbol === intent.ticker)?.exposure_pct || 0;
   const proposedSingleNamePct = existingTickerExposure + proposedNotional / Math.max(1, portfolioRisk.equity);
   const blockedReasons = [];
+  const limits = effectiveRiskLimits(config);
 
   checks.push({
     key: "gross_exposure",
     value: round(proposedGrossPct, 4),
-    limit: config.riskMaxGrossExposurePct,
-    pass: proposedGrossPct <= config.riskMaxGrossExposurePct
+    limit: limits.max_gross_exposure_pct,
+    pass: proposedGrossPct <= limits.max_gross_exposure_pct
   });
   checks.push({
     key: "single_name_exposure",
     value: round(proposedSingleNamePct, 4),
-    limit: config.riskMaxSingleNameExposurePct,
-    pass: proposedSingleNamePct <= config.riskMaxSingleNameExposurePct
+    limit: limits.max_single_name_exposure_pct,
+    pass: proposedSingleNamePct <= limits.max_single_name_exposure_pct
   });
   checks.push({
     key: "open_orders",
     value: portfolioRisk.open_orders,
-    limit: config.riskMaxOpenOrders,
-    pass: portfolioRisk.open_orders < config.riskMaxOpenOrders
+    limit: limits.max_open_orders,
+    pass: portfolioRisk.open_orders < limits.max_open_orders
   });
   checks.push({
     key: "runtime_constraint",

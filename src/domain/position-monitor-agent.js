@@ -38,7 +38,7 @@ function setupSupportsPosition(position, setup) {
   return setup.action === "long";
 }
 
-function monitorDecision(position, setup, riskSnapshot) {
+function monitorDecision(position, setup, riskSnapshot, portfolioPolicy = {}) {
   const reasons = [];
   let action = "hold";
 
@@ -48,6 +48,27 @@ function monitorDecision(position, setup, riskSnapshot) {
   } else if (!setupSupportsPosition(position, setup)) {
     reasons.push(`setup_now_${setup.action}`);
     action = setup.action === "no_trade" ? "close_candidate" : "review";
+  }
+
+  const stopLossPct = toNumber(portfolioPolicy.portfolioDefaultStopLossPct, 0.06);
+  const takeProfitPct = toNumber(portfolioPolicy.portfolioDefaultTakeProfitPct, 0.09);
+  const trailingStopPct = toNumber(portfolioPolicy.portfolioTrailingStopPct, 0.04);
+  const allowReductions = portfolioPolicy.portfolioAllowReductions !== false;
+
+  if (position.unrealized_plpc <= -Math.abs(stopLossPct)) {
+    reasons.push("policy_stop_loss_breached");
+    action = "close_candidate";
+  }
+
+  if (position.unrealized_plpc >= Math.abs(takeProfitPct)) {
+    reasons.push("policy_take_profit_reached");
+    if (allowReductions && action !== "close_candidate") {
+      action = "reduce_candidate";
+    }
+  }
+
+  if (trailingStopPct > 0 && position.unrealized_plpc >= trailingStopPct) {
+    reasons.push("policy_trailing_stop_monitor");
   }
 
   if (Math.abs(position.unrealized_plpc) >= 0.08) {
@@ -107,13 +128,14 @@ export function buildPositionMonitorSnapshot({
   positions = [],
   orders = [],
   tradeSetups = [],
-  riskSnapshot = null
+  riskSnapshot = null,
+  portfolioPolicy = null
 }) {
   const setupsByTicker = new Map((tradeSetups || []).map((setup) => [setup.ticker, setup]));
   const normalizedPositions = (positions || []).map(normalizePosition).filter((position) => position.symbol);
   const monitoredPositions = normalizedPositions.map((position) => {
     const setup = setupsByTicker.get(position.symbol) || null;
-    const decision = monitorDecision(position, setup, riskSnapshot);
+    const decision = monitorDecision(position, setup, riskSnapshot, portfolioPolicy || {});
 
     return {
       ...position,
@@ -126,6 +148,7 @@ export function buildPositionMonitorSnapshot({
     };
   });
   const reviewCount = monitoredPositions.filter((item) => item.monitor_action === "review").length;
+  const reduceCandidateCount = monitoredPositions.filter((item) => item.monitor_action === "reduce_candidate").length;
   const closeCandidateCount = monitoredPositions.filter((item) => item.monitor_action === "close_candidate").length;
   const openOrders = (orders || []).map(summarizeOpenOrder);
 
@@ -135,6 +158,8 @@ export function buildPositionMonitorSnapshot({
       ? "not_configured"
       : closeCandidateCount
         ? "action_needed"
+        : reduceCandidateCount
+          ? "review"
         : reviewCount
           ? "review"
           : "ok",
@@ -149,11 +174,26 @@ export function buildPositionMonitorSnapshot({
     position_count: monitoredPositions.length,
     open_order_count: openOrders.length,
     review_count: reviewCount,
+    reduce_candidate_count: reduceCandidateCount,
     close_candidate_count: closeCandidateCount,
     total_position_value: round(monitoredPositions.reduce((sum, position) => sum + position.market_value, 0), 2),
     risk_status: riskSnapshot?.status || null,
     positions: monitoredPositions,
     open_orders: openOrders,
+    portfolio_policy: portfolioPolicy
+      ? {
+          weekly_target_pct: portfolioPolicy.portfolioWeeklyTargetPct,
+          max_positions: portfolioPolicy.portfolioMaxPositions,
+          max_new_positions_per_cycle: portfolioPolicy.portfolioMaxNewPositionsPerCycle,
+          max_position_pct: portfolioPolicy.portfolioMaxPositionPct,
+          cash_reserve_pct: portfolioPolicy.portfolioCashReservePct,
+          default_stop_loss_pct: portfolioPolicy.portfolioDefaultStopLossPct,
+          default_take_profit_pct: portfolioPolicy.portfolioDefaultTakeProfitPct,
+          trailing_stop_pct: portfolioPolicy.portfolioTrailingStopPct,
+          allow_adds: portfolioPolicy.portfolioAllowAdds,
+          allow_reductions: portfolioPolicy.portfolioAllowReductions
+        }
+      : null,
     planning_candidates: !brokerStatus?.configured
       ? tradeSetups
           .slice(0, 8)
@@ -162,11 +202,12 @@ export function buildPositionMonitorSnapshot({
   };
 }
 
-export function createPositionMonitorAgent({ broker, getTradeSetups, getRiskSnapshot }) {
+export function createPositionMonitorAgent({ broker, getTradeSetups, getRiskSnapshot, getPortfolioPolicy }) {
   async function getSnapshot({ window = "1h", limit = 25 } = {}) {
     const brokerStatus = broker.getStatus();
     const tradeSetups = getTradeSetups({ window, limit, minConviction: 0 })?.setups || [];
     const riskSnapshot = getRiskSnapshot ? await getRiskSnapshot() : null;
+    const portfolioPolicy = getPortfolioPolicy ? getPortfolioPolicy() : null;
 
     if (!brokerStatus.configured) {
       return buildPositionMonitorSnapshot({
@@ -175,7 +216,8 @@ export function createPositionMonitorAgent({ broker, getTradeSetups, getRiskSnap
         positions: [],
         orders: [],
         tradeSetups,
-        riskSnapshot
+        riskSnapshot,
+        portfolioPolicy
       });
     }
 
@@ -191,7 +233,8 @@ export function createPositionMonitorAgent({ broker, getTradeSetups, getRiskSnap
       positions: Array.isArray(positions) ? positions : [],
       orders: Array.isArray(orders) ? orders : [],
       tradeSetups,
-      riskSnapshot
+      riskSnapshot,
+      portfolioPolicy
     });
   }
 

@@ -32,6 +32,15 @@ import { createRiskAgent } from "./domain/risk-agent.js";
 import { createPositionMonitorAgent } from "./domain/position-monitor-agent.js";
 import { buildTradingWorkflowStatus } from "./domain/trading-workflow.js";
 import { buildAgencyCycleStatus, chooseAgencyCycleAdvance } from "./domain/agency-cycle.js";
+import {
+  PORTFOLIO_POLICY_FIELDS,
+  buildPortfolioPolicySnapshot,
+  normalizePortfolioPolicyUpdates,
+  portfolioPolicyEnvUpdates,
+  readPortfolioPolicy
+} from "./domain/portfolio-policy.js";
+import { buildLlmSelectionSnapshot } from "./domain/llm-selection-agent.js";
+import { buildFinalSelectionSnapshot } from "./domain/final-selection.js";
 import { createCorporateEventsCollector } from "./domain/corporate-events.js";
 import { createSocialSentimentCollector } from "./domain/social-sentiment.js";
 import { createTradePrintsCollector } from "./domain/trade-prints.js";
@@ -945,7 +954,8 @@ export function createSentimentApp() {
   const positionMonitorAgent = createPositionMonitorAgent({
     broker,
     getTradeSetups: (options = {}) => tradeSetupAgent.getTradeSetups(options),
-    getRiskSnapshot: () => riskAgent.getSnapshot()
+    getRiskSnapshot: () => riskAgent.getSnapshot(),
+    getPortfolioPolicy: () => readPortfolioPolicy(config)
   });
   let humanApprovalAgent = null;
   const startupState = {
@@ -1045,6 +1055,14 @@ export function createSentimentApp() {
         auto_start_market_flow: config.autoStartMarketFlow,
         market_flow_settings: readMarketFlowSettings(config),
         screener_settings: readScreenerSettings(config),
+        portfolio_policy_settings: readPortfolioPolicy(config),
+        llm_selection: {
+          enabled: config.llmSelectionEnabled,
+          provider: config.llmSelectionProvider,
+          model: config.llmSelectionModel,
+          configured: Boolean(config.llmSelectionApiUrl && config.llmSelectionApiKey),
+          min_confidence: config.llmSelectionMinConfidence
+        },
         fundamental_market_data_provider: config.fundamentalMarketDataProvider,
         auto_start_fundamental_market_data: config.autoStartFundamentalMarketData,
         fundamental_sec_enabled: config.fundamentalSecEnabled,
@@ -1288,6 +1306,20 @@ export function createSentimentApp() {
         }))
       };
     },
+    getPortfolioPolicySettings() {
+      return {
+        settings: readPortfolioPolicy(config),
+        fields: Object.entries(PORTFOLIO_POLICY_FIELDS).map(([key, spec]) => ({
+          key,
+          type: spec.type,
+          label: spec.label,
+          help: spec.help,
+          min: spec.min ?? null,
+          max: spec.max ?? null,
+          step: spec.step ?? null
+        }))
+      };
+    },
     async updateMarketFlowSettings(nextSettings, { persist = true } = {}) {
       const updates = {};
 
@@ -1348,6 +1380,25 @@ export function createSentimentApp() {
 
       return this.getScreenerSettings();
     },
+    async updatePortfolioPolicySettings(nextSettings, { persist = true } = {}) {
+      const updates = normalizePortfolioPolicyUpdates(nextSettings);
+
+      Object.assign(config, updates);
+
+      if (persist && Object.keys(updates).length) {
+        await persistEnvUpdates(config.envPath, portfolioPolicyEnvUpdates(updates));
+      }
+
+      store.bus.emit("event", {
+        type: "snapshot",
+        timestamp: new Date().toISOString(),
+        settings_scope: "portfolio_policy"
+      });
+      await persistenceReady;
+      await persistence.saveStoreSnapshot(store);
+
+      return this.getPortfolioPolicySettings();
+    },
     getSectorDetail(sector) {
       const windows = ["15m", "1h", "4h", "1d", "7d"].reduce((acc, windowKey) => {
         const state = store.sentimentStates
@@ -1400,11 +1451,66 @@ export function createSentimentApp() {
     getMacroRegimeHistory(limit = 20) {
       return store.macroRegimeHistory.slice(0, limit);
     },
+    async getPortfolioPolicy() {
+      const riskSnapshot = await riskAgent.getSnapshot();
+      const positionMonitor = await positionMonitorAgent.getSnapshot({
+        window: config.defaultWindow,
+        limit: 25
+      });
+      return buildPortfolioPolicySnapshot({
+        config,
+        riskSnapshot,
+        positionMonitor
+      });
+    },
     getTradeSetups(options = {}) {
       return tradeSetupAgent.getTradeSetups(options);
     },
     getTradeSetupTicker(ticker, options = {}) {
       return tradeSetupAgent.getTickerSetup(ticker, options);
+    },
+    async getFinalSelection(options = {}) {
+      const window = options.window || config.defaultWindow;
+      const limit = options.limit ? Number(options.limit) : 12;
+      const minConviction = options.minConviction !== undefined ? Number(options.minConviction) : 0.35;
+      const tradeSetups = tradeSetupAgent.getTradeSetups({
+        window,
+        limit: Math.max(limit * 3, 30),
+        minConviction
+      });
+      const [riskSnapshot, positionMonitor] = await Promise.all([
+        riskAgent.getSnapshot(),
+        positionMonitorAgent.getSnapshot({
+          window,
+          limit: Math.max(limit * 2, 25)
+        })
+      ]);
+      const portfolioPolicy = readPortfolioPolicy(config);
+      const llmSelection = buildLlmSelectionSnapshot({
+        config,
+        tradeSetups,
+        portfolioPolicy,
+        riskSnapshot,
+        positionMonitor
+      });
+
+      return buildFinalSelectionSnapshot({
+        config,
+        tradeSetups,
+        llmSelection,
+        portfolioPolicy,
+        riskSnapshot,
+        positionMonitor,
+        window,
+        limit
+      });
+    },
+    async getFinalSelectionTicker(ticker, options = {}) {
+      const finalSelection = await this.getFinalSelection({
+        ...options,
+        limit: Math.max(50, Number(options.limit || 50))
+      });
+      return finalSelection.candidates.find((candidate) => candidate.ticker === String(ticker).toUpperCase()) || null;
     },
     async getTradingWorkflowStatus(options = {}) {
       refreshSecFundamentalsHealthPreview(store, config);
@@ -1515,19 +1621,22 @@ export function createSentimentApp() {
         }
         result = { actions: actionResults };
       } else if (selectedAction.type === "execution_preview") {
-        const tradeSetups = tradeSetupAgent.getTradeSetups({
+        const finalSelection = await this.getFinalSelection({
           window,
           limit: options.limit ? Number(options.limit) : 25,
           minConviction: options.minConviction !== undefined ? Number(options.minConviction) : 0.35
         });
-        topSetup = (tradeSetups.setups || []).find((setup) => ["long", "short"].includes(setup.action)) || null;
+        const topFinalCandidate = (finalSelection.candidates || []).find((candidate) => candidate.execution_allowed) || null;
+        topSetup = topFinalCandidate?.setup_for_execution || null;
         if (topSetup) {
           preview = await executionAgent.previewOrder({
             ticker: topSetup.ticker,
-            window
+            window,
+            setup: topSetup
           });
           result = {
             ticker: topSetup.ticker,
+            final_selection_reason: topFinalCandidate.final_reason,
             preview_allowed: Boolean(preview.execution_allowed),
             broker_ready: Boolean(preview.broker_ready),
             blocked_reason: preview.intent?.blocked_reason || preview.risk?.blocked_reason || null

@@ -138,6 +138,32 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/settings/portfolio-policy" && request.method === "GET") {
+    sendJson(response, 200, app.getPortfolioPolicySettings());
+    return;
+  }
+
+  if (pathname === "/api/settings/portfolio-policy" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", async () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        const policy = await app.updatePortfolioPolicySettings(payload, {
+          persist: String(payload.persist ?? "true").toLowerCase() !== "false"
+        });
+        sendJson(response, 200, { ok: true, policy });
+      } catch (error) {
+        sendJson(response, 400, { ok: false, error: error.message });
+      }
+    });
+    return;
+  }
+
   if (pathname === "/api/fundamentals/dashboard" && request.method === "GET") {
     sendJson(response, 200, app.getFundamentalsSnapshot({
       sector: query.sector || null,
@@ -314,6 +340,47 @@ export async function routeRequest(app, request, response) {
       minConviction: query.minConviction ? Number(query.minConviction) : 0.35,
       action: query.action || null
     }));
+    return;
+  }
+
+  if (pathname === "/api/final-selection" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getFinalSelection({
+        window: query.window || app.config.defaultWindow,
+        limit: query.limit ? Number(query.limit) : 12,
+        minConviction: query.minConviction !== undefined ? Number(query.minConviction) : undefined
+      }));
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (pathname?.startsWith("/api/final-selection/ticker/") && request.method === "GET") {
+    try {
+      const ticker = decodeURIComponent(pathname.split("/").pop()).toUpperCase();
+      const detail = await app.getFinalSelectionTicker(ticker, {
+        window: query.window || app.config.defaultWindow,
+        limit: query.limit ? Number(query.limit) : 50,
+        minConviction: query.minConviction !== undefined ? Number(query.minConviction) : undefined
+      });
+      if (!detail) {
+        sendJson(response, 404, { error: `Final selection candidate for ${ticker} not found` });
+        return;
+      }
+      sendJson(response, 200, detail);
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (pathname === "/api/portfolio/policy" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getPortfolioPolicy());
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
     return;
   }
 

@@ -73,7 +73,14 @@ export function summarizeExecutionConfig(config) {
     min_conviction: config.executionMinConviction,
     min_notional_usd: config.executionMinNotionalUsd,
     max_order_notional_usd: config.executionMaxOrderNotionalUsd,
-    max_position_pct: config.executionMaxPositionPct,
+    max_position_pct: Math.min(config.executionMaxPositionPct, config.portfolioMaxPositionPct || config.executionMaxPositionPct),
+    portfolio_policy: {
+      max_positions: config.portfolioMaxPositions,
+      max_new_positions_per_cycle: config.portfolioMaxNewPositionsPerCycle,
+      cash_reserve_pct: config.portfolioCashReservePct,
+      default_stop_loss_pct: config.portfolioDefaultStopLossPct,
+      default_take_profit_pct: config.portfolioDefaultTakeProfitPct
+    },
     allow_shorts: Boolean(config.executionAllowShorts),
     use_bracket_orders: Boolean(config.executionUseBracketOrders),
     order_type: config.executionDefaultOrderType,
@@ -120,7 +127,11 @@ export function buildExecutionIntent(setup, account, config, { now = new Date() 
 
   const equity = accountNumber(account, "equity", config.executionDefaultEquityUsd);
   const buyingPower = accountNumber(account, "buying_power", equity);
-  const setupPositionPct = clamp(numberOrNull(setup.position_size_pct) ?? 0, 0, config.executionMaxPositionPct);
+  const setupPositionPct = clamp(
+    numberOrNull(setup.position_size_pct) ?? 0,
+    0,
+    Math.min(config.executionMaxPositionPct, config.portfolioMaxPositionPct || config.executionMaxPositionPct)
+  );
   const targetNotional = equity * setupPositionPct;
   const cappedNotional = Math.min(
     targetNotional,

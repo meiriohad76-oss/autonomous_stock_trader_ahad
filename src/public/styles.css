@@ -1598,6 +1598,104 @@ input:focus-visible {
   text-align: right;
 }
 
+.selector-lane-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.selector-lane-card,
+.portfolio-policy-panel,
+.policy-rule-card,
+.final-selection-procedure .runtime-control-card {
+  min-width: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 14px;
+}
+
+.selector-lane-card h3,
+.portfolio-policy-panel h3 {
+  margin: 4px 0 8px;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.selector-lane-card p,
+.final-selection-reason {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.final-selection-procedure {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.final-procedure-list {
+  margin-top: 10px;
+}
+
+.final-selection-row {
+  align-items: stretch;
+}
+
+.final-selection-reason {
+  padding: 0 10px 10px;
+}
+
+.policy-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.policy-rule-card {
+  display: grid;
+  gap: 8px;
+}
+
+.policy-rule-card span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.policy-rule-card input {
+  width: 100%;
+  height: 36px;
+}
+
+.policy-rule-card input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+}
+
+.policy-rule-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.boolean-rule {
+  align-content: start;
+}
+
+.policy-guardrail-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .trade-setup-runtime-summary {
   margin: 8px 0 0;
   color: #adc6ff;
@@ -2959,6 +3057,10 @@ input:focus-visible {
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .selector-lane-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -3015,6 +3117,7 @@ input:focus-visible {
   .health-grid,
   .summary-grid,
   .trading-flow-map,
+  .policy-rule-grid,
   .workflow-step-grid,
   .workflow-action-grid {
     grid-template-columns: 1fr 1fr;
@@ -3146,7 +3249,9 @@ input:focus-visible {
   .learning-suggestion-grid,
   .next-batch-strip,
   .feedback-pill-list,
-  .agent-process-grid {
+  .agent-process-grid,
+  .policy-rule-grid,
+  .selector-lane-grid {
     grid-template-columns: 1fr;
   }
 
