@@ -18,6 +18,7 @@ import { createStore, resetStore } from "./domain/store.js";
 import { TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
+import { createExecutionAgent } from "./domain/execution.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
   marketFlowVolumeSpikeThreshold: { env: "MARKET_FLOW_VOLUME_SPIKE_THRESHOLD", min: 1, max: 20, digits: 2 },
@@ -710,6 +711,33 @@ export function createSentimentApp() {
     getEarningsCalendar() {
       return Object.fromEntries(store.earningsCalendar);
     },
+    getExecutionState() {
+      const pending = [...store.pendingApprovals.values()].filter((a) => a.status === "pending");
+      return { ...store.executionState, pending_count: pending.length, pending_approvals: pending };
+    },
+    getPositions() {
+      return [...store.positions.values()];
+    },
+    getOrders(status = "all") {
+      const orders = [...store.orders.values()];
+      if (status === "all") return orders;
+      return orders.filter((o) => o.status === status);
+    },
+    getExecutionLog() {
+      return store.executionLog.slice(0, 200);
+    },
+    async approveExecution(approvalId) {
+      return executionAgent.approve(approvalId);
+    },
+    rejectExecution(approvalId, reason) {
+      return executionAgent.reject(approvalId, reason);
+    },
+    setKillSwitch(enabled, reason) {
+      executionAgent.setKillSwitch(enabled, reason);
+    },
+    async syncExecution() {
+      return executionAgent.sync();
+    },
     getTrackedFundamentalCompanies() {
       return fundamentals.getTrackedCompanies();
     },
@@ -737,6 +765,7 @@ export function createSentimentApp() {
 
   const secFundamentalsCollector = createSecFundamentalsCollector(app);
   const tradeSetupAgent = createTradeSetupAgent(app);
+  const executionAgent = createExecutionAgent(app);
   let autosaveTimer = null;
 
   app.startLiveSources = async function startLiveSources() {
@@ -754,7 +783,8 @@ export function createSentimentApp() {
       tradeSetupAgent.start(),
       corporateEventsCollector.start(),
       socialSentimentCollector.start(),
-      tradePrintsCollector.start()
+      tradePrintsCollector.start(),
+      executionAgent.start()
     ]);
     await marketFlowMonitor.start();
 
@@ -777,6 +807,7 @@ export function createSentimentApp() {
     corporateEventsCollector.stop();
     socialSentimentCollector.stop();
     tradePrintsCollector.stop();
+    executionAgent.stop();
     fundamentalMarketDataService.stop();
     secFundamentalsCollector.stop();
     if (autosaveTimer) {
