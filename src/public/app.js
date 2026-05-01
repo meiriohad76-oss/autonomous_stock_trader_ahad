@@ -89,6 +89,8 @@ const state = {
   runtimeActionResult: null,
   agencyAdvanceState: "",
   agencyAdvanceResult: null,
+  agencyRunState: "",
+  agencyRunResult: null,
   selectedSignal: null,
   selectedSector: null
 };
@@ -456,7 +458,7 @@ function agencyActionButton(action, className = "panel-action runtime-action-but
 }
 
 function advanceCycleButton(label = "Advance Cycle") {
-  const disabled = state.agencyAdvanceState === "running" || state.runtimeActionState === "running";
+  const disabled = state.agencyAdvanceState === "running" || state.agencyRunState === "running" || state.runtimeActionState === "running";
   return `
     <button
       type="button"
@@ -467,6 +469,22 @@ function advanceCycleButton(label = "Advance Cycle") {
     >
       <span class="material-symbols-outlined">${disabled ? "progress_activity" : "play_arrow"}</span>
       ${escapeHtml(disabled ? "Advancing..." : label)}
+    </button>
+  `;
+}
+
+function runAgencyCycleButton(label = "Run Agency Cycle") {
+  const disabled = state.agencyRunState === "running" || state.agencyAdvanceState === "running" || state.runtimeActionState === "running";
+  return `
+    <button
+      type="button"
+      class="panel-action runtime-action-button agency-run-action"
+      data-agency-run="true"
+      ${disabled ? "disabled" : ""}
+      title="Run a bounded agency cycle: refresh data workers, recompute selection, refresh risk and portfolio snapshots. This never submits an Alpaca order."
+    >
+      <span class="material-symbols-outlined">${disabled ? "progress_activity" : "play_circle"}</span>
+      ${escapeHtml(disabled ? "Running Cycle..." : label)}
     </button>
   `;
 }
@@ -2006,13 +2024,23 @@ function renderAgencyCyclePanel(cycle) {
             ${(cycle.next_actions || []).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
           </ul>
           <div class="process-action-row">
+            ${runAgencyCycleButton()}
             ${advanceCycleButton()}
             ${agencyActionButton(cycle.primary_action)}
             ${currentWorker?.view ? `<button type="button" class="panel-action runtime-action-button" data-agent-view="${escapeHtml(currentWorker.view)}"><span class="material-symbols-outlined">open_in_new</span>Open Worker</button>` : ""}
           </div>
           ${
+            state.agencyRunState && state.agencyRunState !== "running"
+              ? `<div class="cycle-advance-result ${state.agencyRunResult?.ok === false ? "bearish" : "neutral"}">${escapeHtml(state.agencyRunState)}</div>`
+              : state.agencyRunState === "running"
+                ? `<div class="cycle-advance-result neutral">Running bounded agency cycle. No order will be submitted.</div>`
+                : ""
+          }
+          ${
             state.agencyAdvanceState && state.agencyAdvanceState !== "running"
               ? `<div class="cycle-advance-result ${state.agencyAdvanceResult?.ok === false ? "bearish" : "neutral"}">${escapeHtml(state.agencyAdvanceState)}</div>`
+              : state.agencyAdvanceState === "running"
+                ? `<div class="cycle-advance-result neutral">Advancing the current worker. No order will be submitted.</div>`
               : ""
           }
         </div>
@@ -5000,6 +5028,7 @@ function renderAgencyCommandCenter() {
         <p>Run safe one-shot data refreshes when evidence is stale. Review Selection, Risk, and Execution before any paper transaction reaches Alpaca.</p>
       </div>
       <div class="workflow-control-actions">
+        ${runAgencyCycleButton()}
         ${runtimeActionButton("refresh_universe", null, "Refresh Universe", "sync")}
         ${runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database")}
         ${runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")}
@@ -5629,6 +5658,12 @@ async function handleExecutionConsoleClick(event) {
 }
 
 async function handleAgencyPanelClick(event) {
+  const runButton = event.target.closest("[data-agency-run]");
+  if (runButton && !runButton.disabled) {
+    await runAgencyCycle();
+    return true;
+  }
+
   const advanceButton = event.target.closest("[data-agency-advance]");
   if (advanceButton && !advanceButton.disabled) {
     await advanceAgencyCycle();
@@ -5786,6 +5821,46 @@ async function advanceAgencyCycle() {
   } catch (error) {
     state.agencyAdvanceResult = { ok: false, error: error.message };
     state.agencyAdvanceState = error.message;
+    render();
+  }
+}
+
+function agencyRunSummary(payload) {
+  if (!payload?.ok) {
+    return payload?.error || "Agency cycle run failed.";
+  }
+  const run = payload.run || {};
+  const pieces = [
+    `${run.ok_count || 0} worker action${(run.ok_count || 0) === 1 ? "" : "s"} completed`,
+    `${run.skipped_count || 0} skipped`,
+    `${run.failed_count || 0} failed`,
+    `${run.final_buy || 0}/${run.final_sell || 0} final buy/sell`,
+    run.live_pricing_ready ? "live pricing ready" : "live pricing still not confirmed"
+  ];
+  const next = (run.next_actions || []).slice(0, 1)[0];
+  return `Agency cycle run complete: ${pieces.join(", ")}.${next ? ` Next: ${next}` : ""}`;
+}
+
+async function runAgencyCycle() {
+  state.agencyRunState = "running";
+  state.agencyRunResult = null;
+  render();
+
+  try {
+    const payload = await postJson("/api/agency/cycle/run", {
+      window: state.activeWindow,
+      priceLimit: 25,
+      includeHeavy: false
+    });
+    state.agencyRunResult = payload;
+    state.agencyRunState = agencyRunSummary(payload);
+    if (payload.after) {
+      state.agencyCycle = payload.after;
+    }
+    await performRefresh();
+  } catch (error) {
+    state.agencyRunResult = { ok: false, error: error.message };
+    state.agencyRunState = error.message;
     render();
   }
 }

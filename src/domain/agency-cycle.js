@@ -98,7 +98,7 @@ const WORKERS = [
 ];
 
 const MARKET_REFRESH_ACTIONS = [
-  { action: "poll_once", source: "fundamental_market_data", label: "Refresh Pricing" },
+  { action: "poll_once", source: "fundamental_market_data", label: "Refresh Pricing", limit: 25 },
   { action: "poll_once", source: "market_flow", label: "Poll Market Flow" }
 ];
 
@@ -247,12 +247,24 @@ export function chooseAgencyCycleAdvance(cycle = {}) {
   }
 
   if (key === "deterministic_selection") {
-    return {
-      type: "view",
-      label: "Open Deterministic Selector",
-      reason: "The rules-based selector updates automatically from current Fundamentals, Market, Signals, and runtime inputs.",
-      view: "trading"
-    };
+    return current?.status === "waiting"
+      ? {
+          type: "runtime_bundle",
+          label: "Refresh Selection Inputs",
+          reason: "The deterministic selector has no buy/sell setup yet, so the safest next step is to refresh pricing, market flow, news, and insider evidence.",
+          actions: [
+            { action: "poll_once", source: "fundamental_market_data", label: "Refresh Pricing", limit: 25 },
+            { action: "poll_once", source: "market_flow", label: "Poll Market Flow" },
+            { action: "poll_once", source: "live_news", label: "Poll News" },
+            { action: "poll_once", source: "sec_form4", label: "Poll Form 4" }
+          ]
+        }
+      : {
+          type: "view",
+          label: "Open Deterministic Selector",
+          reason: "The rules-based selector updates automatically from current Fundamentals, Market, Signals, and runtime inputs.",
+          view: "trading"
+        };
   }
 
   if (key === "llm_selection") {
@@ -265,12 +277,24 @@ export function chooseAgencyCycleAdvance(cycle = {}) {
   }
 
   if (key === "final_selection") {
-    return {
-      type: "view",
-      label: "Open Final Selection",
-      reason: "Final Selection applies dual-selector agreement plus portfolio policy before Risk and Execution.",
-      view: "trading"
-    };
+    return current?.status === "waiting"
+      ? {
+          type: "runtime_bundle",
+          label: "Refresh Final Selection Inputs",
+          reason: "Final Selection has no candidate yet. Refresh live inputs, then rerun deterministic, LLM-shadow, policy, and risk snapshots.",
+          actions: [
+            { action: "poll_once", source: "fundamental_market_data", label: "Refresh Pricing", limit: 25 },
+            { action: "poll_once", source: "market_flow", label: "Poll Market Flow" },
+            { action: "poll_once", source: "live_news", label: "Poll News" },
+            { action: "poll_once", source: "sec_form4", label: "Poll Form 4" }
+          ]
+        }
+      : {
+          type: "view",
+          label: "Open Final Selection",
+          reason: "Final Selection applies dual-selector agreement plus portfolio policy before Risk and Execution.",
+          view: "trading"
+        };
   }
 
   if (key === "risk") {

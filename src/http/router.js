@@ -432,6 +432,33 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/agency/cycle/run" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", async () => {
+      try {
+        const payload = parseJsonBody(body) || {};
+        sendJson(response, 200, await app.runAgencyCycle({
+          window: payload.window || query.window || app.config.defaultWindow,
+          limit: payload.limit || (query.limit ? Number(query.limit) : 25),
+          minConviction: payload.minConviction !== undefined ? Number(payload.minConviction) : undefined,
+          includeHeavy:
+            payload.includeHeavy === true ||
+            payload.include_heavy === true ||
+            String(payload.includeHeavy || payload.include_heavy || query.includeHeavy || "").toLowerCase() === "true",
+          priceLimit: payload.priceLimit || payload.price_limit || (query.priceLimit ? Number(query.priceLimit) : undefined)
+        }));
+      } catch (error) {
+        sendJson(response, 400, { ok: false, error: error.message });
+      }
+    });
+    return;
+  }
+
   if (pathname === "/api/trade-setups/storage/summary" && request.method === "GET") {
     sendJson(response, 200, app.getTradeSetupStorageSummary());
     return;

@@ -411,6 +411,30 @@ function coerceRuntimeProfileValue(value, type) {
   return String(value);
 }
 
+function summarizeRuntimeActionResult(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return result;
+  }
+
+  if (result.universeName && result.counts) {
+    return {
+      universe_name: result.universeName,
+      as_of: result.asOf || null,
+      sources: result.sources || null,
+      counts: result.counts
+    };
+  }
+
+  const { companies, next_batch, pending_by_sector, live_preview, ...rest } = result;
+  return {
+    ...rest,
+    companies_count: Array.isArray(companies) ? companies.length : undefined,
+    next_batch_count: Array.isArray(next_batch) ? next_batch.length : undefined,
+    pending_sector_count: Array.isArray(pending_by_sector) ? pending_by_sector.length : undefined,
+    live_preview_count: Array.isArray(live_preview) ? live_preview.length : undefined
+  };
+}
+
 async function persistEnvUpdates(filePath, updates) {
   const raw = await readFile(filePath, "utf8");
   const lines = raw.split(/\r?\n/);
@@ -1243,12 +1267,15 @@ export function createSentimentApp() {
           await ensureFundamentalCoverage({ force: forceUniverse });
           result = await secFundamentalsCollector.pollOnce();
         } else if (canonicalSource === "fundamental_market_data") {
-          const companies = fundamentals.getTrackedCompanies();
+          const limit = Math.max(0, Math.floor(Number(payload.limit || payload.company_limit || 0)));
+          const companies = limit ? fundamentals.getTrackedCompanies().slice(0, limit) : fundamentals.getTrackedCompanies();
           const referenceMap = await fundamentalMarketDataService.getReferenceBatch(companies);
           const refreshed = await fundamentals.refreshMarketReference(referenceMap);
           result = {
             refreshed_companies: refreshed,
-            reference_count: referenceMap.size
+            reference_count: referenceMap.size,
+            limited: Boolean(limit),
+            requested_limit: limit || null
           };
         } else if (canonicalSource === "fundamental_universe") {
           result = await ensureFundamentalCoverage({ force: true });
@@ -1624,7 +1651,7 @@ export function createSentimentApp() {
             type: "runtime",
             action: payload.action,
             source: payload.source || null,
-            summary: runtimeResult.result || null
+            summary: summarizeRuntimeActionResult(runtimeResult.result) || null
           });
           return runtimeResult;
         } catch (error) {
@@ -1729,6 +1756,133 @@ export function createSentimentApp() {
         action: selectedAction,
         result,
         preview,
+        before,
+        after: afterWithLog,
+        log_entry: logEntry
+      };
+    },
+    async runAgencyCycle(options = {}) {
+      const window = options.window || config.defaultWindow;
+      const limit = options.limit ? Number(options.limit) : 25;
+      const includeHeavy = Boolean(options.includeHeavy || options.include_heavy);
+      const priceLimit = Math.max(1, Math.min(50, Math.floor(Number(options.priceLimit || options.price_limit || 25))));
+      const before = await this.getAgencyCycleStatus({ ...options, window, limit });
+      const actionResults = [];
+      const runtimeActions = [
+        { label: "Refresh Universe", payload: { action: "refresh_universe" } },
+        { label: "Refresh Pricing Sample", payload: { action: "poll_once", source: "fundamental_market_data", limit: priceLimit } },
+        { label: "Poll Market Flow", payload: { action: "poll_once", source: "market_flow" } },
+        { label: "Poll Live News", payload: { action: "poll_once", source: "live_news" } },
+        { label: "Poll SEC Form 4", payload: { action: "poll_once", source: "sec_form4" } },
+        { label: "Run SEC Fundamentals Batch", payload: { action: "poll_once", source: "sec_fundamentals" }, heavy: true },
+        { label: "Poll Trade Prints", payload: { action: "poll_once", source: "trade_prints" }, optional: true },
+        { label: "Poll SEC 13F", payload: { action: "poll_once", source: "sec_13f" }, optional: true, heavy: true }
+      ];
+
+      for (const item of runtimeActions) {
+        if (item.heavy && !includeHeavy) {
+          actionResults.push({
+            ok: null,
+            skipped: true,
+            label: item.label,
+            action: item.payload.action,
+            source: item.payload.source || null,
+            reason: "Skipped by bounded cycle. Enable heavy actions from System or pass includeHeavy=true."
+          });
+          continue;
+        }
+
+        try {
+          const response = await this.runRuntimeReliabilityAction(item.payload);
+          const sourceStatus = item.payload.source
+            ? response.runtime_reliability?.sources?.find((source) => source.key === item.payload.source)
+            : null;
+          actionResults.push({
+            ok: true,
+            skipped: false,
+            label: item.label,
+            action: item.payload.action,
+            source: item.payload.source || null,
+            result: summarizeRuntimeActionResult(response.result) || null,
+            source_status: sourceStatus
+              ? {
+                  status: sourceStatus.status,
+                  provider: sourceStatus.provider,
+                  last_success_at: sourceStatus.last_success_at,
+                  last_error: sourceStatus.last_error
+                }
+              : null
+          });
+        } catch (error) {
+          const skipped = /disabled by configuration/i.test(error.message);
+          actionResults.push({
+            ok: skipped ? null : false,
+            skipped,
+            label: item.label,
+            action: item.payload.action,
+            source: item.payload.source || null,
+            error: error.message
+          });
+        }
+      }
+
+      const [finalSelection, riskSnapshot, positionMonitor] = await Promise.all([
+        this.getFinalSelection({ window, limit, minConviction: options.minConviction !== undefined ? Number(options.minConviction) : undefined }),
+        riskAgent.getSnapshot(),
+        positionMonitorAgent.getSnapshot({ window, limit: options.positionLimit ? Number(options.positionLimit) : 25 })
+      ]);
+      const after = await this.getAgencyCycleStatus({ ...options, window, limit });
+      const workflowStatus = await this.getTradingWorkflowStatus({ ...options, window, limit });
+      const logEntry = {
+        id: `cycle-run-${Date.now()}`,
+        at: new Date().toISOString(),
+        worker_key: before.current_worker_key,
+        worker_label: before.current_worker_label,
+        action_type: "agency_run",
+        action_label: "Run Agency Cycle",
+        reason: "Bounded agency run refreshed data workers, then recomputed selection, final selection, risk, portfolio, and learning snapshots.",
+        before_status: before.status,
+        before_mode: before.mode,
+        after_status: after.status,
+        after_mode: after.mode,
+        after_worker_key: after.current_worker_key,
+        after_worker_label: after.current_worker_label,
+        submitted_order: false,
+        preview_ticker: null,
+        action_results: actionResults
+      };
+      store.agencyCycleLog = [logEntry, ...(store.agencyCycleLog || [])].slice(0, 25);
+      const okCount = actionResults.filter((item) => item.ok === true).length;
+      const failedCount = actionResults.filter((item) => item.ok === false).length;
+      const skippedCount = actionResults.filter((item) => item.skipped).length;
+      const afterWithLog = {
+        ...after,
+        recent_advances: store.agencyCycleLog.slice(0, 5)
+      };
+
+      return {
+        ok: failedCount === 0,
+        submitted_order: false,
+        action: {
+          type: "agency_run",
+          label: "Run Agency Cycle"
+        },
+        run: {
+          actions: actionResults,
+          ok_count: okCount,
+          failed_count: failedCount,
+          skipped_count: skippedCount,
+          include_heavy: includeHeavy,
+          price_limit: priceLimit,
+          final_executable: finalSelection.counts?.executable || 0,
+          final_buy: finalSelection.counts?.final_buy || 0,
+          final_sell: finalSelection.counts?.final_sell || 0,
+          risk_status: riskSnapshot.status || positionMonitor.risk_status || "unknown",
+          live_pricing_ready: Boolean(workflowStatus.live_data?.live_pricing_ready),
+          can_preview_orders: Boolean(afterWithLog.can_preview_orders),
+          can_submit_orders: Boolean(afterWithLog.can_submit_orders),
+          next_actions: afterWithLog.next_actions || []
+        },
         before,
         after: afterWithLog,
         log_entry: logEntry

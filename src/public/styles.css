@@ -623,6 +623,12 @@ input:focus-visible {
   color: var(--text);
 }
 
+.agency-run-action {
+  border-color: rgba(68, 138, 255, 0.32);
+  background: rgba(68, 138, 255, 0.14);
+  color: var(--text);
+}
+
 .cycle-advance-result {
   padding: 10px;
   border-radius: 10px;
