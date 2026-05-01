@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ahad Trading | Autonomous Dashboard</title>
+    <title>Ahad Trading | Autonomous Trade Agency</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -26,18 +26,20 @@
           <span class="brand-mark">A</span>
           <span>
             <span class="brand-name">Ahad Trading</span>
-            <span class="brand-subtitle">Autonomous System</span>
+            <span class="brand-subtitle">Trade Agency</span>
           </span>
         </a>
         <nav class="topnav" aria-label="Primary">
-          <button class="topnav-link active" data-view="overview" type="button">Dashboard</button>
-          <button class="topnav-link" data-view="markets" type="button">Markets</button>
-          <button class="topnav-link" data-view="watch" type="button">Watchlist</button>
-          <a class="topnav-link" href="/fundamentals.html">Fundamentals</a>
-          <a class="topnav-link" href="/fundamentals-v2.html">Fundamentals V2</a>
-          <button class="topnav-link" data-view="alerts" type="button">Signals</button>
-          <button class="topnav-link" data-view="trading" type="button">Trading Plan</button>
-          <button class="topnav-link" data-view="system" type="button">Settings</button>
+          <button class="topnav-link active" data-view="overview" type="button">Command</button>
+          <button class="topnav-link" data-view="universe" type="button">Universe</button>
+          <a class="topnav-link" href="/fundamentals.html">Fundamentals Agent</a>
+          <button class="topnav-link" data-view="markets" type="button">Market Agent</button>
+          <button class="topnav-link" data-view="alerts" type="button">Signals Agent</button>
+          <button class="topnav-link" data-view="trading" type="button">Selection Agent</button>
+          <button class="topnav-link" data-view="risk" type="button">Risk</button>
+          <button class="topnav-link" data-view="execution" type="button">Execution</button>
+          <button class="topnav-link" data-view="portfolio" type="button">Portfolio</button>
+          <button class="topnav-link" data-view="system" type="button">System</button>
         </nav>
       </div>
 
@@ -68,14 +70,14 @@
 
     <div class="market-ticker-bar" aria-label="Market status strip">
       <div class="ticker-track">
-        <span><strong>Evidence Quality</strong> live trust weighting</span>
-        <span><strong>Sentiment</strong> real-time news and market flow</span>
-        <span><strong>Fundamentals</strong> screener-gated universe</span>
-        <span><strong>Trade Setup</strong> macro-aware signal ranking</span>
-        <span><strong>Risk</strong> confidence and source checks active</span>
-        <span><strong>Evidence Quality</strong> live trust weighting</span>
-        <span><strong>Sentiment</strong> real-time news and market flow</span>
-        <span><strong>Fundamentals</strong> screener-gated universe</span>
+        <span><strong>Target</strong> supervised +3% weekly objective</span>
+        <span><strong>Universe Agent</strong> S&amp;P 100 + QQQ only</span>
+        <span><strong>Fundamentals Agent</strong> business quality ranking</span>
+        <span><strong>Market Agent</strong> regime and sector trends</span>
+        <span><strong>Signals Agent</strong> alerts, flow, news, insiders</span>
+        <span><strong>Selection Agent</strong> buy/sell recommendations</span>
+        <span><strong>Risk Manager</strong> sizing and exposure approval</span>
+        <span><strong>Execution Agent</strong> Alpaca paper tickets</span>
       </div>
     </div>
 
@@ -84,7 +86,7 @@
         <div class="side-brand-mark">A</div>
         <div>
           <strong>Ahad Trading</strong>
-          <span>Autonomous System</span>
+          <span>Trade Agency</span>
         </div>
       </div>
 
@@ -97,16 +99,20 @@
       </div>
 
       <button class="side-link active" data-view="overview" type="button">
-        <span class="material-symbols-outlined">dashboard</span>
-        <span>Dashboard</span>
+        <span class="material-symbols-outlined">hub</span>
+        <span>Command</span>
+      </button>
+      <button class="side-link" data-view="universe" type="button">
+        <span class="material-symbols-outlined">dataset</span>
+        <span>Universe</span>
       </button>
       <button class="side-link" data-view="markets" type="button">
         <span class="material-symbols-outlined">show_chart</span>
-        <span>Markets</span>
+        <span>Market</span>
       </button>
       <button class="side-link" data-view="watch" type="button">
-        <span class="material-symbols-outlined">star</span>
-        <span>Watchlist</span>
+        <span class="material-symbols-outlined">finance_mode</span>
+        <span>Fund</span>
       </button>
       <button class="side-link" data-view="alerts" type="button">
         <span class="material-symbols-outlined">crisis_alert</span>
@@ -114,7 +120,19 @@
       </button>
       <button class="side-link" data-view="trading" type="button">
         <span class="material-symbols-outlined">assignment</span>
-        <span>Trading Plan</span>
+        <span>Select</span>
+      </button>
+      <button class="side-link" data-view="risk" type="button">
+        <span class="material-symbols-outlined">shield</span>
+        <span>Risk</span>
+      </button>
+      <button class="side-link" data-view="execution" type="button">
+        <span class="material-symbols-outlined">order_approve</span>
+        <span>Exec</span>
+      </button>
+      <button class="side-link" data-view="portfolio" type="button">
+        <span class="material-symbols-outlined">account_balance_wallet</span>
+        <span>Book</span>
       </button>
       <button class="side-link" data-view="system" type="button">
         <span class="material-symbols-outlined">memory</span>
@@ -133,6 +151,7 @@
 
     <main class="app-stage">
       <section class="view is-active" data-view-panel="overview">
+        <div id="agency-command-center" class="agency-command-center"></div>
         <div class="dashboard-shell">
           <section class="column column-left">
             <article class="panel pulse-panel">
@@ -314,8 +333,8 @@
                   <span>Only fresh, sourced market signals are allowed into decision-making. Seed/demo data is blocked in production mode.</span>
                 </li>
                 <li>
-                  <strong>Trade Setup Agent builds lists</strong>
-                  <span>Buy, short/sell, and watch lists combine fundamentals, sentiment, macro, risk, and runtime guardrails.</span>
+                  <strong>Selection Agent builds lists</strong>
+                  <span>Buy, short/sell, and watch lists combine fundamentals, market regime, signals, risk, and runtime guardrails.</span>
                 </li>
                 <li>
                   <strong>Execution stays gated</strong>
@@ -327,8 +346,8 @@
             <article class="panel trade-agent-panel">
               <div class="panel-toolbar feed-toolbar">
                 <div>
-                  <h2>Trade Setup Agent</h2>
-                  <p>Ranked long, short, and watch ideas</p>
+                  <h2>Selection Agent Output</h2>
+                  <p>Ranked buy, sell, and watch recommendations</p>
                 </div>
                 <span class="material-symbols-outlined feed-tune">smart_toy</span>
               </div>
@@ -349,13 +368,53 @@
         </div>
       </section>
 
+      <section class="view" data-view-panel="universe">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel universe-agent-panel">
+            <div class="panel-toolbar">
+              <div>
+                <div class="section-kicker">Worker 1</div>
+                <h2>Universe Agent</h2>
+                <p>Defines the stocks the agency is allowed to consider: S&amp;P 100 plus QQQ holdings.</p>
+              </div>
+              <span class="material-symbols-outlined feed-tune">dataset</span>
+            </div>
+            <div id="universe-agent-overview" class="workspace-card-grid"></div>
+            <div id="universe-agent-coverage" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel fundamentals-agent-panel">
+            <div class="panel-toolbar">
+              <div>
+                <div class="section-kicker">Worker 2</div>
+                <h2>Fundamentals Agent Output</h2>
+                <p>Ranks the universe by financial quality, valuation, growth, stability, and sector-relative strength.</p>
+              </div>
+              <a class="panel-action" href="/fundamentals.html">Open Deep Dashboard</a>
+            </div>
+            <div id="fundamentals-agent-summary" class="workspace-card-grid"></div>
+            <div id="fundamentals-agent-table" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Agent Handoff</h2>
+                <p>Universe and fundamentals feed the Market, Signals, and Selection workers. Rejected names can still appear for monitoring, but they should not reach execution without explicit review.</p>
+              </div>
+            </div>
+            <div id="universe-agent-handoff" class="workspace-detail"></div>
+          </article>
+        </div>
+      </section>
+
       <section class="view" data-view-panel="markets">
         <div class="workspace-grid">
           <article class="panel workspace-panel">
             <div class="panel-toolbar">
               <div>
                 <h2>Sector Strength</h2>
-                <p>Grouped view of the currently visible names, ranked by average sentiment strength and confidence.</p>
+                <p>Market &amp; Sector Agent: identifies bullish and bearish sector trends that can help or hurt each stock.</p>
               </div>
               <div class="chip-row" id="markets-filter-tabs">
                 <button class="time-chip active" data-market-filter="all" type="button">All</button>
@@ -375,7 +434,7 @@
             <div class="panel-toolbar">
               <div>
                 <h2>Market Comparison</h2>
-                <p>Ranks visible names by active conviction: sentiment strength, confidence, momentum change, and story velocity.</p>
+                <p>Ranks visible names by market trend alignment, sentiment strength, confidence, momentum, and story velocity.</p>
               </div>
             </div>
             <div id="markets-comparison-strip" class="workspace-card-grid compact-grid"></div>
@@ -411,8 +470,8 @@
           <article class="panel workspace-panel">
               <div class="panel-toolbar">
                 <div>
-                  <h2>Watchlist Focus</h2>
-                  <p>Highest-priority names right now, combining sentiment urgency with the current fundamentals screen stage.</p>
+                  <h2>Fundamentals Agent Watch Bench</h2>
+                  <p>Highest-priority names after the business-quality screen, enriched with current signal urgency.</p>
                 </div>
               </div>
             <div id="watch-cards" class="watch-card-grid"></div>
@@ -445,8 +504,8 @@
           <article class="panel workspace-panel">
             <div class="panel-toolbar">
               <div>
-                <h2>Active Alerts</h2>
-                <p>High-confidence and reversal triggers</p>
+                <h2>Signals Agent</h2>
+                <p>High-confidence alerts, reversal triggers, news, insider activity, institutional flow, and tape anomalies.</p>
               </div>
               <div class="chip-row" id="alerts-filter-tabs">
                 <button class="time-chip active" data-alert-filter="all" type="button">All</button>
@@ -486,8 +545,8 @@
           <article class="panel workspace-panel trading-flow-panel">
             <div class="panel-toolbar">
               <div>
-                <h2>Trading Workflow</h2>
-                <p>One place to see how ideas become buy, short/sell, watch, or blocked execution previews.</p>
+                <h2>Selection Agent</h2>
+                <p>Combines Fundamentals, Market/Sector, and Signals workers into ranked buy, sell, watch, and blocked lists.</p>
               </div>
             </div>
             <div class="trading-flow-map">
@@ -504,7 +563,7 @@
               <div class="trading-flow-step">
                 <span>3</span>
                 <strong>Trade Lists</strong>
-                <p>The Trade Setup Agent compiles buy, short/sell, and watch candidates.</p>
+                <p>The Selection Agent compiles buy, short/sell, and watch candidates.</p>
               </div>
               <div class="trading-flow-step">
                 <span>4</span>
@@ -519,8 +578,8 @@
           <article class="panel workspace-panel trading-list-panel">
             <div class="panel-toolbar">
               <div>
-                <h2>Compiled Trading Lists</h2>
-                <p>These are the current lists produced by the Trade Setup Agent. Preview before any paper order.</p>
+                <h2>Compiled Recommendations</h2>
+                <p>These are the current lists produced by the Selection Agent. Risk and Execution must approve before any paper order.</p>
               </div>
             </div>
             <div id="trading-plan-lists"></div>
@@ -529,11 +588,98 @@
           <article class="panel workspace-panel trading-execution-panel">
             <div class="panel-toolbar">
               <div>
-                <h2>Execution And Risk Console</h2>
-                <p>Alpaca paper status, risk limits, position monitor, and preview actions.</p>
+                <h2>Selection Handoff To Risk &amp; Execution</h2>
+                <p>Preview actions show how the selected recommendation would pass through Risk Manager and Alpaca paper execution.</p>
               </div>
             </div>
             <div id="trading-execution-console"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="risk">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <div class="section-kicker">Worker 5</div>
+                <h2>Risk Manager</h2>
+                <p>Reviews the Selection Agent's recommendations against portfolio exposure, sizing, source reliability, and runtime pressure.</p>
+              </div>
+            </div>
+            <div id="risk-agent-overview" class="workspace-card-grid"></div>
+            <div id="risk-agent-decisions" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Risk Inputs</h2>
+                <p>Portfolio, runtime, and data-quality checks used before a ticket can reach Alpaca.</p>
+              </div>
+            </div>
+            <div id="risk-agent-inputs" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Approved Path</h2>
+                <p>When risk approves, the Execution Agent receives only the final sized transaction tickets.</p>
+              </div>
+            </div>
+            <div id="risk-agent-handoff" class="workspace-detail"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="execution">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel trading-execution-panel">
+            <div class="panel-toolbar">
+              <div>
+                <div class="section-kicker">Worker 6</div>
+                <h2>Execution Agent</h2>
+                <p>Builds final Alpaca paper tickets after Selection and Risk Manager approval. The user must approve every transaction.</p>
+              </div>
+            </div>
+            <div id="execution-agent-console"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="portfolio">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <div class="section-kicker">Post Trade Worker</div>
+                <h2>Portfolio Monitor</h2>
+                <p>Tracks open positions and orders, compares holdings to the latest recommendations, and highlights exits or reductions.</p>
+              </div>
+            </div>
+            <div id="portfolio-agent-overview" class="workspace-card-grid"></div>
+            <div id="portfolio-agent-positions" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Weekly Goal Progress</h2>
+                <p>The 3% weekly revenue target is treated as a supervised target and risk budget, not a guaranteed outcome.</p>
+              </div>
+            </div>
+            <div id="portfolio-agent-goal" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Open Orders</h2>
+                <p>Alpaca paper orders visible to the broker adapter.</p>
+              </div>
+            </div>
+            <div id="portfolio-agent-orders" class="workspace-detail"></div>
           </article>
         </div>
       </section>
@@ -620,7 +766,7 @@
       </button>
       <button class="mobile-nav-link active" data-view="overview" type="button">
         <span class="material-symbols-outlined">terminal</span>
-        <span>Feed</span>
+        <span>Command</span>
       </button>
       <button class="mobile-fab" type="button" aria-label="Refresh live signals">
         <span class="material-symbols-outlined">bolt</span>
@@ -631,11 +777,11 @@
       </button>
       <button class="mobile-nav-link" data-view="trading" type="button">
         <span class="material-symbols-outlined">assignment</span>
-        <span>Plan</span>
+        <span>Select</span>
       </button>
-      <button class="mobile-nav-link" data-view="system" type="button">
-        <span class="material-symbols-outlined">settings</span>
-        <span>System</span>
+      <button class="mobile-nav-link" data-view="execution" type="button">
+        <span class="material-symbols-outlined">order_approve</span>
+        <span>Exec</span>
       </button>
     </nav>
 

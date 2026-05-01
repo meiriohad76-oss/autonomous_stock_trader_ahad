@@ -1,4 +1,5 @@
 const WINDOWS = ["15m", "1h", "4h", "1d", "7d"];
+const AGENCY_UNIVERSE_LABEL = "S&P 100 + QQQ Holdings";
 const FALLBACK_TICKER_META = {
   AAPL: { company: "Apple", sector: "Technology" },
   MSFT: { company: "Microsoft", sector: "Technology" },
@@ -111,10 +112,25 @@ const elements = {
   alertsSummaryStrip: document.querySelector("#alerts-summary-strip"),
   alertsHighImpact: document.querySelector("#alerts-high-impact"),
   alertsMoneyFlow: document.querySelector("#alerts-money-flow"),
+  agencyCommandCenter: document.querySelector("#agency-command-center"),
+  universeAgentOverview: document.querySelector("#universe-agent-overview"),
+  universeAgentCoverage: document.querySelector("#universe-agent-coverage"),
+  fundamentalsAgentSummary: document.querySelector("#fundamentals-agent-summary"),
+  fundamentalsAgentTable: document.querySelector("#fundamentals-agent-table"),
+  universeAgentHandoff: document.querySelector("#universe-agent-handoff"),
   tradingWorkflowStatus: document.querySelector("#trading-workflow-status"),
   tradingPlanSummary: document.querySelector("#trading-plan-summary"),
   tradingPlanLists: document.querySelector("#trading-plan-lists"),
   tradingExecutionConsole: document.querySelector("#trading-execution-console"),
+  riskAgentOverview: document.querySelector("#risk-agent-overview"),
+  riskAgentDecisions: document.querySelector("#risk-agent-decisions"),
+  riskAgentInputs: document.querySelector("#risk-agent-inputs"),
+  riskAgentHandoff: document.querySelector("#risk-agent-handoff"),
+  executionAgentConsole: document.querySelector("#execution-agent-console"),
+  portfolioAgentOverview: document.querySelector("#portfolio-agent-overview"),
+  portfolioAgentPositions: document.querySelector("#portfolio-agent-positions"),
+  portfolioAgentGoal: document.querySelector("#portfolio-agent-goal"),
+  portfolioAgentOrders: document.querySelector("#portfolio-agent-orders"),
   systemOverview: document.querySelector("#system-overview"),
   systemSourceQuality: document.querySelector("#system-source-quality"),
   systemNotes: document.querySelector("#system-notes"),
@@ -703,6 +719,125 @@ function visibleScreenerOverview() {
   };
 }
 
+function universeRows() {
+  return state.snapshot?.leaderboard || [];
+}
+
+function screenerUniverseCounts() {
+  const overview = state.snapshot?.screener_overview || {};
+  const fullUniverse = overview.full_universe || {};
+  const allUniverse = overview.all_universe || overview.visible_universe || visibleScreenerOverview();
+  const rows = universeRows();
+  return {
+    full: fullUniverse,
+    all: allUniverse,
+    tracked: allUniverse.tracked || fullUniverse.tracked || rows.length,
+    eligible: allUniverse.eligible || fullUniverse.eligible || rows.filter((row) => row.screen_stage === "eligible").length,
+    watch: allUniverse.watch || fullUniverse.watch || rows.filter((row) => row.screen_stage === "watch").length,
+    reject: allUniverse.reject || fullUniverse.reject || rows.filter((row) => row.screen_stage === "reject").length
+  };
+}
+
+function secCoverageSummary() {
+  const counts = screenerUniverseCounts();
+  const secQueue = state.secQueue || {};
+  const overview = state.snapshot?.screener_overview || {};
+  const secLive = secQueue.live_sec_companies ?? overview.fundamental_sec_live ?? 0;
+  const pending = secQueue.pending_bootstrap_companies ?? Math.max(0, counts.tracked - secLive);
+  const percent = secQueue.coverage_ratio !== undefined
+    ? Math.round(secQueue.coverage_ratio * 100)
+    : counts.tracked
+      ? Math.round((secLive / counts.tracked) * 100)
+      : 0;
+  return { secLive, pending, percent };
+}
+
+function rankedFundamentalRows(limit = 12) {
+  const stageWeight = { eligible: 3, watch: 2, reject: 1 };
+  return universeRows()
+    .filter((row) => row.screen_stage || row.composite_fundamental_score !== null || row.fundamental_rating)
+    .slice()
+    .sort((a, b) => {
+      const stageDiff = (stageWeight[b.screen_stage] || 0) - (stageWeight[a.screen_stage] || 0);
+      if (stageDiff) {
+        return stageDiff;
+      }
+      return Number(b.composite_fundamental_score || 0) - Number(a.composite_fundamental_score || 0);
+    })
+    .slice(0, limit);
+}
+
+function sectorCoverageRows() {
+  const grouped = new Map();
+  for (const row of universeRows()) {
+    const sector = row.sector || tickerSector(row.entity_key);
+    const entry = grouped.get(sector) || {
+      sector,
+      tracked: 0,
+      eligible: 0,
+      watch: 0,
+      reject: 0,
+      sentimentVisible: 0,
+      scoreSum: 0,
+      scoreCount: 0
+    };
+    entry.tracked += 1;
+    if (row.screen_stage === "eligible") {
+      entry.eligible += 1;
+    } else if (row.screen_stage === "watch") {
+      entry.watch += 1;
+    } else if (row.screen_stage === "reject") {
+      entry.reject += 1;
+    }
+    if (row.sentiment_visible) {
+      entry.sentimentVisible += 1;
+    }
+    if (row.composite_fundamental_score !== null && row.composite_fundamental_score !== undefined) {
+      entry.scoreSum += Number(row.composite_fundamental_score || 0);
+      entry.scoreCount += 1;
+    }
+    grouped.set(sector, entry);
+  }
+
+  return [...grouped.values()]
+    .map((entry) => ({
+      ...entry,
+      averageScore: entry.scoreCount ? entry.scoreSum / entry.scoreCount : 0
+    }))
+    .sort((a, b) => b.tracked - a.tracked || b.eligible - a.eligible || b.averageScore - a.averageScore);
+}
+
+function agentStatusClass(status) {
+  if (["ok", "ready", "pass", "healthy", "paper ready"].includes(String(status || "").toLowerCase())) {
+    return "bullish";
+  }
+  if (["blocked", "not_ready", "fail", "error", "critical", "not configured"].includes(String(status || "").toLowerCase())) {
+    return "bearish";
+  }
+  return "neutral";
+}
+
+function agentMetricCard(label, value, detail = "", className = "") {
+  return `
+    <div class="workspace-stat-card ${className}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+    </div>
+  `;
+}
+
+function setupCounts() {
+  const setups = state.tradeSetups?.setups || [];
+  return {
+    long: setups.filter((setup) => setup.action === "long").length,
+    short: setups.filter((setup) => setup.action === "short").length,
+    watch: setups.filter((setup) => setup.action === "watch").length,
+    blocked: setups.filter((setup) => !["long", "short", "watch"].includes(setup.action)).length,
+    tradable: setups.filter((setup) => ["long", "short"].includes(setup.action))
+  };
+}
+
 function buildHelpSignal() {
   const overview = state.snapshot?.screener_overview || {};
   const fullUniverse = overview.full_universe || {};
@@ -718,7 +853,7 @@ function buildHelpSignal() {
     timestamp: new Date().toISOString(),
     sourceName: "Product Guide",
     headline:
-      "Overview is sentiment-first, Screen shows the stage-one fundamentals gate, and Trade Setups are the combined decision layer.",
+      "Command is the agency map, Universe/Fundamentals define the allowed names, and the Selection Agent is the combined decision layer.",
     explanation:
       `This table now merges the full screened fundamentals universe with currently active sentiment names. Full fundamentals universe: ${fullUniverse.tracked || 0} tracked, ${fullUniverse.eligible || 0} eligible, ${fullUniverse.watch || 0} watch, ${fullUniverse.reject || 0} reject. All table rows before filters: ${allUniverse.tracked || 0}. Current visible rows after search/filter: ${visible.tracked} tracked, ${visible.eligible} eligible, ${visible.watch} watch, ${visible.reject} reject. Names with active sentiment right now: ${sentimentVisible.tracked} tracked, ${sentimentVisible.eligible} eligible, ${sentimentVisible.watch} watch, ${sentimentVisible.reject} reject.`,
     eventType: "dashboard_help",
@@ -824,12 +959,12 @@ function buildSignalFromTradeSetup(setup) {
   return {
     ticker: setup.ticker || null,
     title: `${setup.ticker}: ${prettyLabel(setup.setup_label)}`,
-    subtitle: "Trade Setup Agent",
+    subtitle: "Selection Agent",
     label: prettyLabel(setup.action),
     badgeClass: setupActionClass(setup.action),
     confidence: setup.conviction || 0,
     timestamp: state.tradeSetups?.as_of || null,
-    sourceName: "Trade Setup Agent",
+    sourceName: "Selection Agent",
     headline: setup.summary || "Trade setup decision",
     explanation:
       `${setup.summary || "This setup was generated by the combined decision layer."} Raw edge was ${Math.round(rawEdge * 100)}%, runtime trust multiplier is x${formatNumber(runtimeMultiplier, 2)}, and final conviction is ${Math.round((setup.conviction || 0) * 100)}%.`,
@@ -875,7 +1010,7 @@ function buildSignalFromExecutionPreview(ticker, payload, submitted = null) {
         ? "This setup currently passes execution and risk preview checks."
         : `Execution is blocked: ${prettyLabel(blockedReason || "unknown")}.`,
     explanation:
-      "Execution preview translates the Trade Setup Agent output into an Alpaca-ready order, then passes it through Portfolio Risk Agent before any paper submission is allowed.",
+      "Execution preview translates the Selection Agent output into an Alpaca-ready order, then passes it through the Risk Manager before any paper submission is allowed.",
     eventType: "execution_preview",
     statsHtml: `
       <div class="workspace-stat-card"><span>Ticker</span><strong>${intent.ticker || ticker || "n/a"}</strong></div>
@@ -1085,7 +1220,7 @@ async function loadConfig() {
   state.config = await getJson("/api/config");
   state.activeWindow = state.config.default_window || "1h";
   state.marketFlowSettings = { ...(state.config.market_flow_settings || {}) };
-  elements.universeName.textContent = state.config.universe_name;
+  elements.universeName.textContent = AGENCY_UNIVERSE_LABEL;
   updateWindowButtons();
 }
 
@@ -1588,7 +1723,7 @@ function renderTradeLists(setups = [], options = {}) {
   return `
     <div class="trade-list-shell">
       <div class="section-kicker">Trading Lists</div>
-      <p class="trade-list-copy">The Trade Setup Agent compiles these from fresh sentiment evidence, fundamentals screen, macro regime, risk/runtime guardrails, and current execution rules.</p>
+      <p class="trade-list-copy">The Selection Agent compiles these from fresh signal evidence, fundamentals, market regime, risk/runtime guardrails, and current execution rules.</p>
       <div class="trade-list-grid">
         ${groups
           .map(
@@ -2494,7 +2629,7 @@ function renderExecutionConsolePanel() {
     <div class="runtime-action-panel execution-console-panel">
       <div class="section-kicker">Execution Control</div>
       <h3>Paper Trading And Position Monitor</h3>
-      <p class="workspace-copy">This is the guarded execution layer. Preview converts a Trade Setup Agent idea into an Alpaca-ready order and risk check. Paper submit stays disabled until Alpaca paper credentials and BROKER_SUBMIT_ENABLED=true are configured.</p>
+      <p class="workspace-copy">This is the guarded execution layer. Preview converts a Selection Agent recommendation into an Alpaca-ready order and risk check. Paper submit stays disabled until Alpaca paper credentials and BROKER_SUBMIT_ENABLED=true are configured.</p>
       <div class="workspace-detail-grid execution-status-grid">
         <div class="workspace-stat-card"><span>Broker</span><strong>${prettyLabel(broker.provider || "alpaca")}</strong></div>
         <div class="workspace-stat-card"><span>Mode</span><strong>${prettyLabel(broker.mode || "paper")}</strong></div>
@@ -2524,7 +2659,7 @@ function renderExecutionConsolePanel() {
             <strong>Portfolio Risk</strong>
             <span class="sentiment-badge ${monitorActionClass(risk.status)}">${prettyLabel(risk.status || "unknown")}</span>
           </div>
-          <p class="workspace-copy">The Portfolio Risk Agent blocks orders when exposure, single-name concentration, open orders, or runtime pressure exceed configured guardrails.</p>
+          <p class="workspace-copy">The Risk Manager blocks orders when exposure, single-name concentration, open orders, or runtime pressure exceed configured guardrails.</p>
           <ul class="workspace-list">
             <li>Gross exposure: ${formatNumber((risk.gross_exposure_pct || 0) * 100, 1)}%</li>
             <li>Largest position: ${risk.largest_position?.symbol || "n/a"} ${risk.largest_position ? `${formatNumber(risk.largest_position.exposure_pct * 100, 1)}%` : ""}</li>
@@ -2573,7 +2708,7 @@ function renderExecutionConsolePanel() {
                   )
                   .join("")}
               </div>`
-            : `<div class="workspace-empty">No long or short candidates are ready from the Trade Setup Agent.</div>`
+            : `<div class="workspace-empty">No buy or sell candidates are ready from the Selection Agent.</div>`
         }
       </div>
       <div class="execution-subsection">
@@ -3055,16 +3190,578 @@ function renderSystemView() {
       <li>News sentiment source: Google News RSS with Yahoo Finance RSS fallback, scored through the same normalization and sentiment pipeline as other live events.</li>
       <li>Event and social sources: earnings calendar risk checks and StockTwits crowd-skew evidence when enabled.</li>
       <li>Money-flow sources: inferred tape anomalies from live market bars, delayed trade prints, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>
-      <li>The sentiment watchlist is sentiment-first. Fundamentals enrich those rows, but the full fundamentals universe lives in the Fundamentals dashboard and the Trade Setup Agent.</li>
-      <li>The Trade Setup Agent is the true combined decision layer: it blends sentiment, fundamentals, macro regime, recent documents, and alerts.</li>
+      <li>The sentiment watchlist is signal-first. Fundamentals enrich those rows, but the full allowed universe lives in the Fundamentals dashboard and the Selection Agent.</li>
+      <li>The Selection Agent is the true combined decision layer: it blends fundamentals, market regime, recent documents, alerts, and money-flow evidence.</li>
       <li>${persistenceNote}</li>
       ${backup?.last_error ? `<li>Latest backup warning: ${backup.last_error}</li>` : ""}
     </ul>
   `;
 }
 
+function renderAgencyCommandCenter() {
+  if (!elements.agencyCommandCenter) {
+    return;
+  }
+
+  const counts = screenerUniverseCounts();
+  const secCoverage = secCoverageSummary();
+  const sectors = deriveVisibleSectorSummaries(universeRows());
+  const bullishSectors = sectors.filter((sector) => sector.sentiment_regime === "bullish").length;
+  const bearishSectors = sectors.filter((sector) => sector.sentiment_regime === "bearish").length;
+  const moneyFlowCount = collectMoneyFlowSignals().length;
+  const setupSummary = setupCounts();
+  const workflow = state.workflowStatus || {};
+  const execution = state.executionStatus || {};
+  const monitor = state.positionMonitor || {};
+  const risk = state.riskSnapshot || {};
+  const broker = execution.broker || monitor.broker || {};
+  const brokerReady = broker.ready_for_order_submission;
+  const riskStatus = risk.status || monitor.risk_status || "unknown";
+  const flowStatus = workflow.status || "loading";
+  const activeSignals = (state.alerts?.length || 0) + (state.highImpact?.length || 0) + moneyFlowCount;
+
+  const agents = [
+    {
+      step: "01",
+      name: "Universe Agent",
+      status: "in scope",
+      statusClass: "bullish",
+      mission: "Keeps the agency inside the S&P 100 plus QQQ holdings universe.",
+      metric: `${counts.tracked || 0}`,
+      metricLabel: "allowed names",
+      view: "universe",
+      icon: "dataset"
+    },
+    {
+      step: "02",
+      name: "Fundamentals Agent",
+      status: `${secCoverage.percent}% SEC`,
+      statusClass: secCoverage.percent >= 70 ? "bullish" : "neutral",
+      mission: "Ranks business quality, valuation, growth, stability, and sector-relative strength.",
+      metric: `${counts.eligible || 0}`,
+      metricLabel: "eligible",
+      view: "universe",
+      href: "/fundamentals.html",
+      icon: "finance_mode"
+    },
+    {
+      step: "03",
+      name: "Market Agent",
+      status: `${bullishSectors}/${bearishSectors}`,
+      statusClass: bullishSectors > bearishSectors ? "bullish" : bearishSectors > bullishSectors ? "bearish" : "neutral",
+      mission: "Reads the market regime and sector winds that may lift or pressure each stock.",
+      metric: `${sectors.length}`,
+      metricLabel: "sectors",
+      view: "markets",
+      icon: "show_chart"
+    },
+    {
+      step: "04",
+      name: "Signals Agent",
+      status: activeSignals ? "active" : "quiet",
+      statusClass: activeSignals ? "bullish" : "neutral",
+      mission: "Collects alerts, news, insider activity, unusual volume, money flow, and institutional traces.",
+      metric: `${activeSignals}`,
+      metricLabel: "fresh signals",
+      view: "alerts",
+      icon: "crisis_alert"
+    },
+    {
+      step: "05",
+      name: "Selection Agent",
+      status: flowStatus,
+      statusClass: workflowStatusClass(flowStatus),
+      mission: "Combines the first three workers into ranked buy, sell, watch, and blocked recommendations.",
+      metric: `${setupSummary.long}/${setupSummary.short}`,
+      metricLabel: "buy/sell",
+      view: "trading",
+      icon: "assignment"
+    },
+    {
+      step: "06",
+      name: "Risk Manager",
+      status: riskStatus,
+      statusClass: monitorActionClass(riskStatus),
+      mission: "Checks sizing, gross exposure, concentration, open orders, and runtime reliability.",
+      metric: `${formatNumber((risk.gross_exposure_pct || 0) * 100, 0)}%`,
+      metricLabel: "gross exposure",
+      view: "risk",
+      icon: "shield"
+    },
+    {
+      step: "07",
+      name: "Execution Agent",
+      status: brokerReady ? "paper ready" : "gated",
+      statusClass: brokerReady ? "bullish" : "neutral",
+      mission: "Creates Alpaca paper tickets only after Selection and Risk approval, then waits for user approval.",
+      metric: prettyLabel(broker.mode || "paper"),
+      metricLabel: brokerReady ? "submit enabled" : "submit guarded",
+      view: "execution",
+      icon: "order_approve"
+    },
+    {
+      step: "08",
+      name: "Portfolio Monitor",
+      status: monitor.status || "waiting",
+      statusClass: monitorActionClass(monitor.status),
+      mission: "Reviews positions, open orders, sell/reduce candidates, and weekly progress.",
+      metric: `${monitor.position_count ?? 0}`,
+      metricLabel: "positions",
+      view: "portfolio",
+      icon: "account_balance_wallet"
+    }
+  ];
+
+  elements.agencyCommandCenter.innerHTML = `
+    <section class="agency-hero panel">
+      <div class="agency-hero-copy">
+        <div class="section-kicker">Autonomous Trade Agency</div>
+        <h1>Worker dashboards from universe to Alpaca paper approval</h1>
+        <p>The agency works toward a supervised 3% weekly target. It narrows the S&P 100 + QQQ universe, ranks the best setups, risk-checks the plan, then prepares paper orders for your explicit approval.</p>
+      </div>
+      <div class="agency-goal-card">
+        <span>Weekly Target</span>
+        <strong>+3%</strong>
+        <small>Target and risk budget, not a guaranteed result.</small>
+        <div class="runtime-progress"><span style="width:${Math.min(100, Math.max(8, ((monitor.total_position_value || 0) / Math.max(1, risk.equity || monitor.account?.equity || 1)) * 100))}%"></span></div>
+      </div>
+    </section>
+    <section class="agent-roster">
+      ${agents
+        .map(
+          (agent) => `
+            <article class="agent-card">
+              <div class="agent-card-head">
+                <span class="agent-step">${agent.step}</span>
+                <span class="sentiment-badge ${agent.statusClass}">${escapeHtml(prettyLabel(agent.status))}</span>
+              </div>
+              <div class="agent-title-row">
+                <span class="material-symbols-outlined">${agent.icon}</span>
+                <strong>${escapeHtml(agent.name)}</strong>
+              </div>
+              <p>${escapeHtml(agent.mission)}</p>
+              <div class="agent-card-metric">
+                <b>${escapeHtml(agent.metric)}</b>
+                <span>${escapeHtml(agent.metricLabel)}</span>
+              </div>
+              <div class="agent-card-actions">
+                <button type="button" class="panel-action compact-action" data-agent-view="${agent.view}">Open</button>
+                ${agent.href ? `<a class="panel-action compact-action" href="${agent.href}">Deep</a>` : ""}
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </section>
+    <section class="agent-flow panel">
+      <div>
+        <div class="section-kicker">Operating Flow</div>
+        <h2>Start at Command, then follow the workers left to right</h2>
+        <p>Run safe one-shot data refreshes when evidence is stale. Review Selection, Risk, and Execution before any paper transaction reaches Alpaca.</p>
+      </div>
+      <div class="workflow-control-actions">
+        ${runtimeActionButton("refresh_universe", null, "Refresh Universe", "sync")}
+        ${runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database")}
+        ${runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")}
+        ${runtimeActionButton("poll_once", "live_news", "Poll News", "newspaper")}
+        ${runtimeActionButton("poll_once", "market_flow", "Poll Flow", "monitoring")}
+      </div>
+    </section>
+  `;
+}
+
+function renderUniverseAgentView() {
+  const counts = screenerUniverseCounts();
+  const secCoverage = secCoverageSummary();
+  const rankedRows = rankedFundamentalRows(12);
+  const sectors = sectorCoverageRows();
+  const nextBatch = state.secQueue?.next_batch || [];
+
+  if (elements.universeAgentOverview) {
+    elements.universeAgentOverview.innerHTML = `
+      ${agentMetricCard("Allowed Universe", counts.tracked || 0, AGENCY_UNIVERSE_LABEL)}
+      ${agentMetricCard("Eligible", counts.eligible || 0, "Can pass to selection")}
+      ${agentMetricCard("Watch", counts.watch || 0, "Needs confirmation")}
+      ${agentMetricCard("Rejected", counts.reject || 0, "Blocked by fundamentals gate")}
+      ${agentMetricCard("SEC Coverage", `${secCoverage.percent}%`, `${secCoverage.secLive} live, ${secCoverage.pending} pending`)}
+      ${agentMetricCard("Next SEC Batch", state.secQueue?.next_batch_size || nextBatch.length || 0, "One-shot runtime action")}
+    `;
+  }
+
+  if (elements.universeAgentCoverage) {
+    elements.universeAgentCoverage.innerHTML = `
+      <div class="agent-table-shell leaderboard-shell">
+        <table class="leaderboard-table compact-agent-table">
+          <thead>
+            <tr>
+              <th>Sector</th>
+              <th>Tracked</th>
+              <th>Eligible</th>
+              <th>Watch</th>
+              <th>Reject</th>
+              <th>Avg Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              sectors.length
+                ? sectors
+                    .slice(0, 12)
+                    .map(
+                      (sector) => `
+                        <tr>
+                          <td>${escapeHtml(sector.sector)}</td>
+                          <td>${sector.tracked}</td>
+                          <td>${sector.eligible}</td>
+                          <td>${sector.watch}</td>
+                          <td>${sector.reject}</td>
+                          <td>${formatNumber(sector.averageScore, 2)}</td>
+                        </tr>
+                      `
+                    )
+                    .join("")
+                : `<tr class="empty-row"><td colspan="6">No universe coverage rows are loaded yet.</td></tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+      ${
+        nextBatch.length
+          ? `<div class="next-batch-strip">
+              ${nextBatch
+                .slice(0, 8)
+                .map(
+                  (company) => `
+                    <button type="button" class="workspace-card" data-focus-ticker="${escapeHtml(company.ticker)}" data-focus-view="overview">
+                      <span>${escapeHtml(company.ticker)}</span>
+                      <strong>${escapeHtml(company.company_name || company.ticker)}</strong>
+                      <small>${escapeHtml(company.sector || "Unknown")} - ${escapeHtml(sourceLabel(company.data_source))}</small>
+                    </button>
+                  `
+                )
+                .join("")}
+            </div>`
+          : ""
+      }
+    `;
+  }
+
+  if (elements.fundamentalsAgentSummary) {
+    elements.fundamentalsAgentSummary.innerHTML = `
+      ${agentMetricCard("Top Ranked Rows", rankedRows.length, "Sorted by stage and score")}
+      ${agentMetricCard("Live SEC Rows", secCoverage.secLive, "Official filings backed")}
+      ${agentMetricCard("Bootstrap Pending", secCoverage.pending, "Still needs SEC refresh")}
+      ${agentMetricCard("Fundamental Gate", `${counts.eligible}/${counts.tracked}`, "Eligible over tracked")}
+    `;
+  }
+
+  if (elements.fundamentalsAgentTable) {
+    elements.fundamentalsAgentTable.innerHTML = `
+      <div class="agent-table-shell leaderboard-shell">
+        <table class="leaderboard-table compact-agent-table">
+          <thead>
+            <tr>
+              <th>Stock</th>
+              <th>Stage</th>
+              <th>Rating</th>
+              <th>Score</th>
+              <th>Confidence</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              rankedRows.length
+                ? rankedRows
+                    .map(
+                      (row) => `
+                        <tr data-focus-ticker="${escapeHtml(row.entity_key)}" data-focus-view="overview">
+                          <td>
+                            <div class="stock-cell">
+                              <strong>${escapeHtml(row.entity_key)}</strong>
+                              <span>${escapeHtml(row.company_name || tickerCompany(row.entity_key))}</span>
+                            </div>
+                          </td>
+                          <td><span class="sentiment-badge ${screenBadgeClass(row)}">${escapeHtml(screenLabel(row))}</span></td>
+                          <td>${escapeHtml(row.fundamental_rating || "n/a")}</td>
+                          <td>${row.composite_fundamental_score !== null && row.composite_fundamental_score !== undefined ? formatNumber(row.composite_fundamental_score, 2) : "n/a"}</td>
+                          <td>${row.fundamental_confidence !== null && row.fundamental_confidence !== undefined ? `${formatNumber(row.fundamental_confidence * 100, 0)}%` : "n/a"}</td>
+                          <td>${escapeHtml(sourceLabel(row.fundamental_data_source))}</td>
+                        </tr>
+                      `
+                    )
+                    .join("")
+                : `<tr class="empty-row"><td colspan="6">The Fundamentals Agent has no ranked rows yet.</td></tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (elements.universeAgentHandoff) {
+    elements.universeAgentHandoff.innerHTML = `
+      <div class="agent-handoff-grid">
+        <div class="runtime-control-card">
+          <div class="runtime-source-head">
+            <strong>Output To Market Agent</strong>
+            <span class="sentiment-badge neutral">${sectors.length} sectors</span>
+          </div>
+          <p class="workspace-copy">Sector counts and fundamentals quality become the context for bullish or bearish regime analysis.</p>
+        </div>
+        <div class="runtime-control-card">
+          <div class="runtime-source-head">
+            <strong>Output To Signals Agent</strong>
+            <span class="sentiment-badge neutral">${counts.tracked} names</span>
+          </div>
+          <p class="workspace-copy">Only in-universe tickers should be promoted from alerts, news, insider, institutional, and money-flow signals.</p>
+        </div>
+        <div class="runtime-control-card">
+          <div class="runtime-source-head">
+            <strong>Output To Selection Agent</strong>
+            <span class="sentiment-badge bullish">${counts.eligible} eligible</span>
+          </div>
+          <p class="workspace-copy">Eligible names can become buy or sell candidates. Watch and rejected names require stronger confirmation or manual review.</p>
+        </div>
+      </div>
+      <div class="workflow-control-actions agent-action-row">
+        ${runtimeActionButton("refresh_universe", null, "Refresh Universe", "sync")}
+        ${runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database")}
+        ${runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")}
+      </div>
+      ${state.runtimeActionState ? `<div class="runtime-action-result">${escapeHtml(state.runtimeActionState === "running" ? "Running selected runtime action..." : state.runtimeActionState)}</div>` : ""}
+    `;
+  }
+}
+
+function renderRiskAgentView() {
+  const risk = state.riskSnapshot || {};
+  const monitor = state.positionMonitor || {};
+  const execution = state.executionStatus || {};
+  const broker = execution.broker || monitor.broker || risk.broker || {};
+  const limits = risk.limits || {};
+  const setups = state.tradeSetups?.setups || [];
+  const tradable = setups.filter((setup) => ["long", "short"].includes(setup.action)).slice(0, 8);
+  const warnings = risk.warnings || [];
+  const hardBlocks = risk.hard_blocks || [];
+
+  if (elements.riskAgentOverview) {
+    elements.riskAgentOverview.innerHTML = `
+      ${agentMetricCard("Risk Status", prettyLabel(risk.status || monitor.risk_status || "unknown"), "Portfolio-level decision gate", monitorActionClass(risk.status || monitor.risk_status))}
+      ${agentMetricCard("Gross Exposure", `${formatNumber((risk.gross_exposure_pct || 0) * 100, 1)}%`, `${formatUsdCompact(risk.gross_exposure_usd || 0)} exposed`)}
+      ${agentMetricCard("Buying Power", formatUsdCompact(risk.buying_power || monitor.account?.buying_power || 0), "Broker or configured default")}
+      ${agentMetricCard("Open Orders", risk.open_orders ?? monitor.open_order_count ?? 0, `Limit ${limits.max_open_orders ?? "n/a"}`)}
+      ${agentMetricCard("Runtime Pressure", risk.runtime_constrained ? "Constrained" : "Normal", "Source pressure gate")}
+      ${agentMetricCard("Largest Position", risk.largest_position?.symbol || "n/a", risk.largest_position ? `${formatNumber(risk.largest_position.exposure_pct * 100, 1)}% exposure` : "No open position")}
+    `;
+  }
+
+  if (elements.riskAgentDecisions) {
+    elements.riskAgentDecisions.innerHTML = `
+      <div class="agent-decision-grid">
+        <div class="runtime-control-card ${hardBlocks.length ? "risk-blocked" : "primary"}">
+          <div class="runtime-source-head">
+            <strong>Current Risk Decision</strong>
+            <span class="sentiment-badge ${monitorActionClass(risk.status)}">${prettyLabel(risk.status || "unknown")}</span>
+          </div>
+          <p class="workspace-copy">${hardBlocks.length ? "Risk is blocking execution until the listed issues clear." : warnings.length ? "Risk allows planning, but wants caution before execution." : "Risk is not reporting portfolio-level blockers."}</p>
+          <ul class="workspace-list">
+            ${
+              [...hardBlocks, ...warnings].length
+                ? [...hardBlocks, ...warnings].map((item) => `<li>${escapeHtml(prettyLabel(item))}</li>`).join("")
+                : "<li>No active hard blocks or warnings.</li>"
+            }
+          </ul>
+        </div>
+        <div class="runtime-control-card">
+          <div class="runtime-source-head">
+            <strong>Candidate Review Queue</strong>
+            <span class="sentiment-badge neutral">${tradable.length} setups</span>
+          </div>
+          <p class="workspace-copy">These Selection Agent recommendations are waiting for preview sizing and final risk checks.</p>
+          <ul class="workspace-list">
+            ${
+              tradable.length
+                ? tradable
+                    .map(
+                      (setup) => `
+                        <li>
+                          <button type="button" class="workspace-list-button" data-preview-execution="${escapeHtml(setup.ticker)}">
+                            ${escapeHtml(setup.ticker)} - ${escapeHtml(prettyLabel(setup.action))} - ${formatNumber((setup.conviction || 0) * 100, 0)}% conviction
+                          </button>
+                        </li>
+                      `
+                    )
+                    .join("")
+                : "<li>No buy or sell candidates are ready.</li>"
+            }
+          </ul>
+        </div>
+      </div>
+    `;
+  }
+
+  if (elements.riskAgentInputs) {
+    elements.riskAgentInputs.innerHTML = `
+      <div class="workspace-detail-grid">
+        ${agentMetricCard("Account Source", prettyLabel(risk.account_source || (broker.configured ? "broker" : "configured_default")), "Risk equity basis")}
+        ${agentMetricCard("Equity", formatUsdCompact(risk.equity || monitor.account?.equity || 0), "Used for sizing")}
+        ${agentMetricCard("Max Gross", limits.max_gross_exposure_pct !== undefined ? `${formatNumber(limits.max_gross_exposure_pct * 100, 0)}%` : "n/a", "Portfolio exposure cap")}
+        ${agentMetricCard("Max Single Name", limits.max_single_name_exposure_pct !== undefined ? `${formatNumber(limits.max_single_name_exposure_pct * 100, 0)}%` : "n/a", "Concentration cap")}
+        ${agentMetricCard("Broker", broker.configured ? "Configured" : "Not configured", broker.ready_for_order_submission ? "Paper submit ready" : "Submission gated")}
+        ${agentMetricCard("Positions", monitor.position_count ?? risk.positions?.length ?? 0, `${monitor.close_candidate_count || 0} close candidates`)}
+      </div>
+      ${
+        risk.positions?.length
+          ? `<div class="execution-position-list">
+              ${risk.positions
+                .slice(0, 8)
+                .map(
+                  (position) => `
+                    <div class="source-card execution-position-card">
+                      <div class="runtime-source-head">
+                        <strong>${escapeHtml(position.symbol)}</strong>
+                        <span class="sentiment-badge neutral">${formatNumber((position.exposure_pct || 0) * 100, 1)}%</span>
+                      </div>
+                      <span>${escapeHtml(prettyLabel(position.side))} ${formatNumber(position.qty, 3)} shares</span>
+                      <span>${formatUsdCompact(position.market_value)} market value</span>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>`
+          : `<div class="workspace-empty">No broker positions are visible to the Risk Manager yet.</div>`
+      }
+    `;
+  }
+
+  if (elements.riskAgentHandoff) {
+    elements.riskAgentHandoff.innerHTML = `
+      <div class="execution-candidate-grid">
+        ${
+          tradable.length
+            ? tradable
+                .map(
+                  (setup) => `
+                    <div class="source-card execution-candidate-card">
+                      <div class="runtime-source-head">
+                        <strong>${escapeHtml(setup.ticker)}</strong>
+                        <span class="sentiment-badge ${setupActionClass(setup.action)}">${escapeHtml(prettyLabel(setup.action))}</span>
+                      </div>
+                      <span>${escapeHtml(setup.summary || "Selection Agent recommendation.")}</span>
+                      <span>${setup.position_size_pct ? `${formatNumber(setup.position_size_pct * 100, 1)}% proposed size` : "Sizing comes from execution preview"}</span>
+                      <div class="setup-action-row">
+                        <button type="button" class="panel-action compact-action" data-preview-execution="${escapeHtml(setup.ticker)}">Preview Risk</button>
+                        <button type="button" class="panel-action compact-action" data-agent-view="execution">Execution</button>
+                      </div>
+                    </div>
+                  `
+                )
+                .join("")
+            : `<div class="workspace-empty">No recommendations are ready to hand to Execution.</div>`
+        }
+      </div>
+    `;
+  }
+}
+
+function renderExecutionAgentView() {
+  if (elements.executionAgentConsole) {
+    elements.executionAgentConsole.innerHTML = renderExecutionConsolePanel();
+  }
+}
+
+function renderPortfolioAgentView() {
+  const monitor = state.positionMonitor || {};
+  const risk = state.riskSnapshot || {};
+  const positions = monitor.positions || [];
+  const orders = monitor.open_orders || [];
+  const account = monitor.account || {};
+  const equity = account.portfolio_value || account.equity || risk.equity || 0;
+  const unrealized = positions.reduce((sum, position) => sum + Number(position.unrealized_pl || 0), 0);
+  const weeklyPct = equity ? unrealized / equity : 0;
+  const weeklyProgress = Math.min(100, Math.max(0, (weeklyPct / 0.03) * 100));
+
+  if (elements.portfolioAgentOverview) {
+    elements.portfolioAgentOverview.innerHTML = `
+      ${agentMetricCard("Status", prettyLabel(monitor.status || "waiting"), "Position monitor state", monitorActionClass(monitor.status))}
+      ${agentMetricCard("Portfolio Value", formatUsdCompact(equity), "Broker account value")}
+      ${agentMetricCard("Buying Power", formatUsdCompact(account.buying_power || risk.buying_power || 0), "Available cash")}
+      ${agentMetricCard("Positions", monitor.position_count ?? positions.length, `${monitor.review_count || 0} need review`)}
+      ${agentMetricCard("Close Candidates", monitor.close_candidate_count || 0, "Sell or reduce review")}
+      ${agentMetricCard("Open Orders", monitor.open_order_count ?? orders.length, "Broker-visible orders")}
+    `;
+  }
+
+  if (elements.portfolioAgentPositions) {
+    elements.portfolioAgentPositions.innerHTML = positions.length
+      ? `<div class="execution-position-list">
+          ${positions
+            .map(
+              (position) => `
+                <div class="source-card execution-position-card ${monitorActionClass(position.monitor_action)}">
+                  <div class="runtime-source-head">
+                    <strong>${escapeHtml(position.symbol)}</strong>
+                    <span class="sentiment-badge ${monitorActionClass(position.monitor_action)}">${escapeHtml(prettyLabel(position.monitor_action))}</span>
+                  </div>
+                  <span>${escapeHtml(prettyLabel(position.side))} ${formatNumber(position.qty, 4)} shares - ${formatUsdCompact(position.market_value)}</span>
+                  <span>P/L ${formatUsdCompact(position.unrealized_pl)} (${formatNumber((position.unrealized_plpc || 0) * 100, 1)}%)</span>
+                  <span>Latest setup: ${escapeHtml(prettyLabel(position.setup_action || "none"))}${position.setup_conviction !== null && position.setup_conviction !== undefined ? ` - ${formatNumber(position.setup_conviction * 100, 0)}% conviction` : ""}</span>
+                  <small>${position.reason_codes?.length ? position.reason_codes.map(prettyLabel).join(", ") : "No monitor warnings."}</small>
+                </div>
+              `
+            )
+            .join("")}
+        </div>`
+      : `<div class="workspace-empty">No open Alpaca positions are visible. The monitor will still show planning candidates until the broker is configured.</div>`;
+  }
+
+  if (elements.portfolioAgentGoal) {
+    elements.portfolioAgentGoal.innerHTML = `
+      <div class="portfolio-goal-card">
+        <div class="runtime-source-head">
+          <div>
+            <div class="section-kicker">Weekly Objective</div>
+            <h3>3% supervised target</h3>
+          </div>
+          <span class="sentiment-badge ${weeklyPct >= 0.03 ? "bullish" : weeklyPct < 0 ? "bearish" : "neutral"}">${formatSignedPercent(weeklyPct)}</span>
+        </div>
+        <p class="workspace-copy">This progress uses visible unrealized P/L against current account value. It is a target and risk budget, not a promise of return.</p>
+        <div class="runtime-progress"><span style="width:${weeklyProgress}%"></span></div>
+        <div class="workspace-detail-grid">
+          ${agentMetricCard("Visible P/L", formatUsdCompact(unrealized), "Open positions only")}
+          ${agentMetricCard("Target Dollars", formatUsdCompact(equity * 0.03), "3% of visible equity")}
+          ${agentMetricCard("Risk State", prettyLabel(risk.status || monitor.risk_status || "unknown"), "Must stay acceptable")}
+        </div>
+      </div>
+    `;
+  }
+
+  if (elements.portfolioAgentOrders) {
+    elements.portfolioAgentOrders.innerHTML = orders.length
+      ? `<div class="execution-position-list">
+          ${orders
+            .map(
+              (order) => `
+                <div class="source-card">
+                  <div class="runtime-source-head">
+                    <strong>${escapeHtml(order.symbol)}</strong>
+                    <span class="sentiment-badge neutral">${escapeHtml(prettyLabel(order.status))}</span>
+                  </div>
+                  <span>${escapeHtml(prettyLabel(order.side))} ${escapeHtml(order.qty || order.notional || "")} - ${escapeHtml(prettyLabel(order.type))}</span>
+                  <small>${order.submitted_at ? relativeTime(order.submitted_at) : "submitted time n/a"}</small>
+                </div>
+              `
+            )
+            .join("")}
+        </div>`
+      : `<div class="workspace-empty">No open Alpaca paper orders are visible.</div>`;
+  }
+}
+
 function renderOverviewView() {
   const pulse = state.snapshot.market_pulse;
+  renderAgencyCommandCenter();
   renderGauge(pulse);
   renderSectorStrip();
   renderLeaderboard();
@@ -3080,6 +3777,8 @@ function renderActiveView() {
 
   if (state.activeView === "overview") {
     renderOverviewView();
+  } else if (state.activeView === "universe") {
+    renderUniverseAgentView();
   } else if (state.activeView === "markets") {
     renderMarketsView();
   } else if (state.activeView === "watch") {
@@ -3088,6 +3787,12 @@ function renderActiveView() {
     renderAlertsView();
   } else if (state.activeView === "trading") {
     renderTradingView();
+  } else if (state.activeView === "risk") {
+    renderRiskAgentView();
+  } else if (state.activeView === "execution") {
+    renderExecutionAgentView();
+  } else if (state.activeView === "portfolio") {
+    renderPortfolioAgentView();
   } else if (state.activeView === "system") {
     renderSystemView();
   }
@@ -3104,7 +3809,7 @@ function render() {
 async function handleExecutionConsoleClick(event) {
   const focusButton = event.target.closest("[data-focus-ticker]");
   if (focusButton) {
-    await focusTicker(focusButton.dataset.focusTicker, "overview");
+    await focusTicker(focusButton.dataset.focusTicker, focusButton.dataset.focusView || "overview");
     return true;
   }
 
@@ -3117,6 +3822,39 @@ async function handleExecutionConsoleClick(event) {
   const submitButton = event.target.closest("[data-submit-paper]");
   if (submitButton && !submitButton.disabled) {
     await submitPaperTrade(submitButton.dataset.submitPaper);
+    return true;
+  }
+
+  return false;
+}
+
+async function handleAgencyPanelClick(event) {
+  const viewButton = event.target.closest("[data-agent-view]");
+  if (viewButton) {
+    setActiveView(viewButton.dataset.agentView);
+    return true;
+  }
+
+  if (await handleExecutionConsoleClick(event)) {
+    return true;
+  }
+
+  const tradeListButton = event.target.closest("[data-trade-list-ticker]");
+  if (tradeListButton) {
+    const setup = (state.tradeSetups?.setups || []).find((item) => item.ticker === tradeListButton.dataset.tradeListTicker);
+    if (setup) {
+      openSignalDrawer(buildSignalFromTradeSetup(setup));
+      return true;
+    }
+  }
+
+  const runtimeButton = event.target.closest("[data-runtime-action]");
+  if (runtimeButton && !runtimeButton.disabled) {
+    if (runtimeButton.dataset.runtimeAction === "apply_profile") {
+      await runRuntimeProfilePreview(runtimeButton.dataset.runtimeProfile);
+      return true;
+    }
+    await runRuntimeAction(runtimeButton.dataset.runtimeAction, runtimeButton.dataset.runtimeSource || null);
     return true;
   }
 
@@ -3308,6 +4046,28 @@ function attachEvents() {
     }
 
     await runRuntimeAction(button.dataset.runtimeAction, button.dataset.runtimeSource || null);
+  });
+
+  [
+    elements.agencyCommandCenter,
+    elements.universeAgentOverview,
+    elements.universeAgentCoverage,
+    elements.fundamentalsAgentSummary,
+    elements.fundamentalsAgentTable,
+    elements.universeAgentHandoff,
+    elements.riskAgentOverview,
+    elements.riskAgentDecisions,
+    elements.riskAgentInputs,
+    elements.riskAgentHandoff,
+    elements.executionAgentConsole,
+    elements.portfolioAgentOverview,
+    elements.portfolioAgentPositions,
+    elements.portfolioAgentGoal,
+    elements.portfolioAgentOrders
+  ].forEach((container) => {
+    container?.addEventListener("click", async (event) => {
+      await handleAgencyPanelClick(event);
+    });
   });
 
   elements.tradingExecutionConsole?.addEventListener("click", async (event) => {

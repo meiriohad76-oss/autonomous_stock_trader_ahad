@@ -296,6 +296,232 @@ input:focus-visible {
   grid-column: span 7;
 }
 
+.agency-command-center {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.agency-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 20px;
+  align-items: stretch;
+  padding: 24px;
+}
+
+.agency-hero-copy {
+  min-width: 0;
+}
+
+.agency-hero h1 {
+  max-width: 760px;
+  margin: 8px 0 10px;
+  color: var(--text);
+  font-size: clamp(1.6rem, 2.2vw, 2.35rem);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.agency-hero p,
+.agent-flow p,
+.agent-card p,
+.agency-goal-card small,
+.workspace-stat-card small {
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.agency-hero p,
+.agent-flow p {
+  max-width: 780px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.agency-goal-card {
+  display: grid;
+  align-content: space-between;
+  gap: 12px;
+  min-height: 160px;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--surface-border);
+}
+
+.agency-goal-card span,
+.agent-card-metric span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.agency-goal-card strong {
+  color: var(--green);
+  font-size: 2.6rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.agent-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.agent-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  min-height: 250px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--surface-border);
+}
+
+.agent-card-head,
+.agent-title-row,
+.agent-card-actions,
+.agent-flow,
+.agent-flow > div:first-child,
+.agent-card-metric {
+  min-width: 0;
+}
+
+.agent-card-head,
+.agent-title-row,
+.agent-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-card-head {
+  justify-content: space-between;
+}
+
+.agent-step {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--green);
+  background: rgba(19, 255, 67, 0.1);
+  border: 1px solid rgba(19, 255, 67, 0.16);
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.agent-title-row .material-symbols-outlined {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+
+.agent-title-row strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 1.02rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.agent-card p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.agent-card-metric {
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.agent-card-metric b {
+  display: block;
+  color: var(--text);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.agent-card-actions {
+  flex-wrap: wrap;
+}
+
+.agent-flow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+}
+
+.agent-flow h2 {
+  margin: 6px 0 6px;
+  font-size: 1.1rem;
+  letter-spacing: 0;
+}
+
+.agent-handoff-grid,
+.agent-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.agent-action-row,
+.next-batch-strip {
+  margin-top: 14px;
+}
+
+.next-batch-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.agent-table-shell {
+  margin-top: 14px;
+}
+
+.compact-agent-table th,
+.compact-agent-table td {
+  white-space: nowrap;
+}
+
+.workspace-stat-card small {
+  display: block;
+  margin-top: 7px;
+  font-size: 12px;
+}
+
+.workspace-stat-card.bullish {
+  border-color: rgba(19, 255, 67, 0.2);
+}
+
+.workspace-stat-card.bearish,
+.runtime-control-card.risk-blocked {
+  border-color: rgba(255, 84, 75, 0.24);
+}
+
+.portfolio-goal-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--surface-border);
+}
+
+.portfolio-goal-card h3 {
+  margin: 4px 0 0;
+  font-size: 1.2rem;
+  letter-spacing: 0;
+}
+
 .panel {
   background: rgba(18, 18, 18, 0.74);
   backdrop-filter: blur(20px);
@@ -2174,6 +2400,15 @@ input:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .agency-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-flow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .workflow-live-data-grid {
     grid-template-columns: 1fr;
   }
@@ -2284,6 +2519,10 @@ input:focus-visible {
     flex-direction: column;
   }
 
+  .agent-roster {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workflow-readiness-flags {
     justify-content: flex-start;
     max-width: none;
@@ -2388,6 +2627,22 @@ input:focus-visible {
 
   .trading-flow-map {
     grid-template-columns: 1fr;
+  }
+
+  .agent-roster,
+  .agent-handoff-grid,
+  .agent-decision-grid,
+  .next-batch-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .agency-hero,
+  .agent-flow {
+    padding: 18px;
+  }
+
+  .agent-card {
+    min-height: 0;
   }
 
   .workflow-step-grid,
@@ -2917,6 +3172,9 @@ input:focus-visible {
 .ahad-theme .workspace-alert,
 .ahad-theme .workspace-stat-card,
 .ahad-theme .source-card,
+.ahad-theme .agent-card,
+.ahad-theme .agency-goal-card,
+.ahad-theme .portfolio-goal-card,
 .ahad-theme .summary-list,
 .ahad-theme .money-flow-card,
 .ahad-theme .money-flow-section,
@@ -2925,6 +3183,28 @@ input:focus-visible {
 .ahad-theme .detail-chart-shell {
   background: rgba(255, 255, 255, 0.035);
   border-color: var(--surface-border);
+}
+
+.ahad-theme .agency-hero {
+  background:
+    linear-gradient(135deg, rgba(0, 230, 118, 0.08), rgba(68, 138, 255, 0.06)),
+    rgba(17, 22, 34, 0.92);
+}
+
+.ahad-theme .agency-hero h1,
+.ahad-theme .agent-flow h2,
+.ahad-theme .portfolio-goal-card h3 {
+  font-family: var(--font-body);
+}
+
+.ahad-theme .agent-card {
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.ahad-theme .agent-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--surface-border-strong);
+  background: rgba(255, 255, 255, 0.052);
 }
 
 .ahad-theme .mini-card strong,
@@ -2936,6 +3216,9 @@ input:focus-visible {
 .ahad-theme .workspace-alert strong,
 .ahad-theme .workspace-stat-card strong,
 .ahad-theme .source-card strong,
+.ahad-theme .agent-step,
+.ahad-theme .agent-card-metric b,
+.ahad-theme .agency-goal-card strong,
 .ahad-theme .stock-cell strong,
 .ahad-theme .conf-cell,
 .ahad-theme .momentum {
