@@ -1,5 +1,6 @@
 node_modules/
 .env
+.claude/
 .DS_Store
 Thumbs.db
 
@@ -9,6 +10,10 @@ coverage/
 
 data/runtime/
 data/backups/
+data/env-backups/
+data/runtime-state.json
+data/runtime-*-state.json
+data/runtime-reliability-test-state.json
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal

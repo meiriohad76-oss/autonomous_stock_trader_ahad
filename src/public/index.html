@@ -59,6 +59,13 @@
       </div>
     </header>
 
+    <div id="execution-account-bar" class="execution-account-bar" hidden>
+      <span id="exec-equity" class="exec-stat"></span>
+      <span id="exec-pnl" class="exec-stat"></span>
+      <span id="exec-positions" class="exec-stat"></span>
+      <button id="exec-kill-switch" class="exec-kill-btn" type="button">Kill Switch</button>
+    </div>
+
     <div class="market-ticker-bar" aria-label="Market status strip">
       <div class="ticker-track">
         <span><strong>Evidence Quality</strong> live trust weighting</span>
@@ -631,6 +638,37 @@
         <span>System</span>
       </button>
     </nav>
+
+    <div id="approval-overlay" class="approval-overlay" hidden>
+      <div class="approval-card">
+        <div class="approval-card-header">
+          <span id="approval-ticker" class="approval-ticker"></span>
+          <span id="approval-action-badge" class="approval-badge"></span>
+        </div>
+        <div class="approval-body">
+          <div class="approval-conviction">
+            <span class="approval-label">Conviction</span>
+            <div id="approval-conviction-bar" class="conviction-bar"></div>
+            <span id="approval-conviction-pct"></span>
+          </div>
+          <p id="approval-thesis" class="approval-thesis"></p>
+          <div id="approval-risk-flags" class="approval-flags"></div>
+          <div class="approval-prices">
+            <div><span class="approval-label">Entry</span> <span id="approval-entry"></span></div>
+            <div><span class="approval-label">Stop</span> <span id="approval-stop"></span></div>
+            <div><span class="approval-label">Target</span> <span id="approval-target"></span></div>
+          </div>
+          <div class="approval-sizing">
+            <span id="approval-dollar"></span> &bull; <span id="approval-shares"></span>
+          </div>
+          <div id="approval-countdown" class="approval-countdown"></div>
+        </div>
+        <div class="approval-actions">
+          <button id="btn-approve" class="approval-btn approve-btn" type="button">Approve</button>
+          <button id="btn-reject" class="approval-btn reject-btn" type="button">Reject</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="/app.js"></script>
   </body>

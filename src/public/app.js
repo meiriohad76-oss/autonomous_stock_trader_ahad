@@ -341,6 +341,10 @@ function runtimeActionSummary(action, result = {}) {
   if (action === "poll_once" && result.ingested_documents !== undefined) {
     return `Poll completed with ${result.ingested_documents} ingested document${result.ingested_documents === 1 ? "" : "s"}.${savedSuffix}`;
   }
+  if (action === "poll_once" && result.ingested !== undefined && result.skipped !== undefined) {
+    const errors = result.errors ? `, ${result.errors} error${result.errors === 1 ? "" : "s"}` : "";
+    return `Poll completed with ${result.ingested} ingested, ${result.skipped} skipped${errors}.${savedSuffix}`;
+  }
   if (action === "poll_once" && result.refreshed_companies !== undefined) {
     return `Fundamental market reference refreshed for ${result.refreshed_companies} companies.${savedSuffix}`;
   }
@@ -2721,6 +2725,9 @@ function renderTradingWorkflowStatus() {
       </div>
       <div class="workflow-control-actions">
         ${runtimeActionButton("poll_once", "live_news", "Poll News", "newspaper")}
+        ${runtimeActionButton("poll_once", "earnings_calendar", "Poll Earnings", "event")}
+        ${runtimeActionButton("poll_once", "stocktwits_stream", "Poll Social", "forum")}
+        ${runtimeActionButton("poll_once", "trade_prints", "Poll Prints", "receipt_long")}
         ${runtimeActionButton("poll_once", "sec_form4", "Poll Form 4", "badge")}
         ${runtimeActionButton("poll_once", "market_flow", "Poll Flow", "monitoring")}
         ${runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database")}
@@ -2786,6 +2793,10 @@ function renderSystemView() {
   const liveNews = state.health?.live_sources?.google_news_rss || null;
   const marketData = state.health?.live_sources?.market_data || null;
   const marketFlow = state.health?.live_sources?.market_flow || null;
+  const earningsCalendar = state.health?.live_sources?.yahoo_earnings_calendar || null;
+  const stocktwits = state.health?.live_sources?.stocktwits_stream || null;
+  const tradePrintsProvider = state.config?.trade_prints_provider || "polygon";
+  const tradePrints = state.health?.live_sources?.[`${tradePrintsProvider}_trade_prints`] || null;
   const secFundamentals = state.health?.live_sources?.sec_fundamentals || null;
   const secForm4 = state.health?.live_sources?.sec_form4 || null;
   const sec13f = state.health?.live_sources?.sec_13f || null;
@@ -2883,6 +2894,16 @@ function renderSystemView() {
           emphasis: true
         })}
         ${runtimeActionCard({
+          title: "Earnings calendar",
+          body: "Refresh upcoming earnings dates used by trade setup risk flags.",
+          metric: earningsCalendar?.last_success_at ? relativeTime(earningsCalendar.last_success_at) : "Pending",
+          submetric: "Runs against Yahoo Finance calendar events.",
+          action: "poll_once",
+          source: "earnings_calendar",
+          label: "Poll Earnings",
+          icon: "event"
+        })}
+        ${runtimeActionCard({
           title: "Save lightweight state",
           body: "Write the compact JSON snapshot so current runtime data survives restart.",
           metric: backup?.last_backup_at ? relativeTime(backup.last_backup_at) : "Not saved",
@@ -2901,6 +2922,26 @@ function renderSystemView() {
           source: "market_flow",
           label: "Scan Flow",
           icon: "monitoring"
+        })}
+        ${runtimeActionCard({
+          title: "Social pulse",
+          body: "Run one StockTwits tagged-sentiment pass for strong crowd skew.",
+          metric: stocktwits?.last_success_at ? relativeTime(stocktwits.last_success_at) : "Manual",
+          submetric: "Disabled by default; useful as confirming evidence when enabled.",
+          action: "poll_once",
+          source: "stocktwits_stream",
+          label: "Poll Social",
+          icon: "forum"
+        })}
+        ${runtimeActionCard({
+          title: "Trade prints",
+          body: "Fetch delayed block prints from the configured provider.",
+          metric: tradePrints?.last_success_at ? relativeTime(tradePrints.last_success_at) : "Manual",
+          submetric: `${prettyLabel(tradePrintsProvider)} provider. Requires provider credentials when enabled.`,
+          action: "poll_once",
+          source: "trade_prints",
+          label: "Poll Prints",
+          icon: "receipt_long"
         })}
         ${runtimeActionCard({
           title: "SEC 13F scan",
@@ -2934,6 +2975,12 @@ function renderSystemView() {
       <div class="workspace-stat-card"><span>Market Refresh</span><strong>${marketData?.last_success_at ? formatTime(marketData.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Market Flow</span><strong>${state.config?.market_flow_enabled ? "Enabled" : "Disabled"}</strong></div>
       <div class="workspace-stat-card"><span>Flow Poll</span><strong>${marketFlow?.last_success_at ? formatTime(marketFlow.last_success_at) : "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>Earnings</span><strong>${state.config?.earnings_enabled ? "Enabled" : "Disabled"}</strong></div>
+      <div class="workspace-stat-card"><span>Earnings Poll</span><strong>${earningsCalendar?.last_success_at ? formatTime(earningsCalendar.last_success_at) : "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>StockTwits</span><strong>${state.config?.stocktwits_enabled ? "Enabled" : "Disabled"}</strong></div>
+      <div class="workspace-stat-card"><span>Social Poll</span><strong>${stocktwits?.last_success_at ? formatTime(stocktwits.last_success_at) : "n/a"}</strong></div>
+      <div class="workspace-stat-card"><span>Trade Prints</span><strong>${state.config?.trade_prints_enabled ? prettyLabel(tradePrintsProvider) : "Disabled"}</strong></div>
+      <div class="workspace-stat-card"><span>Prints Poll</span><strong>${tradePrints?.last_success_at ? formatTime(tradePrints.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>SEC Form 4</span><strong>${state.config?.sec_form4_enabled ? "Enabled" : "Disabled"}</strong></div>
       <div class="workspace-stat-card"><span>Insider Poll</span><strong>${secForm4?.last_success_at ? formatTime(secForm4.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>SEC 13F</span><strong>${state.config?.sec_13f_enabled ? "Enabled" : "Disabled"}</strong></div>
@@ -3006,7 +3053,8 @@ function renderSystemView() {
     }
     <ul class="workspace-list">
       <li>News sentiment source: Google News RSS with Yahoo Finance RSS fallback, scored through the same normalization and sentiment pipeline as other live events.</li>
-      <li>Money-flow sources: inferred tape anomalies from live market bars, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>
+      <li>Event and social sources: earnings calendar risk checks and StockTwits crowd-skew evidence when enabled.</li>
+      <li>Money-flow sources: inferred tape anomalies from live market bars, delayed trade prints, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>
       <li>The sentiment watchlist is sentiment-first. Fundamentals enrich those rows, but the full fundamentals universe lives in the Fundamentals dashboard and the Trade Setup Agent.</li>
       <li>The Trade Setup Agent is the true combined decision layer: it blends sentiment, fundamentals, macro regime, recent documents, and alerts.</li>
       <li>${persistenceNote}</li>

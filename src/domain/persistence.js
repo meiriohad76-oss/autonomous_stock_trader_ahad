@@ -970,6 +970,36 @@ function hydrateStoreFromRows(store, rows) {
     store.fundamentals = reviveFundamentals(persistedFundamentals);
   }
 
+  const persistedEarnings = runtimeMap.get("earningsCalendar");
+  if (persistedEarnings && Array.isArray(persistedEarnings)) {
+    store.earningsCalendar = new Map(persistedEarnings);
+  }
+
+  const persistedApprovals = runtimeMap.get("pendingApprovals");
+  if (persistedApprovals && Array.isArray(persistedApprovals)) {
+    store.pendingApprovals = new Map(persistedApprovals);
+  }
+
+  const persistedPositions = runtimeMap.get("positions");
+  if (persistedPositions && Array.isArray(persistedPositions)) {
+    store.positions = new Map(persistedPositions);
+  }
+
+  const persistedOrders = runtimeMap.get("orders");
+  if (persistedOrders && Array.isArray(persistedOrders)) {
+    store.orders = new Map(persistedOrders);
+  }
+
+  const persistedExecutionState = runtimeMap.get("executionState");
+  if (persistedExecutionState) {
+    store.executionState = { ...store.executionState, ...persistedExecutionState };
+  }
+
+  const persistedExecutionLog = runtimeMap.get("executionLog");
+  if (persistedExecutionLog && Array.isArray(persistedExecutionLog)) {
+    store.executionLog = persistedExecutionLog;
+  }
+
   store.fundamentalWarehouse = reviveFundamentalWarehouseFromRows(rows.fundamentals);
   const revivedAgents = reviveAgentRows(rows.agents);
   store.macroRegimeHistory = revivedAgents.macroRegimeHistory;
@@ -1972,6 +2002,12 @@ function createSqlitePersistence(config) {
         store.tradeSetupHistory = reviveAgentRows({ tradeSetupStates: agentRows.tradeSetupStates }).tradeSetupHistory;
         insertRuntime.run("health", now, JSON.stringify(store.health));
         insertRuntime.run("fundamentals", now, JSON.stringify(buildRuntimeFundamentals(store)));
+        insertRuntime.run("earningsCalendar", now, JSON.stringify(Array.from(store.earningsCalendar.entries())));
+        insertRuntime.run("pendingApprovals", now, JSON.stringify(Array.from(store.pendingApprovals.entries())));
+        insertRuntime.run("positions", now, JSON.stringify(Array.from(store.positions.entries())));
+        insertRuntime.run("orders", now, JSON.stringify(Array.from(store.orders.entries())));
+        insertRuntime.run("executionState", now, JSON.stringify(store.executionState));
+        insertRuntime.run("executionLog", now, JSON.stringify(store.executionLog));
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");

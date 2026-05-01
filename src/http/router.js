@@ -469,6 +469,60 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/execution/state" && request.method === "GET") {
+    sendJson(response, 200, app.getExecutionState());
+    return;
+  }
+
+  if (pathname === "/api/execution/log" && request.method === "GET") {
+    sendJson(response, 200, app.getExecutionLog());
+    return;
+  }
+
+  if (pathname.startsWith("/api/execution/approve/") && request.method === "POST") {
+    const approvalId = pathname.slice("/api/execution/approve/".length);
+    try {
+      const result = await app.approveExecution(approvalId);
+      sendJson(response, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (pathname.startsWith("/api/execution/reject/") && request.method === "POST") {
+    const approvalId = pathname.slice("/api/execution/reject/".length);
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const parsed = parseJsonBody(body) || {};
+      app.rejectExecution(approvalId, parsed.reason || "");
+      sendJson(response, 200, { ok: true });
+    });
+    return;
+  }
+
+  if (pathname === "/api/execution/kill-switch" && request.method === "POST") {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const parsed = parseJsonBody(body) || {};
+      app.setKillSwitch(Boolean(parsed.enabled));
+      sendJson(response, 200, { ok: true, enabled: Boolean(parsed.enabled) });
+    });
+    return;
+  }
+
+  if (pathname === "/api/execution/sync" && request.method === "POST") {
+    try {
+      await app.syncExecution();
+      sendJson(response, 200, { ok: true });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
   if (pathname === "/api/replay" && request.method === "POST") {
     let options = {};
     let body = "";
@@ -509,7 +563,8 @@ export async function routeRequest(app, request, response) {
       type: "snapshot",
       health: app.getHealth(),
       watchlist: app.getWatchlistSnapshot(app.config.defaultWindow),
-      fundamentals: app.getFundamentalsSnapshot()
+      fundamentals: app.getFundamentalsSnapshot(),
+      execution: app.getExecutionState()
     });
 
     const listener = (event) => sseWrite(response, event);

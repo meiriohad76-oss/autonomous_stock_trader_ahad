@@ -281,7 +281,8 @@ function computeSetup({
   docs,
   alerts,
   macroRegimeSnapshot,
-  runtimeReliabilitySnapshot
+  runtimeReliabilitySnapshot,
+  earningsCalendar
 }) {
   const companyName = fundamentalRow?.company_name || sentimentRow?.entity_name || ticker;
   const sector = fundamentalRow?.sector || "Unknown";
@@ -404,6 +405,14 @@ function computeSetup({
   }
   if (alerts.some((item) => item.alert_type === "polarity_reversal")) {
     riskFlags.push("recent polarity reversal raises timing risk");
+  }
+
+  const earnings = earningsCalendar?.get(ticker);
+  if (earnings?.days_until !== null && earnings?.days_until !== undefined) {
+    const daysUntilEarnings = Number(earnings.days_until);
+    if (Number.isFinite(daysUntilEarnings) && daysUntilEarnings >= 0 && daysUntilEarnings <= 7) {
+      riskFlags.push("earnings_in_window");
+    }
   }
 
   if (macroRegimeSnapshot) {
@@ -589,7 +598,8 @@ export function buildTradeSetupsSnapshot(
           .filter((item) => item.entity_key === ticker)
           .sort((a, b) => new Date(latestAlertTimestamp(b) || 0) - new Date(latestAlertTimestamp(a) || 0)),
         macroRegimeSnapshot: regimeSnapshot,
-        runtimeReliabilitySnapshot
+        runtimeReliabilitySnapshot,
+        earningsCalendar: store.earningsCalendar
       })
     )
     .filter((setup) => setup.conviction >= minConviction)

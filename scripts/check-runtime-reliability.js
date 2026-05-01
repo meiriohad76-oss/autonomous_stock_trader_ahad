@@ -43,6 +43,18 @@ function assertRuntimeSnapshot(snapshot) {
   assert(snapshot.available_actions.some((item) => item.action === "apply_profile"), "Profile action is missing.");
   assert(snapshot.runtime_profiles?.profiles?.length >= 4, "Runtime profiles are missing.");
   assert(snapshot.runtime_profiles?.recommended, "Recommended runtime profile is missing.");
+
+  const sourceKeys = new Set(snapshot.sources.map((item) => item.key));
+  for (const key of ["earnings_calendar", "stocktwits_stream", "trade_prints"]) {
+    assert(sourceKeys.has(key), `${key} runtime source is missing.`);
+  }
+
+  for (const source of ["earnings_calendar", "stocktwits_stream", "trade_prints"]) {
+    assert(
+      snapshot.available_actions.some((item) => item.action === "poll_once" && item.source === source),
+      `${source} poll_once action is missing.`
+    );
+  }
 }
 
 for (const [key, profile] of Object.entries(RUNTIME_PROFILES)) {

@@ -31,6 +31,10 @@ import { createExecutionAgent } from "./domain/execution-agent.js";
 import { createRiskAgent } from "./domain/risk-agent.js";
 import { createPositionMonitorAgent } from "./domain/position-monitor-agent.js";
 import { buildTradingWorkflowStatus } from "./domain/trading-workflow.js";
+import { createCorporateEventsCollector } from "./domain/corporate-events.js";
+import { createSocialSentimentCollector } from "./domain/social-sentiment.js";
+import { createTradePrintsCollector } from "./domain/trade-prints.js";
+import { createExecutionAgent as createHumanApprovalAgent } from "./domain/execution.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
@@ -368,6 +372,13 @@ const RUNTIME_PROFILE_CONFIG_FIELDS = {
   MARKET_DATA_REFRESH_MS: { key: "marketDataRefreshMs", type: "number" },
   MARKET_FLOW_ENABLED: { key: "marketFlowEnabled", type: "boolean" },
   AUTO_START_MARKET_FLOW: { key: "autoStartMarketFlow", type: "boolean" },
+  EARNINGS_ENABLED: { key: "earningsEnabled", type: "boolean" },
+  EARNINGS_POLL_MS: { key: "earningsPollMs", type: "number" },
+  STOCKTWITS_ENABLED: { key: "stocktwitsEnabled", type: "boolean" },
+  STOCKTWITS_POLL_MS: { key: "stocktwitsPollMs", type: "number" },
+  TRADE_PRINTS_ENABLED: { key: "tradePrintsEnabled", type: "boolean" },
+  TRADE_PRINTS_PROVIDER: { key: "tradePrintsProvider", type: "string" },
+  TRADE_PRINTS_POLL_MS: { key: "tradePrintsPollMs", type: "number" },
   FUNDAMENTAL_MARKET_DATA_PROVIDER: { key: "fundamentalMarketDataProvider", type: "string" },
   AUTO_START_FUNDAMENTAL_MARKET_DATA: { key: "autoStartFundamentalMarketData", type: "boolean" },
   FUNDAMENTAL_SEC_ENABLED: { key: "fundamentalSecEnabled", type: "boolean" },
@@ -843,6 +854,9 @@ export function createSentimentApp() {
   const marketFlowMonitor = createMarketFlowMonitor({ config, store, pipeline, marketDataService });
   const secInsiderCollector = createSecInsiderCollector({ config, store, pipeline });
   const secInstitutionalCollector = createSecInstitutionalCollector({ config, store, pipeline });
+  const corporateEventsCollector = createCorporateEventsCollector({ config, store, pipeline });
+  const socialSentimentCollector = createSocialSentimentCollector({ config, store, pipeline });
+  const tradePrintsCollector = createTradePrintsCollector({ config, store, pipeline });
 
   async function bootstrapFundamentalCoverage({ force = false } = {}) {
     const targetUniverse = await loadFundamentalUniverse({ config });
@@ -932,6 +946,7 @@ export function createSentimentApp() {
     getTradeSetups: (options = {}) => tradeSetupAgent.getTradeSetups(options),
     getRiskSnapshot: () => riskAgent.getSnapshot()
   });
+  let humanApprovalAgent = null;
   const startupState = {
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -1037,6 +1052,10 @@ export function createSentimentApp() {
         sec_form4_enabled: config.secForm4Enabled,
         sec_13f_enabled: config.sec13fEnabled,
         auto_start_sec_13f: config.autoStartSec13f,
+        earnings_enabled: config.earningsEnabled,
+        stocktwits_enabled: config.stocktwitsEnabled,
+        trade_prints_enabled: config.tradePrintsEnabled,
+        trade_prints_provider: config.tradePrintsProvider,
         broker_adapter: config.brokerAdapter,
         execution: executionAgent.getStatus(),
         risk: {
@@ -1101,6 +1120,15 @@ export function createSentimentApp() {
       const disabledSources = {
         live_news: !config.liveNewsEnabled,
         market_flow: !config.marketFlowEnabled,
+        earnings_calendar: !config.earningsEnabled,
+        yahoo_earnings_calendar: !config.earningsEnabled,
+        earnings: !config.earningsEnabled,
+        stocktwits_stream: !config.stocktwitsEnabled,
+        stocktwits: !config.stocktwitsEnabled,
+        trade_prints: !config.tradePrintsEnabled,
+        polygon_trade_prints: !config.tradePrintsEnabled,
+        iex_trade_prints: !config.tradePrintsEnabled,
+        [`${config.tradePrintsProvider}_trade_prints`]: !config.tradePrintsEnabled,
         sec_form4: !config.secForm4Enabled,
         sec_13f: !config.sec13fEnabled,
         sec_fundamentals: !config.fundamentalSecEnabled,
@@ -1161,23 +1189,41 @@ export function createSentimentApp() {
           throw new Error("poll_once requires a source.");
         }
 
-        if (source === "live_news") {
-          assertSourceEnabled(source);
+        const canonicalSource = {
+          yahoo_earnings_calendar: "earnings_calendar",
+          earnings: "earnings_calendar",
+          stocktwits: "stocktwits_stream",
+          polygon_trade_prints: "trade_prints",
+          iex_trade_prints: "trade_prints",
+          [`${config.tradePrintsProvider}_trade_prints`]: "trade_prints"
+        }[source] || source;
+
+        if (canonicalSource === "live_news") {
+          assertSourceEnabled(canonicalSource);
           result = await liveNewsCollector.pollOnce();
-        } else if (source === "market_flow") {
-          assertSourceEnabled(source);
+        } else if (canonicalSource === "market_flow") {
+          assertSourceEnabled(canonicalSource);
           result = await marketFlowMonitor.pollOnce();
-        } else if (source === "sec_form4") {
-          assertSourceEnabled(source);
+        } else if (canonicalSource === "earnings_calendar") {
+          assertSourceEnabled(canonicalSource);
+          result = await corporateEventsCollector.pollOnce();
+        } else if (canonicalSource === "stocktwits_stream") {
+          assertSourceEnabled(canonicalSource);
+          result = await socialSentimentCollector.pollOnce();
+        } else if (canonicalSource === "trade_prints") {
+          assertSourceEnabled(canonicalSource);
+          result = await tradePrintsCollector.pollOnce();
+        } else if (canonicalSource === "sec_form4") {
+          assertSourceEnabled(canonicalSource);
           result = await secInsiderCollector.pollOnce();
-        } else if (source === "sec_13f") {
-          assertSourceEnabled(source);
+        } else if (canonicalSource === "sec_13f") {
+          assertSourceEnabled(canonicalSource);
           result = await secInstitutionalCollector.pollOnce();
-        } else if (source === "sec_fundamentals") {
-          assertSourceEnabled(source);
+        } else if (canonicalSource === "sec_fundamentals") {
+          assertSourceEnabled(canonicalSource);
           await ensureFundamentalCoverage({ force: forceUniverse });
           result = await secFundamentalsCollector.pollOnce();
-        } else if (source === "fundamental_market_data") {
+        } else if (canonicalSource === "fundamental_market_data") {
           const companies = fundamentals.getTrackedCompanies();
           const referenceMap = await fundamentalMarketDataService.getReferenceBatch(companies);
           const refreshed = await fundamentals.refreshMarketReference(referenceMap);
@@ -1185,7 +1231,7 @@ export function createSentimentApp() {
             refreshed_companies: refreshed,
             reference_count: referenceMap.size
           };
-        } else if (source === "fundamental_universe") {
+        } else if (canonicalSource === "fundamental_universe") {
           result = await ensureFundamentalCoverage({ force: true });
         } else {
           throw new Error(`Unsupported runtime source: ${source}`);
@@ -1323,6 +1369,9 @@ export function createSentimentApp() {
     getRecentDocuments(params) {
       return buildRecentDocuments(store, params);
     },
+    getEarningsCalendar() {
+      return Object.fromEntries(store.earningsCalendar);
+    },
     getHighImpactEvents(limit = 10) {
       return buildRecentDocuments(store, { limit: 100 })
         .filter((item) => item.confidence >= 0.7 && Math.abs(item.sentiment_score) >= 0.4)
@@ -1416,6 +1465,33 @@ export function createSentimentApp() {
     async getPositionMonitor(options = {}) {
       return positionMonitorAgent.getSnapshot(options);
     },
+    getExecutionState() {
+      return {
+        ...store.executionState,
+        pending_approvals: store.pendingApprovals.size
+      };
+    },
+    getExecutionPositions() {
+      return Array.from(store.positions.values());
+    },
+    getExecutionOrders() {
+      return Array.from(store.orders.values());
+    },
+    getExecutionLog() {
+      return store.executionLog;
+    },
+    async approveExecution(approvalId) {
+      return humanApprovalAgent.approve(approvalId);
+    },
+    rejectExecution(approvalId, reason = "") {
+      humanApprovalAgent.reject(approvalId, reason);
+    },
+    setKillSwitch(enabled) {
+      humanApprovalAgent.setKillSwitch(enabled);
+    },
+    async syncExecution() {
+      return humanApprovalAgent.sync();
+    },
     getTradeSetupStorageSummary() {
       const rows = store.tradeSetupHistory || [];
       const latestAsOf = rows[0]?.as_of || null;
@@ -1473,18 +1549,25 @@ export function createSentimentApp() {
     async pollLiveSourcesOnce() {
       const liveNews = await liveNewsCollector.pollOnce();
       const marketFlow = await marketFlowMonitor.pollOnce();
+      const earningsCalendar = await corporateEventsCollector.pollOnce();
+      const stocktwits = await socialSentimentCollector.pollOnce();
+      const tradePrints = await tradePrintsCollector.pollOnce();
       const secForm4 = await secInsiderCollector.pollOnce();
       const sec13f = await secInstitutionalCollector.pollOnce();
 
       return {
         live_news: liveNews,
         market_flow: marketFlow,
+        earnings_calendar: earningsCalendar,
+        stocktwits_stream: stocktwits,
+        trade_prints: tradePrints,
         sec_form4: secForm4,
         sec_13f: sec13f
       };
     }
   };
 
+  humanApprovalAgent = createHumanApprovalAgent(app, broker);
   const secFundamentalsCollector = createSecFundamentalsCollector(app);
   let autosaveTimer = null;
   let backupTimer = null;
@@ -1513,10 +1596,26 @@ export function createSentimentApp() {
       starts.push(secFundamentalsCollector.start());
     }
 
+    if (config.earningsEnabled) {
+      starts.push(corporateEventsCollector.start());
+    }
+
+    if (config.stocktwitsEnabled) {
+      starts.push(socialSentimentCollector.start());
+    }
+
+    if (config.tradePrintsEnabled) {
+      starts.push(tradePrintsCollector.start());
+    }
+
     await Promise.all(starts);
 
     if (config.autoStartMarketFlow) {
       await marketFlowMonitor.start();
+    }
+
+    if (config.executionEnabled) {
+      humanApprovalAgent.start();
     }
 
     if (config.databaseEnabled && !autosaveTimer) {
@@ -1552,6 +1651,10 @@ export function createSentimentApp() {
     secInstitutionalCollector.stop();
     fundamentalMarketDataService.stop();
     secFundamentalsCollector.stop();
+    corporateEventsCollector.stop();
+    socialSentimentCollector.stop();
+    tradePrintsCollector.stop();
+    humanApprovalAgent.stop();
     if (autosaveTimer) {
       clearInterval(autosaveTimer);
       autosaveTimer = null;

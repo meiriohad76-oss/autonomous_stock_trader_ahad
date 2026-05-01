@@ -7,7 +7,7 @@ export const WINDOWS = [
 ];
 
 export const EVENT_TAXONOMY = {
-  earnings: ["beat", "miss", "guidance_raise", "guidance_cut", "margin_change"],
+  earnings: ["beat", "miss", "guidance_raise", "guidance_cut", "margin_change", "earnings_upcoming", "earnings_release"],
   corporate_actions: ["merger", "acquisition", "spin_off", "buyback", "dividend_change", "offering"],
   analyst: ["upgrade", "downgrade", "target_raise", "target_cut"],
   legal_regulatory: ["investigation", "lawsuit", "settlement", "approval", "rejection"],
@@ -16,6 +16,7 @@ export const EVENT_TAXONOMY = {
   insider_ownership: ["insider_buy", "insider_sell", "activist_stake", "institutional_buying", "institutional_selling"],
   money_flow: ["abnormal_volume_buying", "abnormal_volume_selling", "block_trade_buying", "block_trade_selling"],
   macro_sector: ["rate_decision", "inflation_surprise", "commodity_shock", "policy_change"],
+  social: ["social_buzz"],
   unclassified: ["monitor_item"]
 };
 
@@ -104,6 +105,10 @@ export const SOURCE_TRUST = {
   insider_tracker: 0.79,
   macro_calendar: 0.73,
   market_flow: 0.76,
+  yahoo_earnings: 0.72,
+  stocktwits: 0.58,
+  polygon_trades: 0.81,
+  iex_trades: 0.75,
   manual: 0.5
 };
 
@@ -139,6 +144,9 @@ export const HALF_LIFE_HOURS = {
   policy_change: 12,
   offering: 48,
   buyback: 48,
+  earnings_upcoming: 168,
+  earnings_release: 24,
+  social_buzz: 4,
   monitor_item: 12,
   default: 24
 };
@@ -325,6 +333,58 @@ export const RULE_PATTERNS = [
     confidence: 0.88,
     patterns: [/block trade distribution/i, /large block selling/i, /institutional block selling/i],
     reasons: ["block_trade_selling"]
+  },
+  {
+    family: "earnings",
+    type: "earnings_upcoming",
+    direction: "neutral",
+    label: "neutral",
+    urgency: "high",
+    tradeability: "monitor",
+    sentiment: 0,
+    impact: 0.7,
+    confidence: 0.85,
+    patterns: [/reports earnings on/i, /earnings (report|call) (expected|scheduled)/i, /upcoming earnings/i],
+    reasons: ["earnings_calendar_event"]
+  },
+  {
+    family: "earnings",
+    type: "earnings_release",
+    direction: "neutral",
+    label: "neutral",
+    urgency: "high",
+    tradeability: "monitor",
+    sentiment: 0,
+    impact: 0.75,
+    confidence: 0.82,
+    patterns: [/reports (quarterly|q[1-4]) (results|earnings)/i, /fiscal (q[1-4]|quarter) results/i, /earnings release/i],
+    reasons: ["earnings_release_event"]
+  },
+  {
+    family: "social",
+    type: "social_buzz",
+    direction: "positive",
+    label: "bullish",
+    urgency: "low",
+    tradeability: "monitor",
+    sentiment: 0.38,
+    impact: 0.35,
+    confidence: 0.62,
+    patterns: [/bullish crowd sentiment/i, /\d+% bullish/i, /bullish social/i],
+    reasons: ["social_bullish_skew"]
+  },
+  {
+    family: "social",
+    type: "social_buzz",
+    direction: "negative",
+    label: "bearish",
+    urgency: "low",
+    tradeability: "monitor",
+    sentiment: -0.38,
+    impact: 0.35,
+    confidence: 0.62,
+    patterns: [/bearish crowd sentiment/i, /\d+% bearish/i, /bearish social/i],
+    reasons: ["social_bearish_skew"]
   },
   {
     family: "analyst",
