@@ -31,7 +31,7 @@ import { createExecutionAgent } from "./domain/execution-agent.js";
 import { createRiskAgent } from "./domain/risk-agent.js";
 import { createPositionMonitorAgent } from "./domain/position-monitor-agent.js";
 import { buildTradingWorkflowStatus } from "./domain/trading-workflow.js";
-import { buildAgencyCycleStatus } from "./domain/agency-cycle.js";
+import { buildAgencyCycleStatus, chooseAgencyCycleAdvance } from "./domain/agency-cycle.js";
 import { createCorporateEventsCollector } from "./domain/corporate-events.js";
 import { createSocialSentimentCollector } from "./domain/social-sentiment.js";
 import { createTradePrintsCollector } from "./domain/trade-prints.js";
@@ -1470,8 +1470,134 @@ export function createSentimentApp() {
         riskSnapshot,
         positionMonitor,
         secQueue: buildSecFundamentalsQueue(store, config, { limit: 8 }),
-        executionLog: store.executionLog
+        executionLog: store.executionLog,
+        advanceLog: store.agencyCycleLog || []
       });
+    },
+    async advanceAgencyCycle(options = {}) {
+      const window = options.window || config.defaultWindow;
+      const before = await this.getAgencyCycleStatus(options);
+      const selectedAction = chooseAgencyCycleAdvance(before);
+      const actionResults = [];
+      let preview = null;
+      let result = null;
+      let openedView = null;
+      let topSetup = null;
+
+      async function runRuntime(payload) {
+        try {
+          const runtimeResult = await app.runRuntimeReliabilityAction(payload);
+          actionResults.push({
+            ok: true,
+            type: "runtime",
+            action: payload.action,
+            source: payload.source || null,
+            summary: runtimeResult.result || null
+          });
+          return runtimeResult;
+        } catch (error) {
+          actionResults.push({
+            ok: false,
+            type: "runtime",
+            action: payload.action,
+            source: payload.source || null,
+            error: error.message
+          });
+          return null;
+        }
+      }
+
+      if (selectedAction.type === "runtime") {
+        result = await runRuntime(selectedAction.payload);
+      } else if (selectedAction.type === "runtime_bundle") {
+        for (const action of selectedAction.actions || []) {
+          await runRuntime(action);
+        }
+        result = { actions: actionResults };
+      } else if (selectedAction.type === "execution_preview") {
+        const tradeSetups = tradeSetupAgent.getTradeSetups({
+          window,
+          limit: options.limit ? Number(options.limit) : 25,
+          minConviction: options.minConviction !== undefined ? Number(options.minConviction) : 0.35
+        });
+        topSetup = (tradeSetups.setups || []).find((setup) => ["long", "short"].includes(setup.action)) || null;
+        if (topSetup) {
+          preview = await executionAgent.previewOrder({
+            ticker: topSetup.ticker,
+            window
+          });
+          result = {
+            ticker: topSetup.ticker,
+            preview_allowed: Boolean(preview.execution_allowed),
+            broker_ready: Boolean(preview.broker_ready),
+            blocked_reason: preview.intent?.blocked_reason || preview.risk?.blocked_reason || null
+          };
+        } else {
+          result = {
+            preview_allowed: false,
+            blocked_reason: "no_tradable_setup"
+          };
+        }
+      } else if (selectedAction.type === "risk_snapshot") {
+        result = await riskAgent.getSnapshot();
+      } else if (selectedAction.type === "position_monitor") {
+        result = await positionMonitorAgent.getSnapshot({
+          window,
+          limit: options.positionLimit ? Number(options.positionLimit) : 25
+        });
+      } else if (selectedAction.type === "learning_review") {
+        const positionMonitor = await positionMonitorAgent.getSnapshot({
+          window,
+          limit: options.positionLimit ? Number(options.positionLimit) : 25
+        });
+        result = {
+          execution_decisions: store.executionLog.length,
+          visible_positions: positionMonitor.position_count || 0,
+          outcome_sample: store.executionLog.length + (positionMonitor.position_count || 0)
+        };
+      } else if (selectedAction.type === "view") {
+        openedView = selectedAction.view || before.workers?.find((worker) => worker.key === before.current_worker_key)?.view || "overview";
+        result = { view: openedView };
+      } else {
+        result = { message: selectedAction.reason || "No safe cycle action is available." };
+      }
+
+      const after = await this.getAgencyCycleStatus(options);
+      const logEntry = {
+        id: `cycle-${Date.now()}`,
+        at: new Date().toISOString(),
+        worker_key: before.current_worker_key,
+        worker_label: before.current_worker_label,
+        action_type: selectedAction.type,
+        action_label: selectedAction.label,
+        reason: selectedAction.reason,
+        before_status: before.status,
+        before_mode: before.mode,
+        after_status: after.status,
+        after_mode: after.mode,
+        after_worker_key: after.current_worker_key,
+        after_worker_label: after.current_worker_label,
+        submitted_order: false,
+        preview_ticker: topSetup?.ticker || null,
+        action_results: actionResults
+      };
+      store.agencyCycleLog = [logEntry, ...(store.agencyCycleLog || [])].slice(0, 25);
+      const afterWithLog = {
+        ...after,
+        recent_advances: store.agencyCycleLog.slice(0, 5)
+      };
+
+      return {
+        ok: true,
+        submitted_order: false,
+        opened_view: openedView,
+        action: selectedAction,
+        result,
+        preview,
+        before,
+        after: afterWithLog,
+        log_entry: logEntry
+      };
     },
     getExecutionStatus() {
       return executionAgent.getStatus();

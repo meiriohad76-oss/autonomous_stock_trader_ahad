@@ -509,6 +509,67 @@ input:focus-visible {
   color: var(--text-muted);
 }
 
+.primary-cycle-action {
+  border-color: rgba(19, 255, 67, 0.28);
+  background: rgba(19, 255, 67, 0.12);
+  color: var(--text);
+}
+
+.cycle-advance-result {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(173, 198, 255, 0.14);
+  background: rgba(173, 198, 255, 0.055);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cycle-advance-result.bearish {
+  border-color: rgba(255, 84, 75, 0.24);
+  background: rgba(255, 84, 75, 0.06);
+}
+
+.cycle-advance-log {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(173, 198, 255, 0.14);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.cycle-advance-log ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cycle-advance-log li {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.9fr) minmax(180px, 1.1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cycle-advance-log strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.cycle-advance-log span,
+.cycle-advance-log small {
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .agent-roster {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -3079,6 +3140,7 @@ input:focus-visible {
 
   .agent-roster,
   .agency-cycle-timeline,
+  .cycle-advance-log li,
   .agent-handoff-grid,
   .agent-decision-grid,
   .learning-suggestion-grid,
@@ -3638,6 +3700,9 @@ input:focus-visible {
 .ahad-theme .agency-cycle-current,
 .ahad-theme .agency-cycle-actions,
 .ahad-theme .agency-cycle-step,
+.ahad-theme .cycle-advance-result,
+.ahad-theme .cycle-advance-log,
+.ahad-theme .cycle-advance-log li,
 .ahad-theme .portfolio-goal-card,
 .ahad-theme .agent-process-panel,
 .ahad-theme .agency-run-log,

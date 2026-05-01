@@ -79,6 +79,8 @@ const state = {
   marketFlowSaveState: "",
   runtimeActionState: "",
   runtimeActionResult: null,
+  agencyAdvanceState: "",
+  agencyAdvanceResult: null,
   selectedSignal: null,
   selectedSector: null
 };
@@ -441,6 +443,22 @@ function agencyActionButton(action, className = "panel-action runtime-action-but
     `;
   }
   return "";
+}
+
+function advanceCycleButton(label = "Advance Cycle") {
+  const disabled = state.agencyAdvanceState === "running" || state.runtimeActionState === "running";
+  return `
+    <button
+      type="button"
+      class="panel-action runtime-action-button primary-cycle-action"
+      data-agency-advance="true"
+      ${disabled ? "disabled" : ""}
+      title="Run the safest next worker action. This never submits an Alpaca order."
+    >
+      <span class="material-symbols-outlined">${disabled ? "progress_activity" : "play_arrow"}</span>
+      ${escapeHtml(disabled ? "Advancing..." : label)}
+    </button>
+  `;
 }
 
 function runtimeActionCard({ title, body, metric, submetric, action, source, label, icon = "play_arrow", progress = null, emphasis = false }) {
@@ -1773,9 +1791,15 @@ function renderAgencyCyclePanel(cycle) {
             ${(cycle.next_actions || []).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
           </ul>
           <div class="process-action-row">
+            ${advanceCycleButton()}
             ${agencyActionButton(cycle.primary_action)}
             ${currentWorker?.view ? `<button type="button" class="panel-action runtime-action-button" data-agent-view="${escapeHtml(currentWorker.view)}"><span class="material-symbols-outlined">open_in_new</span>Open Worker</button>` : ""}
           </div>
+          ${
+            state.agencyAdvanceState && state.agencyAdvanceState !== "running"
+              ? `<div class="cycle-advance-result ${state.agencyAdvanceResult?.ok === false ? "bearish" : "neutral"}">${escapeHtml(state.agencyAdvanceState)}</div>`
+              : ""
+          }
         </div>
       </div>
       <div class="agency-cycle-timeline">
@@ -1792,6 +1816,26 @@ function renderAgencyCyclePanel(cycle) {
           )
           .join("")}
       </div>
+      ${
+        cycle.recent_advances?.length
+          ? `<div class="cycle-advance-log">
+              <div class="section-kicker">Advance Log</div>
+              <ul>
+                ${cycle.recent_advances
+                  .map(
+                    (entry) => `
+                      <li>
+                        <strong>${escapeHtml(entry.action_label || "Advance")}</strong>
+                        <span>${escapeHtml(entry.worker_label || "Agency")} -> ${escapeHtml(entry.after_worker_label || "Agency")}</span>
+                        <small>${escapeHtml(relativeTime(entry.at))} - ${entry.submitted_order ? "order submitted" : "no order submitted"}</small>
+                      </li>
+                    `
+                  )
+                  .join("")}
+              </ul>
+            </div>`
+          : ""
+      }
     </section>
   `;
 }
@@ -4969,6 +5013,12 @@ async function handleExecutionConsoleClick(event) {
 }
 
 async function handleAgencyPanelClick(event) {
+  const advanceButton = event.target.closest("[data-agency-advance]");
+  if (advanceButton && !advanceButton.disabled) {
+    await advanceAgencyCycle();
+    return true;
+  }
+
   const viewButton = event.target.closest("[data-agent-view]");
   if (viewButton) {
     setActiveView(viewButton.dataset.agentView);
@@ -5077,6 +5127,49 @@ async function runRuntimeAction(action, source) {
   } catch (error) {
     state.runtimeActionResult = null;
     state.runtimeActionState = error.message;
+    render();
+  }
+}
+
+function agencyAdvanceSummary(payload) {
+  if (!payload?.ok) {
+    return payload?.error || "Advance cycle failed.";
+  }
+  const action = payload.action?.label || "Advance Cycle";
+  const before = payload.before?.current_worker_label || "Agency";
+  const after = payload.after?.current_worker_label || "Agency";
+  const safety = payload.submitted_order ? "Order submitted." : "No order submitted.";
+  if (payload.preview?.intent?.ticker || payload.result?.ticker) {
+    const ticker = payload.preview?.intent?.ticker || payload.result?.ticker;
+    return `${action}: previewed ${ticker}. ${safety} Next stage: ${after}.`;
+  }
+  return `${action}: ${before} advanced. ${safety} Current stage: ${after}.`;
+}
+
+async function advanceAgencyCycle() {
+  state.agencyAdvanceState = "running";
+  state.agencyAdvanceResult = null;
+  render();
+
+  try {
+    const payload = await postJson("/api/agency/cycle/advance", {
+      window: state.activeWindow
+    });
+    state.agencyAdvanceResult = payload;
+    state.agencyAdvanceState = agencyAdvanceSummary(payload);
+    if (payload.after) {
+      state.agencyCycle = payload.after;
+    }
+    if (payload.opened_view) {
+      setActiveView(payload.opened_view);
+    }
+    if (payload.preview) {
+      openSignalDrawer(buildSignalFromExecutionPreview(payload.result?.ticker || payload.preview.intent?.ticker, payload.preview));
+    }
+    await performRefresh();
+  } catch (error) {
+    state.agencyAdvanceResult = { ok: false, error: error.message };
+    state.agencyAdvanceState = error.message;
     render();
   }
 }

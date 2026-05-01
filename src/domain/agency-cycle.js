@@ -73,6 +73,18 @@ const WORKERS = [
   }
 ];
 
+const MARKET_REFRESH_ACTIONS = [
+  { action: "poll_once", source: "fundamental_market_data", label: "Refresh Pricing" },
+  { action: "poll_once", source: "market_flow", label: "Poll Market Flow" }
+];
+
+const SIGNAL_REFRESH_ACTIONS = [
+  { action: "poll_once", source: "live_news", label: "Poll News" },
+  { action: "poll_once", source: "sec_form4", label: "Poll Form 4" },
+  { action: "poll_once", source: "trade_prints", label: "Poll Prints" },
+  { action: "poll_once", source: "market_flow", label: "Poll Money Flow" }
+];
+
 function countTradeSetups(tradeSetups = {}) {
   const setups = tradeSetups.setups || [];
   const counts = tradeSetups.counts || {};
@@ -140,6 +152,110 @@ function buildWorker(base, index, status, detail, metric, action = base.action) 
   };
 }
 
+export function chooseAgencyCycleAdvance(cycle = {}) {
+  const current = (cycle.workers || []).find((worker) => worker.key === cycle.current_worker_key) || null;
+  const key = current?.key || cycle.current_worker_key;
+
+  if (!key) {
+    return {
+      type: "noop",
+      label: "No cycle action",
+      reason: "Agency cycle state is not available yet."
+    };
+  }
+
+  if (key === "universe") {
+    return {
+      type: "runtime",
+      label: "Refresh Universe",
+      reason: "The Universe Agent needs the allowed S&P 100 plus QQQ scope loaded.",
+      payload: { action: "refresh_universe" }
+    };
+  }
+
+  if (key === "fundamentals") {
+    return {
+      type: "runtime",
+      label: "Run SEC Fundamentals Batch",
+      reason: "The Fundamentals Agent needs more SEC-backed rows before larger paper sizing.",
+      payload: { action: "poll_once", source: "sec_fundamentals" }
+    };
+  }
+
+  if (key === "market") {
+    return {
+      type: "runtime_bundle",
+      label: "Refresh Market Context",
+      reason: "The Market Agent needs pricing plus market-flow context before Selection uses sector winds.",
+      actions: MARKET_REFRESH_ACTIONS
+    };
+  }
+
+  if (key === "signals") {
+    return {
+      type: "runtime_bundle",
+      label: "Refresh Signals And Money Flow",
+      reason: "The Signals Agent owns ticker-level evidence including news, insider flow, tape prints, and inferred money flow.",
+      actions: SIGNAL_REFRESH_ACTIONS
+    };
+  }
+
+  if (key === "selection") {
+    return {
+      type: "view",
+      label: "Open Selection Agent",
+      reason: "Selection updates automatically from current Fundamentals, Market, and Signals inputs.",
+      view: "trading"
+    };
+  }
+
+  if (key === "risk") {
+    return {
+      type: "risk_snapshot",
+      label: "Refresh Risk Snapshot",
+      reason: "Risk review is read-only and checks exposure, buying power, open orders, and runtime pressure."
+    };
+  }
+
+  if (key === "execution") {
+    return cycle.can_preview_orders
+      ? {
+          type: "execution_preview",
+          label: "Preview Top Paper Ticket",
+          reason: "Execution can create a dry-run Alpaca paper ticket, but this advance will not submit an order."
+        }
+      : {
+          type: "view",
+          label: "Open Execution Agent",
+          reason: "Execution is gated. Review broker and paper-submit requirements before any order can be approved.",
+          view: "execution"
+        };
+  }
+
+  if (key === "portfolio") {
+    return {
+      type: "position_monitor",
+      label: "Refresh Portfolio Monitor",
+      reason: "Portfolio refresh is read-only and checks positions, open orders, sell/reduce candidates, and weekly progress."
+    };
+  }
+
+  if (key === "learning") {
+    return {
+      type: "learning_review",
+      label: "Refresh Learning Review",
+      reason: "Learning review is read-only and updates outcome attribution and worker improvement suggestions."
+    };
+  }
+
+  return {
+    type: "view",
+    label: "Open Current Worker",
+    reason: "Open the current worker dashboard for manual review.",
+    view: current?.view || "overview"
+  };
+}
+
 export function buildAgencyCycleStatus({
   readiness,
   runtimeReliability,
@@ -149,7 +265,8 @@ export function buildAgencyCycleStatus({
   riskSnapshot,
   positionMonitor,
   secQueue,
-  executionLog = []
+  executionLog = [],
+  advanceLog = []
 }) {
   const setupCounts = countTradeSetups(tradeSetups);
   const tradableCount = setupCounts.long + setupCounts.short;
@@ -218,10 +335,11 @@ export function buildAgencyCycleStatus({
     return buildWorker(worker, index, status.status, status.detail, metric);
   });
 
-  const current = currentWorker(workers);
   const canPreview = Boolean(workflowStatus?.can_preview_orders);
   const canSubmit = Boolean(workflowStatus?.can_submit_orders);
   const canUseForDecisions = Boolean(workflowStatus?.can_use_for_decisions);
+  const executionWorker = workers.find((worker) => worker.key === "execution");
+  const current = (canSubmit || canPreview) && executionWorker ? executionWorker : currentWorker(workers);
   const mode = canSubmit
     ? "ready_for_paper_approval"
     : canPreview
@@ -256,6 +374,7 @@ export function buildAgencyCycleStatus({
     workers,
     blockers: workflowStatus?.blockers || [],
     warnings: workflowStatus?.warnings || [],
-    next_actions: nextActions
+    next_actions: nextActions,
+    recent_advances: advanceLog.slice(0, 5)
   };
 }

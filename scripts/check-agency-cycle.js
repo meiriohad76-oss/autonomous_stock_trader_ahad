@@ -1,4 +1,4 @@
-const { buildAgencyCycleStatus } = await import("../src/domain/agency-cycle.js");
+const { buildAgencyCycleStatus, chooseAgencyCycleAdvance } = await import("../src/domain/agency-cycle.js");
 
 const cycle = buildAgencyCycleStatus({
   readiness: { ready: true },
@@ -40,6 +40,11 @@ if (!cycle.workers || cycle.workers.length !== 9) {
 
 if (cycle.current_worker_key !== "signals") {
   throw new Error(`Expected Signals Agent to be current blocker, got ${cycle.current_worker_key}.`);
+}
+
+const signalAdvance = chooseAgencyCycleAdvance(cycle);
+if (signalAdvance.type !== "runtime_bundle" || !signalAdvance.actions?.some((action) => action.source === "market_flow")) {
+  throw new Error("Signals advance should run a guarded refresh bundle that includes money flow.");
 }
 
 if (cycle.can_submit_orders) {
@@ -84,9 +89,15 @@ if (readyCycle.status !== "paper_ready" || !readyCycle.can_submit_orders) {
   throw new Error("Expected ready cycle to be paper-ready.");
 }
 
+const readyAdvance = chooseAgencyCycleAdvance(readyCycle);
+if (!["position_monitor", "learning_review", "execution_preview"].includes(readyAdvance.type)) {
+  throw new Error(`Unexpected ready advance action: ${readyAdvance.type}.`);
+}
+
 console.log(JSON.stringify({
   status: "ok",
   workers: cycle.workers.length,
   current_worker: cycle.current_worker_label,
+  signal_advance: signalAdvance.label,
   ready_mode: readyCycle.mode
 }, null, 2));

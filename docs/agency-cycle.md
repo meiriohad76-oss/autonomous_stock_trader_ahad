@@ -40,6 +40,25 @@ Useful fields:
 - `can_preview_orders`: whether execution previews are allowed
 - `can_submit_orders`: whether supervised Alpaca paper submission is allowed
 
+## Advance One Stage
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/agency/cycle/advance \
+  -H 'Content-Type: application/json' \
+  -d '{"window":"1h"}' | jq
+```
+
+Advance runs only the safest next worker action:
+
+- Universe: refresh the allowed universe
+- Fundamentals: run one SEC fundamentals batch
+- Market: refresh pricing and broad market-flow context
+- Signals: refresh news, Form 4 insider flow, trade prints, and inferred money flow
+- Risk, Portfolio, Learning: refresh read-only snapshots
+- Execution: preview a paper ticket only when previews are allowed
+
+It never submits an Alpaca order. Paper submission remains behind the Execution Agent confirmation flow.
+
 ## Check
 
 ```bash
