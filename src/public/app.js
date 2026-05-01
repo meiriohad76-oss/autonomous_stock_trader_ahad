@@ -68,7 +68,13 @@ const state = {
   tradeSetups: [],
   setupFilter: "all",
   setupProvisionalOnly: false,
-  selectedSetup: null
+  selectedSetup: null,
+  executionState: null,
+  pendingApproval: null,
+  approvalCountdownTimer: null,
+  positions: [],
+  orders: [],
+  executionLog: []
 };
 
 const elements = {
@@ -1772,6 +1778,9 @@ function setActiveView(view) {
   for (const button of [...elements.topNavButtons, ...elements.sideNavButtons, ...elements.mobileNavButtons]) {
     button.classList.toggle("active", button.dataset.view === view);
   }
+  if (view === "trading") {
+    fetchExecutionData();
+  }
 }
 
 function attachEvents() {
@@ -1874,6 +1883,55 @@ function attachEvents() {
       if (elements.setupDrawer) elements.setupDrawer.hidden = true;
       state.selectedSetup = null;
     }
+  });
+
+  document.getElementById("approval-approve-btn")?.addEventListener("click", async () => {
+    if (!state.pendingApproval) return;
+    const id = state.pendingApproval.approval_id;
+    try {
+      const res = await fetch(`/api/execution/approve/${encodeURIComponent(id)}`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(`Approval failed: ${err.error}`);
+      }
+    } catch {
+      alert("Network error approving trade.");
+    }
+  });
+
+  document.getElementById("approval-reject-btn")?.addEventListener("click", async () => {
+    if (!state.pendingApproval) return;
+    const id = state.pendingApproval.approval_id;
+    try {
+      await fetch(`/api/execution/reject/${encodeURIComponent(id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "user_rejected" })
+      });
+      hideApprovalCard();
+    } catch {
+      alert("Network error rejecting trade.");
+    }
+  });
+
+  document.getElementById("exec-kill-btn")?.addEventListener("click", async () => {
+    if (!state.executionState) return;
+    const newState = !state.executionState.killSwitch;
+    const reason = newState ? "manual halt from dashboard" : "";
+    try {
+      await fetch("/api/execution/kill-switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: newState, reason })
+      });
+    } catch {
+      alert("Network error toggling kill switch.");
+    }
+  });
+
+  document.getElementById("sync-execution-btn")?.addEventListener("click", async () => {
+    await fetch("/api/execution/sync", { method: "POST" }).catch(() => {});
+    await fetchExecutionData();
   });
 }
 
@@ -2101,6 +2159,167 @@ async function fetchTradeSetups() {
   }
 }
 
+function renderExecutionAccountBar(es) {
+  if (!es) return;
+  const bar = document.getElementById("execution-account-bar");
+  const statusEl = document.getElementById("exec-bar-status");
+  const equityEl = document.getElementById("exec-bar-equity");
+  const pnlEl = document.getElementById("exec-bar-pnl");
+  const posEl = document.getElementById("exec-bar-positions");
+  const killBtn = document.getElementById("exec-kill-btn");
+  if (!bar) return;
+
+  bar.dataset.enabled = es.enabled ? "true" : "false";
+  bar.dataset.halted = es.killSwitch ? "true" : "false";
+
+  if (!es.enabled) {
+    statusEl.textContent = "DISABLED";
+  } else if (es.killSwitch) {
+    statusEl.textContent = "HALTED";
+  } else {
+    statusEl.textContent = "ACTIVE";
+  }
+
+  equityEl.textContent = es.accountEquity > 0
+    ? `$${es.accountEquity.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+    : "—";
+
+  const pnl = es.dailyPnl || 0;
+  pnlEl.textContent = `${pnl >= 0 ? "+" : ""}$${pnl.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  pnlEl.className = pnl >= 0 ? "bullish" : "bearish";
+
+  posEl.textContent = es.pending_count > 0
+    ? `${state.positions?.length || 0} (+${es.pending_count} pending)`
+    : String(state.positions?.length || 0);
+
+  if (killBtn) killBtn.dataset.active = es.killSwitch ? "true" : "false";
+}
+
+function showApprovalCard(approval) {
+  state.pendingApproval = approval;
+  const overlay = document.getElementById("approval-overlay");
+  if (!overlay) return;
+
+  document.getElementById("approval-action-badge").textContent = approval.action?.toUpperCase() || "—";
+  document.getElementById("approval-action-badge").dataset.action = approval.action || "long";
+  document.getElementById("approval-ticker").textContent = approval.ticker || "—";
+  document.getElementById("approval-thesis").textContent = approval.thesis || "No thesis available.";
+
+  const flagsEl = document.getElementById("approval-risk-flags");
+  flagsEl.innerHTML = (approval.risk_flags || []).map((f) =>
+    `<span class="risk-flag">${f}</span>`
+  ).join("");
+
+  document.getElementById("approval-entry").textContent = approval.entry ? `$${approval.entry.toFixed(2)}` : "—";
+  document.getElementById("approval-stop").textContent = approval.stop ? `$${approval.stop.toFixed(2)}` : "—";
+  document.getElementById("approval-target").textContent = approval.target ? `$${approval.target.toFixed(2)}` : "—";
+  document.getElementById("approval-shares").textContent = `${approval.shares || 0} shares`;
+  document.getElementById("approval-dollar").textContent = approval.dollar_size
+    ? `$${approval.dollar_size.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+    : "$—";
+
+  const convFill = document.getElementById("approval-conviction-fill");
+  const pct = Math.round((approval.conviction || 0) * 100);
+  convFill.style.width = `${pct}%`;
+  document.getElementById("approval-conviction-label").textContent = `${pct}% conviction`;
+
+  if (state.approvalCountdownTimer) clearInterval(state.approvalCountdownTimer);
+  const expiresAt = new Date(approval.expires_at).getTime();
+  function updateCountdown() {
+    const remaining = Math.max(0, expiresAt - Date.now());
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    const el = document.getElementById("approval-countdown");
+    if (el) el.textContent = `${mins}:${String(secs).padStart(2, "0")}`;
+    if (remaining <= 0) {
+      clearInterval(state.approvalCountdownTimer);
+      hideApprovalCard();
+    }
+  }
+  updateCountdown();
+  state.approvalCountdownTimer = setInterval(updateCountdown, 1000);
+
+  overlay.hidden = false;
+}
+
+function hideApprovalCard() {
+  const overlay = document.getElementById("approval-overlay");
+  if (overlay) overlay.hidden = true;
+  if (state.approvalCountdownTimer) {
+    clearInterval(state.approvalCountdownTimer);
+    state.approvalCountdownTimer = null;
+  }
+  state.pendingApproval = null;
+}
+
+async function fetchExecutionData() {
+  try {
+    const [posRes, ordRes, logRes] = await Promise.all([
+      fetch("/api/execution/positions"),
+      fetch("/api/execution/orders"),
+      fetch("/api/execution/log")
+    ]);
+    const [posData, ordData, logData] = await Promise.all([posRes.json(), ordRes.json(), logRes.json()]);
+
+    state.positions = posData.positions || [];
+    state.orders = ordData.orders || [];
+    state.executionLog = logData.log || [];
+
+    renderPositionsTable(state.positions);
+    renderOrdersTable(state.orders);
+    renderExecutionLog(state.executionLog);
+  } catch {
+    // silent — trading may not be enabled
+  }
+}
+
+function renderPositionsTable(positions) {
+  const tbody = document.getElementById("positions-tbody");
+  const subtitle = document.getElementById("positions-subtitle");
+  if (!tbody) return;
+  if (subtitle) subtitle.textContent = positions.length === 0 ? "No open positions" : `${positions.length} position${positions.length !== 1 ? "s" : ""}`;
+  tbody.innerHTML = positions.map((p) => {
+    const pnlClass = p.unrealized_pnl >= 0 ? "bullish" : "bearish";
+    return `<tr>
+      <td><strong>${p.ticker}</strong></td>
+      <td><span class="action-badge action-${p.side}">${p.side.toUpperCase()}</span></td>
+      <td>${p.qty}</td>
+      <td>$${p.entry_price?.toFixed(2) || "—"}</td>
+      <td>$${p.current_price?.toFixed(2) || "—"}</td>
+      <td class="${pnlClass}">${p.unrealized_pnl >= 0 ? "+" : ""}$${p.unrealized_pnl?.toFixed(0) || "0"}</td>
+      <td>$${p.stop_price?.toFixed(2) || "—"}</td>
+      <td>$${p.target_price?.toFixed(2) || "—"}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="8" class="empty-row">No open positions</td></tr>`;
+}
+
+function renderOrdersTable(orders) {
+  const tbody = document.getElementById("orders-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = orders.slice(0, 30).map((o) => `<tr>
+    <td><strong>${o.ticker}</strong></td>
+    <td><span class="action-badge action-${o.side}">${o.side?.toUpperCase()}</span></td>
+    <td>${o.qty}</td>
+    <td>$${o.entry_price?.toFixed(2) || "—"}</td>
+    <td><span class="order-status order-${o.status}">${o.status}</span></td>
+    <td>${o.placed_at ? new Date(o.placed_at).toLocaleString() : "—"}</td>
+  </tr>`).join("") || `<tr><td colspan="6" class="empty-row">No orders yet</td></tr>`;
+}
+
+function renderExecutionLog(log) {
+  const container = document.getElementById("execution-log-list");
+  if (!container) return;
+  container.innerHTML = log.slice(0, 50).map((entry) => {
+    const statusClass = entry.status === "approved" ? "bullish" : entry.status === "rejected" ? "bearish" : "neutral";
+    return `<div class="exec-log-item">
+      <span class="exec-log-status ${statusClass}">${entry.status?.toUpperCase()}</span>
+      <span class="exec-log-ticker">${entry.ticker}</span>
+      <span class="exec-log-action">${entry.action?.toUpperCase()}</span>
+      <span class="exec-log-time">${entry.decided_at ? new Date(entry.decided_at).toLocaleTimeString() : "—"}</span>
+    </div>`;
+  }).join("") || `<p class="empty-state">No decisions yet</p>`;
+}
+
 function startEventStream() {
   const stream = new EventSource("/api/stream");
   const refresh = async () => {
@@ -2115,6 +2334,13 @@ function startEventStream() {
       const payload = JSON.parse(e.data);
       if (payload.macro_regime) { state.macroRegime = payload.macro_regime; renderMacroRegimeBar(); }
       if (payload.trade_setups) { state.tradeSetups = payload.trade_setups; renderSetups(); }
+      if (payload.execution) {
+        state.executionState = payload.execution;
+        renderExecutionAccountBar(payload.execution);
+        if (payload.execution.pending_approvals?.length > 0) {
+          showApprovalCard(payload.execution.pending_approvals[0]);
+        }
+      }
     } catch { /* ignore parse failures */ }
   });
   stream.addEventListener("document_scored", refresh);
@@ -2132,6 +2358,38 @@ function startEventStream() {
 
   stream.addEventListener("trade_setup_refresh", () => {
     fetchTradeSetups();
+  });
+
+  stream.addEventListener("execution_state_update", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      state.executionState = data.executionState;
+      renderExecutionAccountBar(data.executionState);
+    } catch { /* ignore */ }
+  });
+
+  stream.addEventListener("trade_approval_request", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      showApprovalCard(data);
+    } catch { /* ignore */ }
+  });
+
+  stream.addEventListener("trade_approved", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      hideApprovalCard();
+      fetchExecutionData();
+      console.log(`[trading] Order placed: ${data.ticker} ${data.action} ${data.shares} shares`);
+    } catch { /* ignore */ }
+  });
+
+  stream.addEventListener("trade_rejected", () => {
+    hideApprovalCard();
+  });
+
+  stream.addEventListener("trade_expired", () => {
+    hideApprovalCard();
   });
 }
 
