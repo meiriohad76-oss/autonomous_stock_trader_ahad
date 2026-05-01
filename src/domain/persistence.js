@@ -234,6 +234,26 @@ function hydrateStoreFromRows(store, rows) {
   if (Array.isArray(persistedEarningsCalendar)) {
     store.earningsCalendar = new Map(persistedEarningsCalendar);
   }
+
+  const persistedExecutionState = runtimeMap.get("execution_state");
+  if (persistedExecutionState && typeof persistedExecutionState === "object") {
+    store.executionState = { ...store.executionState, ...persistedExecutionState };
+  }
+
+  const persistedPositions = runtimeMap.get("execution_positions");
+  if (Array.isArray(persistedPositions)) {
+    store.positions = new Map(persistedPositions);
+  }
+
+  const persistedOrders = runtimeMap.get("execution_orders");
+  if (Array.isArray(persistedOrders)) {
+    store.orders = new Map(persistedOrders);
+  }
+
+  const persistedExecutionLog = runtimeMap.get("execution_log");
+  if (Array.isArray(persistedExecutionLog)) {
+    store.executionLog = persistedExecutionLog;
+  }
 }
 
 function createDisabledPersistence() {
@@ -365,6 +385,10 @@ function createSqlitePersistence(config) {
         insertRuntime.run("health", now, JSON.stringify(store.health));
         insertRuntime.run("fundamentals", now, JSON.stringify(buildRuntimeFundamentals(store)));
         insertRuntime.run("earnings_calendar", now, JSON.stringify([...store.earningsCalendar.entries()]));
+        insertRuntime.run("execution_state", now, JSON.stringify(store.executionState));
+        insertRuntime.run("execution_positions", now, JSON.stringify([...store.positions.entries()]));
+        insertRuntime.run("execution_orders", now, JSON.stringify([...store.orders.entries()]));
+        insertRuntime.run("execution_log", now, JSON.stringify(store.executionLog.slice(0, 500)));
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -585,6 +609,34 @@ function createPostgresPersistence(config) {
            SET updated_at = EXCLUDED.updated_at,
                payload_json = EXCLUDED.payload_json`,
           ["earnings_calendar", now, JSON.stringify([...store.earningsCalendar.entries()])]
+        );
+        await client.query(
+          `INSERT INTO runtime_state (state_key, updated_at, payload_json)
+           VALUES ($1, $2, $3::jsonb)
+           ON CONFLICT (state_key) DO UPDATE
+           SET updated_at = EXCLUDED.updated_at, payload_json = EXCLUDED.payload_json`,
+          ["execution_state", now, JSON.stringify(store.executionState)]
+        );
+        await client.query(
+          `INSERT INTO runtime_state (state_key, updated_at, payload_json)
+           VALUES ($1, $2, $3::jsonb)
+           ON CONFLICT (state_key) DO UPDATE
+           SET updated_at = EXCLUDED.updated_at, payload_json = EXCLUDED.payload_json`,
+          ["execution_positions", now, JSON.stringify([...store.positions.entries()])]
+        );
+        await client.query(
+          `INSERT INTO runtime_state (state_key, updated_at, payload_json)
+           VALUES ($1, $2, $3::jsonb)
+           ON CONFLICT (state_key) DO UPDATE
+           SET updated_at = EXCLUDED.updated_at, payload_json = EXCLUDED.payload_json`,
+          ["execution_orders", now, JSON.stringify([...store.orders.entries()])]
+        );
+        await client.query(
+          `INSERT INTO runtime_state (state_key, updated_at, payload_json)
+           VALUES ($1, $2, $3::jsonb)
+           ON CONFLICT (state_key) DO UPDATE
+           SET updated_at = EXCLUDED.updated_at, payload_json = EXCLUDED.payload_json`,
+          ["execution_log", now, JSON.stringify(store.executionLog.slice(0, 500))]
         );
 
         await client.query("COMMIT");
