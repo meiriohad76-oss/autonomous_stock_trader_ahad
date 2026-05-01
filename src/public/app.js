@@ -1,5 +1,21 @@
 const WINDOWS = ["15m", "1h", "4h", "1d", "7d"];
 const AGENCY_UNIVERSE_LABEL = "S&P 100 + QQQ Holdings";
+const AGENCY_WORKERS = [
+  { key: "universe", worker: "Universe Agent", view: "universe" },
+  { key: "fundamentals", worker: "Fundamentals Agent", view: "universe" },
+  { key: "market", worker: "Market Agent", view: "markets" },
+  { key: "signals", worker: "Signals Agent", view: "alerts" },
+  { key: "selection", worker: "Selection Agent", view: "trading" },
+  { key: "risk", worker: "Risk Manager", view: "risk" },
+  { key: "execution", worker: "Execution Agent", view: "execution" },
+  { key: "portfolio", worker: "Portfolio Monitor", view: "portfolio" },
+  { key: "learning", worker: "Learning Agent", view: "learning" }
+];
+const WORKER_LABEL_BY_AGENT = AGENCY_WORKERS.reduce((acc, item) => {
+  acc[item.key] = item.worker;
+  return acc;
+}, {});
+const LEARNING_PRIORITY_WEIGHT = { High: 3, Medium: 2, Low: 1 };
 const FALLBACK_TICKER_META = {
   AAPL: { company: "Apple", sector: "Technology" },
   MSFT: { company: "Microsoft", sector: "Technology" },
@@ -908,9 +924,12 @@ function buildLearningAnalysis() {
   const setupByTicker = new Map(setups.map((setup) => [setup.ticker, setup]));
   const counts = screenerUniverseCounts();
   const secCoverage = secCoverageSummary();
+  const sectors = deriveVisibleSectorSummaries(universeRows());
+  const activeRows = activeMarketSignalRows(universeRows());
   const moneyFlowSignals = collectMoneyFlowSignals();
   const signalTime = latestSignalTime();
   const workflow = state.workflowStatus || {};
+  const setupSummary = setupCounts();
   const approved = decisions.filter((item) => normalizeDecisionStatus(item) === "approved");
   const rejected = decisions.filter((item) => normalizeDecisionStatus(item) === "rejected");
   const expired = decisions.filter((item) => normalizeDecisionStatus(item) === "expired");
@@ -934,6 +953,12 @@ function buildLearningAnalysis() {
   const suggestions = [];
   function addSuggestion(worker, priority, recommendation, reason, metric, status = "neutral") {
     suggestions.push({ worker, priority, recommendation, reason, metric, status });
+  }
+
+  function ensureSuggestion(worker, priority, recommendation, reason, metric, status = "neutral") {
+    if (!suggestions.some((suggestion) => suggestion.worker === worker)) {
+      addSuggestion(worker, priority, recommendation, reason, metric, status);
+    }
   }
 
   if (secCoverage.pending > 0) {
@@ -1065,6 +1090,98 @@ function buildLearningAnalysis() {
     );
   }
 
+  const bullishSectors = sectors.filter((sector) => sector.sentiment_regime === "bullish").length;
+  const bearishSectors = sectors.filter((sector) => sector.sentiment_regime === "bearish").length;
+  const sampleCount = decisions.length + positions.length;
+  ensureSuggestion(
+    "Universe Agent",
+    counts.tracked ? "Low" : "High",
+    counts.tracked
+      ? "Keep every cycle pinned to the S&P 100 plus QQQ boundary and flag any ticker that falls outside it."
+      : "Load the S&P 100 plus QQQ universe before scoring, selection, risk, or execution runs.",
+    counts.tracked
+      ? "Learning can compare outcomes fairly only when the candidate pool stays stable."
+      : "No tracked universe rows are available for this cycle.",
+    `${counts.tracked || 0} tracked / ${counts.eligible || 0} eligible`,
+    counts.tracked ? "bullish" : "bearish"
+  );
+  ensureSuggestion(
+    "Fundamentals Agent",
+    secCoverage.pending ? "High" : "Low",
+    secCoverage.pending
+      ? "Keep bootstrap rows visible, but avoid raising paper size until SEC-backed factor confidence improves."
+      : "Keep current factor thresholds stable while Learning gathers more outcome evidence.",
+    secCoverage.pending
+      ? "Pending SEC rows reduce confidence in factor rankings."
+      : "Coverage is strong enough for paper attribution; aggressive threshold tuning should wait for more trades.",
+    `${secCoverage.percent}% SEC coverage`,
+    secCoverage.pending ? "neutral" : "bullish"
+  );
+  ensureSuggestion(
+    "Market Agent",
+    sectors.length ? "Medium" : "High",
+    "Attach the market and sector regime snapshot to every promoted recommendation.",
+    sectors.length
+      ? "Learning needs to know whether paper winners and losers had sector tailwind, headwind, or broad-market support."
+      : "No sector regime is available, so Selection cannot explain market context well.",
+    `${bullishSectors} bullish / ${bearishSectors} bearish sectors, ${activeRows.length} active names`,
+    sectors.length ? "neutral" : "bearish"
+  );
+  ensureSuggestion(
+    "Signals Agent",
+    signalTime && moneyFlowSignals.length ? "Low" : "Medium",
+    "Attach the freshest confirming alerts, news, insider, institutional, and tape-flow evidence to every promoted stock.",
+    signalTime && moneyFlowSignals.length
+      ? "Fresh evidence exists; preserving the exact signal mix will help Learning identify which combinations work."
+      : "Weak or missing signal evidence makes later revenue/loss attribution harder.",
+    `${moneyFlowSignals.length} flow signals, latest ${signalTime ? relativeTime(signalTime) : "n/a"}`,
+    signalTime && moneyFlowSignals.length ? "bullish" : "neutral"
+  );
+  ensureSuggestion(
+    "Selection Agent",
+    setupSummary.tradable.length ? "Low" : "Medium",
+    "Record the top positive and negative drivers behind each buy, sell, watch, and blocked decision.",
+    "Learning needs decision-driver tags before it can safely adjust ranking thresholds after paper outcomes.",
+    `${setupSummary.long} buy / ${setupSummary.short} sell / ${setupSummary.watch} watch`,
+    setupSummary.tradable.length ? "bullish" : "neutral"
+  );
+  ensureSuggestion(
+    "Risk Manager",
+    risk.runtime_constrained ? "High" : "Low",
+    "Keep sizing tied to runtime trust, exposure, open-order pressure, and weekly drawdown limits.",
+    "Outcome review needs to separate idea quality from sizing and guardrail quality.",
+    `${positions.length} positions / ${risk.hard_blocks?.length || 0} hard blocks`,
+    risk.runtime_constrained ? "bearish" : "neutral"
+  );
+  ensureSuggestion(
+    "Execution Agent",
+    broker.ready_for_order_submission ? "Low" : "Medium",
+    "Record preview, approval, broker submit, fill, reject, and cancel events with the setup and risk verdict.",
+    "Learning cannot attribute agency decisions accurately without a complete paper order lifecycle.",
+    broker.ready_for_order_submission ? "paper ready" : broker.configured ? "submit gated" : "broker not configured",
+    broker.ready_for_order_submission ? "bullish" : "neutral"
+  );
+  ensureSuggestion(
+    "Portfolio Monitor",
+    positions.length ? "Low" : "Medium",
+    "Compare each open holding against the latest recommendation, risk state, and P/L driver after every refresh.",
+    positions.length
+      ? "Open positions are the fastest feedback source for sell, reduce, hold, or add decisions."
+      : "No current paper positions are available for close-candidate or revenue/loss review.",
+    `${positions.length} positions / ${formatUsdCompact(visiblePnl)} visible P/L`,
+    visiblePnl > 0 ? "bullish" : visiblePnl < 0 ? "bearish" : "neutral"
+  );
+  ensureSuggestion(
+    "Learning Agent",
+    sampleCount >= 10 ? "Low" : "High",
+    "Separate algorithm changes from sample noise until the paper decision set is large enough.",
+    sampleCount >= 10
+      ? "There is enough initial data to compare patterns, but changes should still be incremental."
+      : "The agency is still in baseline collection mode.",
+    `${sampleCount} decisions/positions observed`,
+    sampleCount >= 10 ? "bullish" : "neutral"
+  );
+
   return {
     decisions,
     approved,
@@ -1103,6 +1220,42 @@ function priorityClass(priority) {
   return "neutral";
 }
 
+function sortLearningSuggestions(suggestions = []) {
+  return suggestions.slice().sort((a, b) => {
+    const priorityDiff = (LEARNING_PRIORITY_WEIGHT[b.priority] || 0) - (LEARNING_PRIORITY_WEIGHT[a.priority] || 0);
+    if (priorityDiff) {
+      return priorityDiff;
+    }
+    return String(a.recommendation || "").localeCompare(String(b.recommendation || ""));
+  });
+}
+
+function learningFeedbackForAgent(agentKey, analysis) {
+  const worker = WORKER_LABEL_BY_AGENT[agentKey];
+  if (!worker || !analysis?.suggestions?.length) {
+    return [];
+  }
+  return sortLearningSuggestions(analysis.suggestions.filter((suggestion) => suggestion.worker === worker)).slice(0, 3);
+}
+
+function orderedLearningSuggestionGroups(suggestions = []) {
+  const knownWorkers = new Set(AGENCY_WORKERS.map((item) => item.worker));
+  const groups = AGENCY_WORKERS
+    .map((item) => ({
+      worker: item.worker,
+      suggestions: sortLearningSuggestions(suggestions.filter((suggestion) => suggestion.worker === item.worker))
+    }))
+    .filter((group) => group.suggestions.length);
+  const extraGroups = [...suggestions.reduce((acc, suggestion) => {
+    if (!knownWorkers.has(suggestion.worker)) {
+      acc.set(suggestion.worker, [...(acc.get(suggestion.worker) || []), suggestion]);
+    }
+    return acc;
+  }, new Map()).entries()]
+    .map(([worker, items]) => ({ worker, suggestions: sortLearningSuggestions(items) }));
+  return [...groups, ...extraGroups];
+}
+
 function renderProcessItems(items = []) {
   return items
     .map((item) => {
@@ -1131,6 +1284,40 @@ function renderProcessChecks(checks = []) {
       `
     )
     .join("");
+}
+
+function renderAgentLearningFeedback(feedback = []) {
+  const items = sortLearningSuggestions(feedback).slice(0, 3);
+  if (!items.length) {
+    return "";
+  }
+  const top = items[0];
+
+  return `
+    <div class="agent-learning-feedback">
+      <div class="agent-learning-feedback-head">
+        <div>
+          <div class="section-kicker">Learning Feedback</div>
+          <strong>Suggested algorithm adjustment for the next cycle</strong>
+        </div>
+        <span class="sentiment-badge ${priorityClass(top.priority)}">${escapeHtml(top.priority || "Review")}</span>
+      </div>
+      <ul class="feedback-pill-list">
+        ${items
+          .map(
+            (suggestion) => `
+              <li class="${suggestion.status || priorityClass(suggestion.priority)}">
+                <span>${escapeHtml(suggestion.priority || "Review")}</span>
+                <strong>${escapeHtml(suggestion.recommendation)}</strong>
+                <p>${escapeHtml(suggestion.reason)}</p>
+                ${suggestion.metric ? `<small>${escapeHtml(suggestion.metric)}</small>` : ""}
+              </li>
+            `
+          )
+          .join("")}
+      </ul>
+    </div>
+  `;
 }
 
 function renderAgentProcessPanel(process) {
@@ -1166,6 +1353,7 @@ function renderAgentProcessPanel(process) {
           <ul>${renderProcessItems(process.handoff)}</ul>
         </div>
       </div>
+      ${renderAgentLearningFeedback(process.learningFeedback)}
       ${
         process.actions?.length
           ? `<div class="process-action-row">${process.actions.join("")}</div>`
@@ -1484,23 +1672,18 @@ function buildAgentProcess(agentKey) {
     }
   };
 
-  return definitions[agentKey] || null;
+  const process = definitions[agentKey] || null;
+  return process
+    ? { ...process, learningFeedback: learningFeedbackForAgent(agentKey, learning) }
+    : null;
 }
 
 function renderAgencyRunLog() {
-  const keys = ["universe", "fundamentals", "market", "signals", "selection", "risk", "execution", "portfolio", "learning"];
-  const viewByKey = {
-    universe: "universe",
-    fundamentals: "universe",
-    market: "markets",
-    signals: "alerts",
-    selection: "trading",
-    risk: "risk",
-    execution: "execution",
-    portfolio: "portfolio",
-    learning: "learning"
-  };
-  const items = keys.map((key, index) => ({ key, index: index + 1, process: buildAgentProcess(key) }));
+  const items = AGENCY_WORKERS.map((worker, index) => ({
+    ...worker,
+    index: index + 1,
+    process: buildAgentProcess(worker.key)
+  }));
   const asOf = state.snapshot?.as_of || state.health?.last_update || state.tradeSetups?.as_of || new Date().toISOString();
 
   return `
@@ -1516,8 +1699,8 @@ function renderAgencyRunLog() {
       <div class="process-log-grid">
         ${items
           .map(
-            ({ key, index, process }) => `
-              <button type="button" class="process-log-item ${process?.statusClass || "neutral"}" data-agent-view="${viewByKey[key]}">
+            ({ key, index, process, view }) => `
+              <button type="button" class="process-log-item ${process?.statusClass || "neutral"}" data-agent-view="${view}">
                 <span>${String(index).padStart(2, "0")}</span>
                 <strong>${escapeHtml(process?.title?.replace(" Process", "") || prettyLabel(key))}</strong>
                 <small>${escapeHtml(process?.mode || "Automatic")}</small>
@@ -4559,16 +4742,12 @@ function renderLearningAgentView() {
   }
 
   if (elements.learningAgentSuggestions) {
-    const grouped = analysis.suggestions.reduce((acc, suggestion) => {
-      acc[suggestion.worker] = acc[suggestion.worker] || [];
-      acc[suggestion.worker].push(suggestion);
-      return acc;
-    }, {});
-    elements.learningAgentSuggestions.innerHTML = Object.keys(grouped).length
+    const grouped = orderedLearningSuggestionGroups(analysis.suggestions);
+    elements.learningAgentSuggestions.innerHTML = grouped.length
       ? `<div class="learning-suggestion-grid">
-          ${Object.entries(grouped)
+          ${grouped
             .map(
-              ([worker, suggestions]) => `
+              ({ worker, suggestions }) => `
                 <section class="source-card learning-suggestion-card">
                   <div class="runtime-source-head">
                     <strong>${escapeHtml(worker)}</strong>
