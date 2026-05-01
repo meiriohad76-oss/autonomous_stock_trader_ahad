@@ -39,6 +39,7 @@
           <button class="topnav-link" data-view="risk" type="button">Risk</button>
           <button class="topnav-link" data-view="execution" type="button">Execution</button>
           <button class="topnav-link" data-view="portfolio" type="button">Portfolio</button>
+          <button class="topnav-link" data-view="learning" type="button">Learning</button>
           <button class="topnav-link" data-view="system" type="button">System</button>
         </nav>
       </div>
@@ -78,6 +79,7 @@
         <span><strong>Selection Agent</strong> buy/sell recommendations</span>
         <span><strong>Risk Manager</strong> sizing and exposure approval</span>
         <span><strong>Execution Agent</strong> Alpaca paper tickets</span>
+        <span><strong>Learning Agent</strong> P/L attribution and algorithm tuning</span>
       </div>
     </div>
 
@@ -133,6 +135,10 @@
       <button class="side-link" data-view="portfolio" type="button">
         <span class="material-symbols-outlined">account_balance_wallet</span>
         <span>Book</span>
+      </button>
+      <button class="side-link" data-view="learning" type="button">
+        <span class="material-symbols-outlined">psychology</span>
+        <span>Learn</span>
       </button>
       <button class="side-link" data-view="system" type="button">
         <span class="material-symbols-outlined">memory</span>
@@ -688,6 +694,43 @@
               </div>
             </div>
             <div id="portfolio-agent-orders" class="workspace-detail"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="learning">
+        <div class="workspace-grid">
+          <article class="panel workspace-panel learning-agent-panel">
+            <div class="panel-toolbar">
+              <div>
+                <div class="section-kicker">Worker 9</div>
+                <h2>Learning Agent</h2>
+                <p>Reviews agency decisions against paper revenue/loss, detects weak spots, and proposes improvements to every worker's algorithm.</p>
+              </div>
+            </div>
+            <div id="learning-agent-overview" class="workspace-card-grid"></div>
+            <div id="learning-agent-process" class="agent-process-slot"></div>
+            <div id="learning-agent-attribution" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Algorithm Improvement Queue</h2>
+                <p>Actionable tuning suggestions grouped by the worker that should learn from the outcome data.</p>
+              </div>
+            </div>
+            <div id="learning-agent-suggestions" class="workspace-detail"></div>
+          </article>
+
+          <article class="panel workspace-panel">
+            <div class="panel-toolbar">
+              <div>
+                <h2>Decision Journal</h2>
+                <p>Approval, rejection, expired, and paper-order decisions used for future attribution.</p>
+              </div>
+            </div>
+            <div id="learning-agent-journal" class="workspace-detail"></div>
           </article>
         </div>
       </section>

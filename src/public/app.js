@@ -41,6 +41,7 @@ const state = {
   secQueue: null,
   workflowStatus: null,
   executionStatus: null,
+  executionLog: [],
   riskSnapshot: null,
   positionMonitor: null,
   snapshot: null,
@@ -139,6 +140,11 @@ const elements = {
   portfolioAgentPositions: document.querySelector("#portfolio-agent-positions"),
   portfolioAgentGoal: document.querySelector("#portfolio-agent-goal"),
   portfolioAgentOrders: document.querySelector("#portfolio-agent-orders"),
+  learningAgentOverview: document.querySelector("#learning-agent-overview"),
+  learningAgentProcess: document.querySelector("#learning-agent-process"),
+  learningAgentAttribution: document.querySelector("#learning-agent-attribution"),
+  learningAgentSuggestions: document.querySelector("#learning-agent-suggestions"),
+  learningAgentJournal: document.querySelector("#learning-agent-journal"),
   systemOverview: document.querySelector("#system-overview"),
   systemSourceQuality: document.querySelector("#system-source-quality"),
   systemNotes: document.querySelector("#system-notes"),
@@ -873,6 +879,230 @@ function latestSignalTime() {
     .sort((a, b) => new Date(b) - new Date(a))[0] || null;
 }
 
+function decisionTimestamp(item) {
+  return item.decided_at || item.placed_at || item.created_at || item.expires_at || null;
+}
+
+function decisionTicker(item) {
+  return item.ticker || item.symbol || item.entity_key || "n/a";
+}
+
+function normalizeDecisionStatus(item) {
+  if (item.status) {
+    return String(item.status).toLowerCase();
+  }
+  if (item.order_id) {
+    return "approved";
+  }
+  return "recorded";
+}
+
+function buildLearningAnalysis() {
+  const decisions = (state.executionLog || []).slice().sort((a, b) => new Date(decisionTimestamp(b) || 0) - new Date(decisionTimestamp(a) || 0));
+  const monitor = state.positionMonitor || {};
+  const risk = state.riskSnapshot || {};
+  const execution = state.executionStatus || {};
+  const broker = execution.broker || monitor.broker || {};
+  const positions = monitor.positions || [];
+  const setups = state.tradeSetups?.setups || [];
+  const setupByTicker = new Map(setups.map((setup) => [setup.ticker, setup]));
+  const counts = screenerUniverseCounts();
+  const secCoverage = secCoverageSummary();
+  const moneyFlowSignals = collectMoneyFlowSignals();
+  const signalTime = latestSignalTime();
+  const workflow = state.workflowStatus || {};
+  const approved = decisions.filter((item) => normalizeDecisionStatus(item) === "approved");
+  const rejected = decisions.filter((item) => normalizeDecisionStatus(item) === "rejected");
+  const expired = decisions.filter((item) => normalizeDecisionStatus(item) === "expired");
+  const visiblePnl = positions.reduce((sum, position) => sum + Number(position.unrealized_pl || 0), 0);
+  const winningPositions = positions.filter((position) => Number(position.unrealized_pl || 0) > 0);
+  const losingPositions = positions.filter((position) => Number(position.unrealized_pl || 0) < 0);
+  const equity = monitor.account?.portfolio_value || monitor.account?.equity || risk.equity || 0;
+  const targetDollars = equity * 0.03;
+  const weeklyProgress = targetDollars ? visiblePnl / targetDollars : 0;
+  const attributedPositions = positions.map((position) => {
+    const setup = setupByTicker.get(position.symbol) || null;
+    return {
+      ...position,
+      setup,
+      pnl: Number(position.unrealized_pl || 0),
+      pnlPct: Number(position.unrealized_plpc || 0),
+      contributionPct: targetDollars ? Number(position.unrealized_pl || 0) / targetDollars : 0
+    };
+  }).sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl));
+
+  const suggestions = [];
+  function addSuggestion(worker, priority, recommendation, reason, metric, status = "neutral") {
+    suggestions.push({ worker, priority, recommendation, reason, metric, status });
+  }
+
+  if (secCoverage.pending > 0) {
+    addSuggestion(
+      "Fundamentals Agent",
+      "High",
+      "Increase SEC coverage before trusting factor rankings for larger paper sizes.",
+      "Bootstrap rows remain visible, but their confidence is weaker than official SEC-derived rows.",
+      `${secCoverage.secLive} live / ${secCoverage.pending} pending`,
+      secCoverage.percent < 50 ? "bearish" : "neutral"
+    );
+  }
+
+  if (workflow.status && workflow.status !== "ready") {
+    addSuggestion(
+      "Selection Agent",
+      "High",
+      "Do not promote recommendations to execution until workflow blockers are removed.",
+      workflow.summary || "The trading workflow is not fully decision-ready.",
+      prettyLabel(workflow.status),
+      "bearish"
+    );
+  }
+
+  if (!signalTime || Date.now() - new Date(signalTime).getTime() > 60 * 60 * 1000) {
+    addSuggestion(
+      "Signals Agent",
+      "Medium",
+      "Refresh live news, Form 4, and money-flow collectors before the next selection cycle.",
+      "Recent signal freshness is weak or unavailable.",
+      signalTime ? relativeTime(signalTime) : "no signal timestamp",
+      "neutral"
+    );
+  }
+
+  if (!moneyFlowSignals.length) {
+    addSuggestion(
+      "Signals Agent",
+      "Medium",
+      "Require at least one confirming flow source for high-conviction upgrades.",
+      "No insider, institutional, block print, or abnormal-volume signal is currently supporting the trade list.",
+      "0 flow signals",
+      "neutral"
+    );
+  }
+
+  if (risk.runtime_constrained) {
+    addSuggestion(
+      "Risk Manager",
+      "High",
+      "Apply a runtime trust haircut or reduce order size while the Pi is constrained.",
+      "Runtime pressure can make freshness and collector reliability weaker.",
+      "runtime constrained",
+      "bearish"
+    );
+  }
+
+  if (!broker.ready_for_order_submission) {
+    addSuggestion(
+      "Execution Agent",
+      "Medium",
+      "Keep execution in preview mode until Alpaca paper credentials and BROKER_SUBMIT_ENABLED are intentionally enabled.",
+      "Learning needs real paper fills, but the broker submit gate is still closed.",
+      broker.configured ? "submit gated" : "broker not configured",
+      "neutral"
+    );
+  }
+
+  if (decisions.length < 10) {
+    addSuggestion(
+      "Learning Agent",
+      "High",
+      "Collect at least 10 paper decisions before tuning scoring thresholds aggressively.",
+      "The sample size is too small for confident algorithm changes.",
+      `${decisions.length} decisions`,
+      "neutral"
+    );
+  }
+
+  if (losingPositions.length) {
+    addSuggestion(
+      "Selection Agent",
+      "High",
+      "Review losing open positions against their original conviction drivers before repeating similar setups.",
+      "Open paper losses are the fastest feedback loop for the ranking algorithm.",
+      `${losingPositions.length} losing position${losingPositions.length === 1 ? "" : "s"}`,
+      "bearish"
+    );
+    addSuggestion(
+      "Risk Manager",
+      "High",
+      "Consider lowering size or tightening stop criteria for setups matching current losing drivers.",
+      "The portfolio monitor is showing unrealized loss exposure.",
+      formatUsdCompact(losingPositions.reduce((sum, position) => sum + Number(position.unrealized_pl || 0), 0)),
+      "bearish"
+    );
+  }
+
+  if (winningPositions.length) {
+    addSuggestion(
+      "Learning Agent",
+      "Low",
+      "Tag winning setup drivers and compare them to future candidates.",
+      "Positive paper outcomes should reinforce the factors and signal combinations that preceded them.",
+      `${winningPositions.length} winning position${winningPositions.length === 1 ? "" : "s"}`,
+      "bullish"
+    );
+  }
+
+  if (!positions.length && !approved.length) {
+    addSuggestion(
+      "Portfolio Monitor",
+      "Medium",
+      "Start with very small paper trades once workflow, risk, and broker gates are ready so the Learning Agent has outcome data.",
+      "There are no approved paper decisions or open positions to attribute yet.",
+      "no outcome sample",
+      "neutral"
+    );
+  }
+
+  if (counts.eligible > 40 && !setups.filter((setup) => ["long", "short"].includes(setup.action)).length) {
+    addSuggestion(
+      "Selection Agent",
+      "Medium",
+      "Explain why many eligible fundamentals names are not graduating to buy/sell recommendations.",
+      "The fundamentals gate has supply, but the trade list has no executable candidates.",
+      `${counts.eligible} eligible, 0 tradable`,
+      "neutral"
+    );
+  }
+
+  return {
+    decisions,
+    approved,
+    rejected,
+    expired,
+    positions,
+    attributedPositions,
+    visiblePnl,
+    weeklyProgress,
+    targetDollars,
+    winningPositions,
+    losingPositions,
+    suggestions,
+    broker,
+    equity
+  };
+}
+
+function learningStatusClass(status) {
+  if (status === "approved" || status === "filled" || status === "closed") {
+    return "bullish";
+  }
+  if (status === "rejected" || status === "expired" || status === "canceled") {
+    return "bearish";
+  }
+  return "neutral";
+}
+
+function priorityClass(priority) {
+  if (String(priority).toLowerCase() === "high") {
+    return "bearish";
+  }
+  if (String(priority).toLowerCase() === "low") {
+    return "bullish";
+  }
+  return "neutral";
+}
+
 function renderProcessItems(items = []) {
   return items
     .map((item) => {
@@ -967,6 +1197,7 @@ function buildAgentProcess(agentKey) {
   const equity = monitor.account?.portfolio_value || monitor.account?.equity || risk.equity || 0;
   const unrealized = positions.reduce((sum, position) => sum + Number(position.unrealized_pl || 0), 0);
   const weeklyPct = equity ? unrealized / equity : 0;
+  const learning = buildLearningAnalysis();
 
   const definitions = {
     universe: {
@@ -1218,6 +1449,38 @@ function buildAgentProcess(agentKey) {
       actions: [
         `<button type="button" class="panel-action runtime-action-button" data-agent-view="trading"><span class="material-symbols-outlined">assignment</span>Open Selection</button>`
       ]
+    },
+    learning: {
+      title: "Learning Agent Process",
+      mode: "Automatic Review After Decision And Portfolio Refresh",
+      status: learning.decisions.length || learning.positions.length ? "reviewing" : "collecting data",
+      statusClass: learning.losingPositions.length ? "bearish" : learning.winningPositions.length ? "bullish" : "neutral",
+      summary: "Analyzes agency decisions against paper revenue/loss, then proposes algorithm improvements for the other workers.",
+      inputs: [
+        `${learning.decisions.length} execution decisions`,
+        `${learning.positions.length} visible paper positions`,
+        `Visible P/L: ${formatUsdCompact(learning.visiblePnl)}`
+      ],
+      checks: [
+        processCheck("Outcome sample", `${learning.decisions.length + learning.positions.length}`, learning.decisions.length + learning.positions.length >= 10 ? "bullish" : "neutral", "Needs more decisions before aggressive tuning."),
+        processCheck("Weekly target progress", formatSignedPercent(learning.weeklyProgress * 0.03), learning.weeklyProgress >= 1 ? "bullish" : learning.visiblePnl < 0 ? "bearish" : "neutral"),
+        processCheck("Open winners", `${learning.winningPositions.length}`, learning.winningPositions.length ? "bullish" : "neutral"),
+        processCheck("Open losers", `${learning.losingPositions.length}`, learning.losingPositions.length ? "bearish" : "bullish")
+      ],
+      outputs: [
+        `${learning.suggestions.length} algorithm improvement suggestions`,
+        `${learning.approved.length} approved, ${learning.rejected.length} rejected, ${learning.expired.length} expired decisions`,
+        learning.positions.length ? `Top attribution: ${learning.attributedPositions[0]?.symbol || "n/a"}` : "No open position attribution yet"
+      ],
+      handoff: [
+        "Fundamentals receives factor confidence and coverage suggestions.",
+        "Selection receives ranking and threshold tuning suggestions.",
+        "Risk and Execution receive sizing, guardrail, and workflow-readiness feedback."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="portfolio"><span class="material-symbols-outlined">account_balance_wallet</span>Open Portfolio</button>`,
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="trading"><span class="material-symbols-outlined">assignment</span>Open Selection</button>`
+      ]
     }
   };
 
@@ -1225,7 +1488,7 @@ function buildAgentProcess(agentKey) {
 }
 
 function renderAgencyRunLog() {
-  const keys = ["universe", "fundamentals", "market", "signals", "selection", "risk", "execution", "portfolio"];
+  const keys = ["universe", "fundamentals", "market", "signals", "selection", "risk", "execution", "portfolio", "learning"];
   const viewByKey = {
     universe: "universe",
     fundamentals: "universe",
@@ -1234,7 +1497,8 @@ function renderAgencyRunLog() {
     selection: "trading",
     risk: "risk",
     execution: "execution",
-    portfolio: "portfolio"
+    portfolio: "portfolio",
+    learning: "learning"
   };
   const items = keys.map((key, index) => ({ key, index: index + 1, process: buildAgentProcess(key) }));
   const asOf = state.snapshot?.as_of || state.health?.last_update || state.tradeSetups?.as_of || new Date().toISOString();
@@ -1654,12 +1918,13 @@ async function loadConfig() {
 }
 
 async function loadHealth() {
-  const [health, runtimeReliability, secQueue, workflowStatus, executionStatus, riskSnapshot, positionMonitor] = await Promise.all([
+  const [health, runtimeReliability, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor] = await Promise.all([
     getJson("/api/health"),
     getJson("/api/runtime-reliability").catch(() => null),
     getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null),
     getJson(`/api/trading-workflow/status?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
     getJson("/api/execution/status").catch(() => null),
+    getJson("/api/execution/log").catch(() => []),
     getJson("/api/risk/status").catch(() => null),
     getJson(`/api/positions/monitor?window=${encodeURIComponent(state.activeWindow)}&limit=12`).catch(() => null)
   ]);
@@ -1668,6 +1933,7 @@ async function loadHealth() {
   state.secQueue = secQueue;
   state.workflowStatus = workflowStatus;
   state.executionStatus = executionStatus || health.execution || null;
+  state.executionLog = Array.isArray(executionLog) ? executionLog : [];
   state.riskSnapshot = riskSnapshot;
   state.positionMonitor = positionMonitor;
   elements.healthStatus.textContent = healthLabel(health.status);
@@ -3660,6 +3926,7 @@ function renderAgencyCommandCenter() {
   const riskStatus = risk.status || monitor.risk_status || "unknown";
   const flowStatus = workflow.status || "loading";
   const activeSignals = (state.alerts?.length || 0) + (state.highImpact?.length || 0) + moneyFlowCount;
+  const learning = buildLearningAnalysis();
 
   const agents = [
     {
@@ -3750,6 +4017,17 @@ function renderAgencyCommandCenter() {
       metricLabel: "positions",
       view: "portfolio",
       icon: "account_balance_wallet"
+    },
+    {
+      step: "09",
+      name: "Learning Agent",
+      status: learning.decisions.length || learning.positions.length ? "reviewing" : "collecting",
+      statusClass: learning.losingPositions.length ? "bearish" : learning.winningPositions.length ? "bullish" : "neutral",
+      mission: "Audits decisions against paper revenue/loss and recommends algorithm improvements for every worker.",
+      metric: `${learning.suggestions.length}`,
+      metricLabel: "suggestions",
+      view: "learning",
+      icon: "psychology"
     }
   ];
 
@@ -4221,6 +4499,140 @@ function renderPortfolioAgentView() {
   }
 }
 
+function renderLearningAgentView() {
+  const analysis = buildLearningAnalysis();
+  const hasOutcomeData = analysis.decisions.length || analysis.positions.length;
+  const weeklyPct = analysis.equity ? analysis.visiblePnl / analysis.equity : 0;
+  const progressPct = Math.min(100, Math.max(0, analysis.weeklyProgress * 100));
+
+  if (elements.learningAgentOverview) {
+    elements.learningAgentOverview.innerHTML = `
+      ${agentMetricCard("Decision Records", analysis.decisions.length, `${analysis.approved.length} approved, ${analysis.rejected.length} rejected`)}
+      ${agentMetricCard("Visible Paper P/L", formatUsdCompact(analysis.visiblePnl), "Open positions from portfolio monitor", analysis.visiblePnl > 0 ? "bullish" : analysis.visiblePnl < 0 ? "bearish" : "neutral")}
+      ${agentMetricCard("Weekly Target Progress", formatSignedPercent(weeklyPct), `${formatUsdCompact(analysis.targetDollars)} target dollars`)}
+      ${agentMetricCard("Open Winners", analysis.winningPositions.length, "Unrealized P/L above zero", analysis.winningPositions.length ? "bullish" : "neutral")}
+      ${agentMetricCard("Open Losers", analysis.losingPositions.length, "Unrealized P/L below zero", analysis.losingPositions.length ? "bearish" : "neutral")}
+      ${agentMetricCard("Suggestions", analysis.suggestions.length, "Algorithm changes to review")}
+    `;
+  }
+
+  if (elements.learningAgentProcess) {
+    elements.learningAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("learning"));
+  }
+
+  if (elements.learningAgentAttribution) {
+    elements.learningAgentAttribution.innerHTML = `
+      <div class="portfolio-goal-card learning-attribution-card">
+        <div class="runtime-source-head">
+          <div>
+            <div class="section-kicker">Revenue / Loss Attribution</div>
+            <h3>${hasOutcomeData ? "Paper outcome review" : "Waiting for paper outcomes"}</h3>
+          </div>
+          <span class="sentiment-badge ${analysis.visiblePnl > 0 ? "bullish" : analysis.visiblePnl < 0 ? "bearish" : "neutral"}">${formatUsdCompact(analysis.visiblePnl)}</span>
+        </div>
+        <p class="workspace-copy">${hasOutcomeData ? "Attribution currently combines execution decisions with open Alpaca paper positions. Closed-trade attribution will become stronger as broker history accumulates." : "No paper approvals, fills, or open positions are visible yet, so the Learning Agent is collecting baseline data."}</p>
+        <div class="runtime-progress"><span style="width:${progressPct}%"></span></div>
+        ${
+          analysis.attributedPositions.length
+            ? `<div class="execution-position-list">
+                ${analysis.attributedPositions
+                  .slice(0, 8)
+                  .map(
+                    (position) => `
+                      <div class="source-card execution-position-card ${position.pnl >= 0 ? "bullish" : "bearish"}">
+                        <div class="runtime-source-head">
+                          <strong>${escapeHtml(position.symbol)}</strong>
+                          <span class="sentiment-badge ${position.pnl >= 0 ? "bullish" : "bearish"}">${formatUsdCompact(position.pnl)}</span>
+                        </div>
+                        <span>${escapeHtml(prettyLabel(position.side))} ${formatNumber(position.qty, 4)} shares - ${formatNumber(position.pnlPct * 100, 1)}% open P/L</span>
+                        <span>Setup: ${escapeHtml(prettyLabel(position.setup?.action || position.setup_action || "none"))}${position.setup?.conviction ? ` - ${formatNumber(position.setup.conviction * 100, 0)}% conviction` : ""}</span>
+                        <small>${position.reason_codes?.length ? position.reason_codes.map(prettyLabel).join(", ") : "No monitor warnings."}</small>
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>`
+            : `<div class="workspace-empty">No open positions to attribute yet. The first paper fills will appear here with their setup action, conviction, and P/L.</div>`
+        }
+      </div>
+    `;
+  }
+
+  if (elements.learningAgentSuggestions) {
+    const grouped = analysis.suggestions.reduce((acc, suggestion) => {
+      acc[suggestion.worker] = acc[suggestion.worker] || [];
+      acc[suggestion.worker].push(suggestion);
+      return acc;
+    }, {});
+    elements.learningAgentSuggestions.innerHTML = Object.keys(grouped).length
+      ? `<div class="learning-suggestion-grid">
+          ${Object.entries(grouped)
+            .map(
+              ([worker, suggestions]) => `
+                <section class="source-card learning-suggestion-card">
+                  <div class="runtime-source-head">
+                    <strong>${escapeHtml(worker)}</strong>
+                    <span class="sentiment-badge ${priorityClass(suggestions[0]?.priority)}">${escapeHtml(suggestions[0]?.priority || "Review")}</span>
+                  </div>
+                  <ul class="workspace-list">
+                    ${suggestions
+                      .map(
+                        (suggestion) => `
+                          <li>
+                            <strong>${escapeHtml(suggestion.recommendation)}</strong>
+                            <span>${escapeHtml(suggestion.reason)}</span>
+                            <small>${escapeHtml(suggestion.metric || "")}</small>
+                          </li>
+                        `
+                      )
+                      .join("")}
+                  </ul>
+                </section>
+              `
+            )
+            .join("")}
+        </div>`
+      : `<div class="workspace-empty">No improvement suggestions yet. That is unusual; refresh runtime telemetry and portfolio status.</div>`;
+  }
+
+  if (elements.learningAgentJournal) {
+    elements.learningAgentJournal.innerHTML = analysis.decisions.length
+      ? `<div class="agent-table-shell leaderboard-shell">
+          <table class="leaderboard-table compact-agent-table">
+            <thead>
+              <tr>
+                <th>Decision</th>
+                <th>Stock</th>
+                <th>Action</th>
+                <th>Conviction</th>
+                <th>Size</th>
+                <th>When</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${analysis.decisions
+                .slice(0, 20)
+                .map((decision) => {
+                  const status = normalizeDecisionStatus(decision);
+                  return `
+                    <tr>
+                      <td><span class="sentiment-badge ${learningStatusClass(status)}">${escapeHtml(prettyLabel(status))}</span></td>
+                      <td>${escapeHtml(decisionTicker(decision))}</td>
+                      <td>${escapeHtml(prettyLabel(decision.action || decision.side || "n/a"))}</td>
+                      <td>${decision.conviction !== undefined ? `${formatNumber(Number(decision.conviction || 0) * 100, 0)}%` : "n/a"}</td>
+                      <td>${decision.dollar_size ? formatUsdCompact(decision.dollar_size) : decision.shares ? `${decision.shares} sh` : "n/a"}</td>
+                      <td>${decisionTimestamp(decision) ? relativeTime(decisionTimestamp(decision)) : "n/a"}</td>
+                    </tr>
+                  `;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>`
+      : `<div class="workspace-empty">No execution decisions have been recorded yet. Previewing does not count as an outcome; approved, rejected, or expired paper decisions will appear here.</div>`;
+  }
+}
+
 function renderOverviewView() {
   const pulse = state.snapshot.market_pulse;
   renderAgencyCommandCenter();
@@ -4255,6 +4667,8 @@ function renderActiveView() {
     renderExecutionAgentView();
   } else if (state.activeView === "portfolio") {
     renderPortfolioAgentView();
+  } else if (state.activeView === "learning") {
+    renderLearningAgentView();
   } else if (state.activeView === "system") {
     renderSystemView();
   }
@@ -4533,7 +4947,12 @@ function attachEvents() {
     elements.portfolioAgentProcess,
     elements.portfolioAgentPositions,
     elements.portfolioAgentGoal,
-    elements.portfolioAgentOrders
+    elements.portfolioAgentOrders,
+    elements.learningAgentOverview,
+    elements.learningAgentProcess,
+    elements.learningAgentAttribution,
+    elements.learningAgentSuggestions,
+    elements.learningAgentJournal
   ].forEach((container) => {
     container?.addEventListener("click", async (event) => {
       await handleAgencyPanelClick(event);

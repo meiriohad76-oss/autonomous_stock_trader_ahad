@@ -466,7 +466,8 @@ input:focus-visible {
 }
 
 .agent-handoff-grid,
-.agent-decision-grid {
+.agent-decision-grid,
+.learning-suggestion-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
@@ -520,6 +521,35 @@ input:focus-visible {
   margin: 4px 0 0;
   font-size: 1.2rem;
   letter-spacing: 0;
+}
+
+.learning-suggestion-card {
+  display: grid;
+  gap: 10px;
+}
+
+.learning-suggestion-card .workspace-list {
+  margin-top: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.learning-suggestion-card li {
+  display: grid;
+  gap: 4px;
+}
+
+.learning-suggestion-card li strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.learning-suggestion-card li span,
+.learning-suggestion-card li small {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .agent-process-slot {
@@ -2828,6 +2858,7 @@ input:focus-visible {
   .agent-roster,
   .agent-handoff-grid,
   .agent-decision-grid,
+  .learning-suggestion-grid,
   .next-batch-strip,
   .agent-process-grid {
     grid-template-columns: 1fr;
