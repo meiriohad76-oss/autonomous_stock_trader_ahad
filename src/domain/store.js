@@ -25,6 +25,20 @@ export function createStore(config) {
     macroRegime: null,
     tradeSetups: [],
     earningsCalendar: new Map(),
+    pendingApprovals: new Map(),
+    positions: new Map(),
+    orders: new Map(),
+    executionState: {
+      enabled: false,
+      killSwitch: false,
+      killSwitchReason: null,
+      dailyPnl: 0,
+      dailyPnlResetAt: new Date().toISOString(),
+      highWaterMark: 0,
+      accountEquity: 0,
+      lastSyncAt: null
+    },
+    executionLog: [],
     health: {
       systemStatus: "green",
       queueDepth: 0,
@@ -60,6 +74,20 @@ export function resetStore(store) {
   store.macroRegime = null;
   store.tradeSetups = [];
   store.earningsCalendar = new Map();
+  store.pendingApprovals = new Map();
+  store.positions = new Map();
+  store.orders = new Map();
+  store.executionState = {
+    enabled: false,
+    killSwitch: false,
+    killSwitchReason: null,
+    dailyPnl: 0,
+    dailyPnlResetAt: new Date().toISOString(),
+    highWaterMark: 0,
+    accountEquity: 0,
+    lastSyncAt: null
+  };
+  store.executionLog = [];
   store.health = {
     ...store.health,
     queueDepth: 0,
