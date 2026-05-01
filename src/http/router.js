@@ -310,6 +310,14 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/signals/money-flow" && request.method === "GET") {
+    sendJson(response, 200, app.getMoneyFlowSignals({
+      ticker: query.ticker ? String(query.ticker).toUpperCase() : null,
+      limit: query.limit ? Number(query.limit) : 30
+    }));
+    return;
+  }
+
   if (pathname === "/api/evidence-quality" && request.method === "GET") {
     sendJson(response, 200, app.getEvidenceQuality({
       ticker: query.ticker ? String(query.ticker).toUpperCase() : null,

@@ -94,6 +94,7 @@ export const config = {
   defaultWindow: process.env.DEFAULT_WINDOW || "1h",
   alertConfidenceThreshold: Number(process.env.ALERT_CONFIDENCE_THRESHOLD || 0.85),
   signalFreshnessMaxHours: Number(process.env.SIGNAL_FRESHNESS_MAX_HOURS || 72),
+  activeAlertFreshnessMaxHours: Number(process.env.ACTIVE_ALERT_FRESHNESS_MAX_HOURS || 24),
   seedDataOnEmpty: String(process.env.SEED_DATA_ON_EMPTY || "false").toLowerCase() === "true",
   seedDataInDecisions: String(process.env.SEED_DATA_IN_DECISIONS || "false").toLowerCase() === "true",
   liveNewsEnabled: String(process.env.LIVE_NEWS_ENABLED || "true").toLowerCase() !== "false",

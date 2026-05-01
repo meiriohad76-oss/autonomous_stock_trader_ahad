@@ -77,6 +77,7 @@ const state = {
   liveFeed: [],
   alerts: [],
   highImpact: [],
+  moneyFlowSignals: [],
   activeWindow: "1h",
   searchTerm: "",
   activeView: "overview",
@@ -601,6 +602,27 @@ function signalSourceName(item, fallback = "Source n/a") {
   return item?.source_name || item?.sourceName || item?.payload?.source_name || item?.payload?.evidence_quality?.source_name || fallback;
 }
 
+function signalSourceUrl(item) {
+  const url = (
+    item?.url ||
+    item?.canonical_url ||
+    item?.payload?.url ||
+    item?.payload?.canonical_url ||
+    item?.evidence_quality?.url ||
+    item?.payload?.evidence_quality?.url ||
+    item?.source_metadata?.source_url ||
+    item?.payload?.source_metadata?.source_url ||
+    item?.source_metadata?.filing_url ||
+    item?.payload?.source_metadata?.filing_url ||
+    null
+  );
+  const ticker = item?.ticker || item?.entity_key || item?.payload?.ticker || item?.payload?.ticker_hint || item?.source_metadata?.ticker_hint || item?.payload?.source_metadata?.ticker_hint || null;
+  if (String(url || "").startsWith("market-flow://") && ticker) {
+    return `https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/chart/`;
+  }
+  return url;
+}
+
 function alertEvidenceTimestamp(alert) {
   return alert?.published_at || alert?.payload?.published_at || alert?.payload?.evidence_quality?.published_at || alert?.detected_at || alert?.created_at || null;
 }
@@ -638,7 +660,7 @@ function moneyFlowBucket(eventType) {
 }
 
 function collectMoneyFlowSignals() {
-  const combined = [...state.liveFeed, ...state.highImpact].filter(isMoneyFlowEvent);
+  const combined = [...state.moneyFlowSignals, ...state.liveFeed, ...state.highImpact].filter(isMoneyFlowEvent);
   const deduped = [];
   const seen = new Set();
 
@@ -2192,7 +2214,7 @@ function buildSignalFromFeed(item, sourceLabel = "Live Feed") {
     headline: item.headline || "Untitled signal",
     explanation: item.explanation_short || item.headline || "No additional analyst explanation is available for this signal yet.",
     eventType: item.event_type || "signal",
-    url: item.url || null,
+    url: signalSourceUrl(item),
     sourceMetadata: item.source_metadata || null,
     evidenceQuality: item.evidence_quality || null,
     downstreamWeight: item.downstream_weight ?? item.evidence_quality?.downstream_weight ?? null
@@ -2219,7 +2241,7 @@ function buildSignalFromAlert(alert) {
       alert.headline ||
       "This alert was generated from the current state transition and confidence threshold in the sentiment engine.",
     eventType: alert.alert_type || "alert",
-    url: alert.url || null,
+    url: signalSourceUrl(alert),
     sourceMetadata: alert.source_metadata || alert.payload?.source_metadata || null,
     evidenceQuality: alert.payload?.evidence_quality || null,
     contextItems: [
@@ -2245,7 +2267,7 @@ function buildSignalFromDocument(doc, ticker = null) {
     headline: doc.headline || "Untitled document",
     explanation: doc.explanation_short || doc.headline || "No short explanation is available for this document yet.",
     eventType: doc.event_type || "document",
-    url: doc.url || null,
+    url: signalSourceUrl(doc),
     sourceMetadata: doc.source_metadata || null,
     evidenceQuality: doc.evidence_quality || null,
     downstreamWeight: doc.downstream_weight ?? doc.evidence_quality?.downstream_weight ?? null
@@ -2651,10 +2673,11 @@ async function ensureTickerDetail(force = false) {
 async function loadSnapshot() {
   const loadToken = ++snapshotLoadToken;
   const params = new URLSearchParams({ window: state.activeWindow });
-  const [snapshotResult, liveFeedResult, highImpactResult, macroRegimeResult, tradeSetupsResult, finalSelectionResult] = await Promise.allSettled([
+  const [snapshotResult, liveFeedResult, highImpactResult, moneyFlowResult, macroRegimeResult, tradeSetupsResult, finalSelectionResult] = await Promise.allSettled([
     getJson(`/api/sentiment/watchlist?${params.toString()}`),
     getJson("/api/news/recent?limit=12"),
     getJson("/api/events/high-impact?limit=10"),
+    getJson("/api/signals/money-flow?limit=30"),
     getJson(`/api/macro-regime?window=${encodeURIComponent(state.activeWindow)}`),
     getJson(`/api/trade-setups?window=${encodeURIComponent(state.activeWindow)}&limit=6`),
     getJson(`/api/final-selection?window=${encodeURIComponent(state.activeWindow)}&limit=12`)
@@ -2668,6 +2691,7 @@ async function loadSnapshot() {
   state.snapshot = snapshotResult.value;
   state.liveFeed = liveFeedResult.status === "fulfilled" ? liveFeedResult.value : [];
   state.highImpact = highImpactResult.status === "fulfilled" ? highImpactResult.value : [];
+  state.moneyFlowSignals = moneyFlowResult.status === "fulfilled" ? moneyFlowResult.value : [];
   state.macroRegime = macroRegimeResult.status === "fulfilled" ? macroRegimeResult.value : null;
   state.tradeSetups = tradeSetupsResult.status === "fulfilled" ? tradeSetupsResult.value : { counts: {}, setups: [] };
   state.finalSelection = finalSelectionResult.status === "fulfilled" ? finalSelectionResult.value : null;

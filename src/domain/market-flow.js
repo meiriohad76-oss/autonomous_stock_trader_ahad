@@ -106,7 +106,7 @@ export function detectMarketFlowSignal(barHistory, config) {
   };
 }
 
-function buildRawFlowDocument(entry, flow) {
+function buildRawFlowDocument(entry, flow, config) {
   const phraseByType = {
     abnormal_volume_buying: "abnormal volume surge and bullish tape flow",
     abnormal_volume_selling: "abnormal volume surge and bearish tape flow",
@@ -114,13 +114,14 @@ function buildRawFlowDocument(entry, flow) {
     block_trade_selling: "block trade distribution and institutional block selling"
   };
   const verb = flow.direction === "buy" ? "rose" : "fell";
+  const sourceUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(entry.ticker)}/chart/`;
 
   return {
     source_name: "market_flow",
     source_type: "market_flow",
     source_priority: 0.76,
-    canonical_url: `market-flow://${entry.ticker}/${encodeURIComponent(flow.timestamp)}`,
-    url: `market-flow://${entry.ticker}/${encodeURIComponent(flow.timestamp)}`,
+    canonical_url: sourceUrl,
+    url: sourceUrl,
     title: `${entry.ticker}: ${phraseByType[flow.eventType]}`,
     body: `${entry.company} showed ${phraseByType[flow.eventType]} with price moving ${verb} ${round(Math.abs(flow.latestMove) * 100, 2)}% on approximately ${flow.latestVolume.toLocaleString()} shares. Estimated notional turnover was about $${Math.round(flow.latestDollarVolume).toLocaleString()} with roughly ${flow.volumeSpike}x normal share volume and ${flow.dollarVolumeSpike}x normal dollar volume. This is an inferred live tape-flow signal rather than a direct exchange block print.`,
     language: "en",
@@ -133,6 +134,8 @@ function buildRawFlowDocument(entry, flow) {
       flow_event_type: flow.eventType,
       flow_direction: flow.direction,
       flow_severity: flow.severity,
+      source_url: sourceUrl,
+      inferred_from_provider: config.marketDataProvider,
       volume_spike: flow.volumeSpike,
       dollar_volume_spike: flow.dollarVolumeSpike,
       move_shock: flow.moveShock,
@@ -186,7 +189,7 @@ export function createMarketFlowMonitor({ config, store, pipeline, marketDataSer
         }
 
         store.seenExternalDocuments.add(seenKey);
-        await pipeline.processRawDocument(buildRawFlowDocument(entry, flow));
+        await pipeline.processRawDocument(buildRawFlowDocument(entry, flow, config));
         ingested += 1;
       }
 

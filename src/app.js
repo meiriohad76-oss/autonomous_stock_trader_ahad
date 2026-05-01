@@ -9,7 +9,7 @@ import {
 } from "./domain/fundamental-persistence.js";
 import { createFundamentalMarketDataService } from "./domain/fundamental-market-data.js";
 import { loadFundamentalUniverse } from "./domain/fundamental-universe.js";
-import { filterFreshEvidence, shouldUseEvidence } from "./domain/freshness-policy.js";
+import { evidenceTimestamp, filterFreshEvidence, shouldUseEvidence } from "./domain/freshness-policy.js";
 import {
   buildFundamentalResearchGovernance,
   createFundamentalsEngine,
@@ -25,7 +25,7 @@ import { createSecFundamentalsCollector, selectSecFundamentalsRefreshBatch } fro
 import { createSecInstitutionalCollector } from "./domain/sec-institutional.js";
 import { createSecInsiderCollector } from "./domain/sec-insider.js";
 import { createStore, resetStore } from "./domain/store.js";
-import { TICKER_LOOKUP } from "./domain/taxonomy.js";
+import { EVENT_TAXONOMY, TICKER_LOOKUP } from "./domain/taxonomy.js";
 import { createMacroRegimeAgent } from "./domain/macro-regime.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
 import { RUNTIME_PROFILES, createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
@@ -60,6 +60,11 @@ const MARKET_FLOW_SETTINGS_FIELDS = {
   marketFlowBlockTradeMinNotionalUsd: { env: "MARKET_FLOW_BLOCK_TRADE_MIN_NOTIONAL_USD", min: 100000, max: 10000000000, digits: 0 },
   marketFlowAbnormalVolumeMinNotionalUsd: { env: "MARKET_FLOW_ABNORMAL_VOLUME_MIN_NOTIONAL_USD", min: 100000, max: 10000000000, digits: 0 }
 };
+
+const MONEY_FLOW_EVENT_TYPES = new Set([
+  ...EVENT_TAXONOMY.insider_ownership,
+  ...EVENT_TAXONOMY.money_flow
+]);
 
 const FUNDAMENTAL_SCREENER_FIELDS = {
   screenerRequireLiveSecForEligible: {
@@ -291,6 +296,91 @@ function buildPerformanceSnapshot(currentConfig, store) {
       sqlite_backup_on_startup: currentConfig.sqliteBackupOnStartup
     }
   };
+}
+
+function sourceUrlFromNormalized(normalized = {}) {
+  const url = (
+    normalized.canonical_url ||
+    normalized.url ||
+    normalized.source_metadata?.source_url ||
+    normalized.source_metadata?.filing_url ||
+    null
+  );
+  if (String(url || "").startsWith("market-flow://") && normalized.primary_ticker) {
+    return `https://finance.yahoo.com/quote/${encodeURIComponent(normalized.primary_ticker)}/chart/`;
+  }
+  return url;
+}
+
+function sourceUrlFromAlert(alert = {}, normalized = null) {
+  const url = (
+    alert.url ||
+    alert.canonical_url ||
+    alert.payload?.url ||
+    alert.payload?.canonical_url ||
+    alert.evidence_quality?.url ||
+    alert.payload?.evidence_quality?.url ||
+    alert.source_metadata?.source_url ||
+    alert.payload?.source_metadata?.source_url ||
+    sourceUrlFromNormalized(normalized || {}) ||
+    null
+  );
+  const ticker = alert.entity_key || normalized?.primary_ticker || alert.payload?.ticker || alert.payload?.ticker_hint || null;
+  if (String(url || "").startsWith("market-flow://") && ticker) {
+    return `https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/chart/`;
+  }
+  return url;
+}
+
+function buildScoreLookup(store) {
+  const normalizedByDocId = new Map(store.normalizedDocuments.map((doc) => [doc.doc_id, doc]));
+  return new Map(
+    store.documentScores.map((score) => [
+      score.score_id,
+      {
+        score,
+        normalized: normalizedByDocId.get(score.doc_id) || null
+      }
+    ])
+  );
+}
+
+function hydrateAlertForDashboard(alert, scoreLookup) {
+  const match = scoreLookup.get(alert.payload?.score_id || "");
+  const normalized = match?.normalized || null;
+  return {
+    ...alert,
+    source_name: alert.source_name || alert.payload?.source_name || normalized?.source_name || null,
+    source_type: alert.source_type || alert.payload?.source_type || normalized?.source_type || null,
+    source_metadata: alert.source_metadata || alert.payload?.source_metadata || normalized?.source_metadata || null,
+    published_at: alert.published_at || alert.payload?.published_at || normalized?.published_at || null,
+    event_type: alert.event_type || alert.payload?.event_type || match?.score?.event_type || null,
+    url: sourceUrlFromAlert(alert, normalized)
+  };
+}
+
+function alertSortTimestamp(alert) {
+  return alert.created_at || alert.detected_at || evidenceTimestamp(alert) || null;
+}
+
+function isActiveAlertFresh(alert, currentConfig) {
+  const maxAgeHours = Number(currentConfig.activeAlertFreshnessMaxHours || currentConfig.signalFreshnessMaxHours || 24);
+  const observed = evidenceTimestamp(alert) || alertSortTimestamp(alert);
+  const observedMs = new Date(observed || 0).getTime();
+  if (!Number.isFinite(observedMs) || observedMs <= 0) {
+    return false;
+  }
+  const ageHours = Math.max(0, (Date.now() - observedMs) / 3_600_000);
+  return ageHours <= maxAgeHours;
+}
+
+function buildActiveAlerts(store, limit = 10) {
+  const scoreLookup = buildScoreLookup(store);
+  return store.alertHistory
+    .map((alert) => hydrateAlertForDashboard(alert, scoreLookup))
+    .filter((alert) => isActiveAlertFresh(alert, config))
+    .sort((a, b) => new Date(alertSortTimestamp(b) || 0) - new Date(alertSortTimestamp(a) || 0))
+    .slice(0, limit);
 }
 
 function readMarketFlowSettings(currentConfig) {
@@ -643,7 +733,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         bootstrap: fullFundamentalRows.filter((row) => row.data_source === "bootstrap_placeholder").length
       },
       sectors,
-      alerts: filterFreshEvidence(store.alertHistory, config).slice(0, 10),
+      alerts: buildActiveAlerts(store, 10),
     source_quality: [...store.sourceStats.values()].sort((a, b) => b.rolling_avg_confidence - a.rolling_avg_confidence)
   };
 }
@@ -875,11 +965,51 @@ function buildRecentDocuments(store, { ticker = null, limit = 20 } = {}) {
         display_tier: score.display_tier || score.evidence_quality?.display_tier || null,
         downstream_weight: score.downstream_weight ?? score.evidence_quality?.downstream_weight ?? null,
         explanation_short: score.explanation_short,
-        url: normalized.canonical_url,
+        url: sourceUrlFromNormalized(normalized),
         source_metadata: normalized.source_metadata || null
       };
     })
     .filter(Boolean)
+    .sort((a, b) => new Date(b.published_at || b.timestamp) - new Date(a.published_at || a.timestamp))
+    .slice(0, limit);
+}
+
+function buildMoneyFlowDocuments(store, { ticker = null, limit = 30 } = {}) {
+  return store.documentScores
+    .map((score) => {
+      const normalized = store.normalizedDocuments.find((doc) => doc.doc_id === score.doc_id);
+      if (!normalized || !MONEY_FLOW_EVENT_TYPES.has(score.event_type)) {
+        return null;
+      }
+      if (ticker && normalized.primary_ticker !== ticker) {
+        return null;
+      }
+      if (!shouldUseEvidence(normalized, config)) {
+        return null;
+      }
+
+      return {
+        timestamp: score.scored_at,
+        published_at: normalized.published_at,
+        ticker: normalized.primary_ticker,
+        headline: normalized.headline,
+        source_name: normalized.source_name,
+        source_type: normalized.source_type,
+        event_type: score.event_type,
+        label: score.bullish_bearish_label,
+        sentiment_score: score.sentiment_score,
+        impact_score: score.impact_score,
+        confidence: score.final_confidence,
+        evidence_quality: score.evidence_quality || null,
+        display_tier: score.display_tier || score.evidence_quality?.display_tier || null,
+        downstream_weight: score.downstream_weight ?? score.evidence_quality?.downstream_weight ?? null,
+        explanation_short: score.explanation_short,
+        url: sourceUrlFromNormalized(normalized),
+        source_metadata: normalized.source_metadata || null
+      };
+    })
+    .filter(Boolean)
+    .filter((item) => item.display_tier !== "suppress")
     .sort((a, b) => new Date(b.published_at || b.timestamp) - new Date(a.published_at || a.timestamp))
     .slice(0, limit);
 }
@@ -1080,6 +1210,7 @@ export function createSentimentApp() {
         default_window: config.defaultWindow,
         windows: ["15m", "1h", "4h", "1d", "7d"],
         signal_freshness_max_hours: config.signalFreshnessMaxHours,
+        active_alert_freshness_max_hours: config.activeAlertFreshnessMaxHours,
         seed_data_on_empty: config.seedDataOnEmpty,
         seed_data_in_decisions: config.seedDataInDecisions,
         live_news_enabled: config.liveNewsEnabled,
@@ -1475,6 +1606,12 @@ export function createSentimentApp() {
     },
     getRecentDocuments(params) {
       return buildRecentDocuments(store, params);
+    },
+    getMoneyFlowSignals(params = {}) {
+      return buildMoneyFlowDocuments(store, {
+        ticker: params.ticker ? String(params.ticker).toUpperCase() : null,
+        limit: params.limit ? Number(params.limit) : 30
+      });
     },
     getEarningsCalendar() {
       return Object.fromEntries(store.earningsCalendar);

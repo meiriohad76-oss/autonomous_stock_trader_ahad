@@ -223,7 +223,8 @@ export function createPipeline(store) {
         confidence: alert.confidence,
         source_name: alert.source_name,
         published_at: alert.published_at,
-        event_type: alert.event_type
+        event_type: alert.event_type,
+        url: alert.url || null
       });
     }
 
