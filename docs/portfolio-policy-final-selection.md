@@ -44,3 +44,29 @@ Final Selection uses this sequence:
 9. Alpaca submission remains supervised and still requires explicit approval.
 
 The main endpoint is `GET /api/final-selection?window=1h&limit=12`.
+
+## Agency Worker Map
+
+The Command Center cycle now exposes twelve workers:
+
+1. Universe Agent
+2. Fundamentals Agent
+3. Market Agent
+4. Signals Agent
+5. Portfolio Policy Agent
+6. Deterministic Selection Agent
+7. LLM Selection Agent
+8. Final Selection Agent
+9. Risk Manager
+10. Execution Agent
+11. Portfolio Monitor
+12. Learning Agent
+
+For Raspberry Pi verification after pulling a new version:
+
+```bash
+cd ~/sentiment-analyst
+git pull --ff-only origin main
+npm install
+npm run check:agency-operational
+```

@@ -5,7 +5,10 @@ const AGENCY_WORKERS = [
   { key: "fundamentals", worker: "Fundamentals Agent", view: "universe" },
   { key: "market", worker: "Market Agent", view: "markets" },
   { key: "signals", worker: "Signals Agent", view: "alerts" },
-  { key: "selection", worker: "Selection Agent", view: "trading" },
+  { key: "policy", worker: "Portfolio Policy Agent", view: "portfolio" },
+  { key: "deterministic_selection", worker: "Deterministic Selection Agent", view: "trading" },
+  { key: "llm_selection", worker: "LLM Selection Agent", view: "trading" },
+  { key: "final_selection", worker: "Final Selection Agent", view: "trading" },
   { key: "risk", worker: "Risk Manager", view: "risk" },
   { key: "execution", worker: "Execution Agent", view: "execution" },
   { key: "portfolio", worker: "Portfolio Monitor", view: "portfolio" },
@@ -1017,7 +1020,7 @@ function buildLearningAnalysis() {
 
   if (workflow.status && workflow.status !== "ready") {
     addSuggestion(
-      "Selection Agent",
+      "Final Selection Agent",
       "High",
       "Do not promote recommendations to execution until workflow blockers are removed.",
       workflow.summary || "The trading workflow is not fully decision-ready.",
@@ -1083,7 +1086,7 @@ function buildLearningAnalysis() {
 
   if (losingPositions.length) {
     addSuggestion(
-      "Selection Agent",
+      "Final Selection Agent",
       "High",
       "Review losing open positions against their original conviction drivers before repeating similar setups.",
       "Open paper losses are the fastest feedback loop for the ranking algorithm.",
@@ -1124,7 +1127,7 @@ function buildLearningAnalysis() {
 
   if (counts.eligible > 40 && !setups.filter((setup) => ["long", "short"].includes(setup.action)).length) {
     addSuggestion(
-      "Selection Agent",
+      "Deterministic Selection Agent",
       "Medium",
       "Explain why many eligible fundamentals names are not graduating to buy/sell recommendations.",
       "The fundamentals gate has supply, but the trade list has no executable candidates.",
@@ -1181,12 +1184,36 @@ function buildLearningAnalysis() {
     signalTime && moneyFlowSignals.length ? "bullish" : "neutral"
   );
   ensureSuggestion(
-    "Selection Agent",
+    "Portfolio Policy Agent",
+    state.portfolioPolicy?.status === "blocked" ? "High" : state.portfolioPolicy?.status === "caution" ? "Medium" : "Low",
+    "Keep policy rules explicit and stable while paper outcomes accumulate.",
+    "Learning needs to know whether outcomes came from idea quality, sizing, stop/target settings, or capacity limits.",
+    `${formatNumber((state.portfolioPolicySettings.portfolioMaxPositionPct || 0.03) * 100, 1)}% max position / ${state.portfolioPolicySettings.portfolioMaxNewPositionsPerCycle || 3} new per cycle`,
+    state.portfolioPolicy?.status === "blocked" ? "bearish" : "neutral"
+  );
+  ensureSuggestion(
+    "Deterministic Selection Agent",
     setupSummary.tradable.length ? "Low" : "Medium",
     "Record the top positive and negative drivers behind each buy, sell, watch, and blocked decision.",
     "Learning needs decision-driver tags before it can safely adjust ranking thresholds after paper outcomes.",
     `${setupSummary.long} buy / ${setupSummary.short} sell / ${setupSummary.watch} watch`,
     setupSummary.tradable.length ? "bullish" : "neutral"
+  );
+  ensureSuggestion(
+    "LLM Selection Agent",
+    state.finalSelection?.llm_agent?.mode ? "Low" : "Medium",
+    "Track every LLM agreement, demotion, and concern against later paper P/L.",
+    "The LLM lane should improve qualitative review, not override deterministic safety without evidence.",
+    prettyLabel(state.finalSelection?.llm_agent?.mode || "not loaded"),
+    "neutral"
+  );
+  ensureSuggestion(
+    "Final Selection Agent",
+    state.finalSelection?.counts?.executable ? "Low" : "Medium",
+    "Compare final-selected names with deterministic-only names to measure whether dual arbitration improves outcomes.",
+    "Final Selection is where policy and selector disagreement can block otherwise attractive ideas.",
+    `${state.finalSelection?.counts?.executable || 0} executable / ${state.finalSelection?.counts?.review || 0} review`,
+    state.finalSelection?.counts?.executable ? "bullish" : "neutral"
   );
   ensureSuggestion(
     "Risk Manager",
@@ -4596,6 +4623,8 @@ function renderAgencyCommandCenter() {
   const bearishSectors = sectors.filter((sector) => sector.sentiment_regime === "bearish").length;
   const moneyFlowCount = collectMoneyFlowSignals().length;
   const setupSummary = setupCounts();
+  const finalSelection = state.finalSelection || {};
+  const finalCounts = finalSelection.counts || {};
   const workflow = state.workflowStatus || {};
   const execution = state.executionStatus || {};
   const monitor = state.positionMonitor || {};
@@ -4655,17 +4684,50 @@ function renderAgencyCommandCenter() {
     },
     {
       step: "05",
-      name: "Selection Agent",
-      status: flowStatus,
-      statusClass: workflowStatusClass(flowStatus),
-      mission: "Combines the first three workers into ranked buy, sell, watch, and blocked recommendations.",
+      name: "Portfolio Policy Agent",
+      status: state.portfolioPolicy?.status || "policy",
+      statusClass: monitorActionClass(state.portfolioPolicy?.status || "ok"),
+      mission: "Applies user-editable rules for weekly target, drawdown, position count, sizing, cash reserve, stops, targets, adds, and reductions.",
+      metric: `${formatNumber((state.portfolioPolicySettings.portfolioMaxPositionPct || 0.03) * 100, 1)}%`,
+      metricLabel: "max position",
+      view: "portfolio",
+      icon: "tune"
+    },
+    {
+      step: "06",
+      name: "Deterministic Selection Agent",
+      status: setupSummary.tradable.length ? "ranked" : "watching",
+      statusClass: setupSummary.tradable.length ? "bullish" : "neutral",
+      mission: "Scores fundamentals, market regime, signals, money flow, runtime trust, and price plan with transparent rules.",
       metric: `${setupSummary.long}/${setupSummary.short}`,
-      metricLabel: "buy/sell",
+      metricLabel: "rules buy/sell",
       view: "trading",
       icon: "assignment"
     },
     {
-      step: "06",
+      step: "07",
+      name: "LLM Selection Agent",
+      status: prettyLabel(finalSelection.llm_agent?.mode || "shadow"),
+      statusClass: "neutral",
+      mission: "Reviews the same evidence pack in parallel and explains agreement, demotion, concerns, or disagreement.",
+      metric: `${finalSelection.llm_agent?.counts?.long || 0}/${finalSelection.llm_agent?.counts?.short || 0}`,
+      metricLabel: "llm buy/sell",
+      view: "trading",
+      icon: "psychology_alt"
+    },
+    {
+      step: "08",
+      name: "Final Selection Agent",
+      status: finalCounts.executable ? "finalized" : flowStatus,
+      statusClass: finalCounts.executable ? "bullish" : workflowStatusClass(flowStatus),
+      mission: "Arbitrates deterministic and LLM outputs, applies policy, and produces final buy/sell/review candidates.",
+      metric: `${finalCounts.final_buy || 0}/${finalCounts.final_sell || 0}`,
+      metricLabel: "final buy/sell",
+      view: "trading",
+      icon: "fact_check"
+    },
+    {
+      step: "09",
       name: "Risk Manager",
       status: riskStatus,
       statusClass: monitorActionClass(riskStatus),
@@ -4676,7 +4738,7 @@ function renderAgencyCommandCenter() {
       icon: "shield"
     },
     {
-      step: "07",
+      step: "10",
       name: "Execution Agent",
       status: brokerReady ? "paper ready" : "gated",
       statusClass: brokerReady ? "bullish" : "neutral",
@@ -4687,7 +4749,7 @@ function renderAgencyCommandCenter() {
       icon: "order_approve"
     },
     {
-      step: "08",
+      step: "11",
       name: "Portfolio Monitor",
       status: monitor.status || "waiting",
       statusClass: monitorActionClass(monitor.status),
@@ -4698,7 +4760,7 @@ function renderAgencyCommandCenter() {
       icon: "account_balance_wallet"
     },
     {
-      step: "09",
+      step: "12",
       name: "Learning Agent",
       status: learning.decisions.length || learning.positions.length ? "reviewing" : "collecting",
       statusClass: learning.losingPositions.length ? "bearish" : learning.winningPositions.length ? "bullish" : "neutral",

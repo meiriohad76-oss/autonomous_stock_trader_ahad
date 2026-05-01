@@ -17,6 +17,7 @@
     "check:risk": "node scripts/check-risk-agent.js",
     "check:portfolio-policy": "node scripts/check-portfolio-policy.js",
     "check:final-selection": "node scripts/check-final-selection.js",
+    "check:agency-operational": "node scripts/check-agency-operational.js",
     "check:runtime-reliability": "node scripts/check-runtime-reliability.js",
     "check:workflow": "node scripts/check-trading-workflow.js",
     "check:agency-cycle": "node scripts/check-agency-cycle.js",

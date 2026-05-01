@@ -26,6 +26,20 @@ const cycle = buildAgencyCycleStatus({
   },
   riskSnapshot: { status: "ok", hard_blocks: [] },
   positionMonitor: { position_count: 0, open_order_count: 0 },
+  portfolioPolicy: { status: "ok", summary: "Policy clear.", hard_blocks: [] },
+  llmSelection: {
+    status: "shadow",
+    mode: "shadow",
+    recommendations: [
+      { ticker: "AAPL", action: "watch" },
+      { ticker: "MSFT", action: "watch" },
+      { ticker: "NVDA", action: "watch" }
+    ]
+  },
+  finalSelection: {
+    counts: { final_buy: 0, final_sell: 0, executable: 0, review: 0, watch: 3, visible: 3 },
+    candidates: []
+  },
   secQueue: {
     tracked_companies: 168,
     pending_bootstrap_companies: 80,
@@ -34,8 +48,8 @@ const cycle = buildAgencyCycleStatus({
   executionLog: []
 });
 
-if (!cycle.workers || cycle.workers.length !== 9) {
-  throw new Error(`Expected 9 agency workers, got ${cycle.workers?.length || 0}.`);
+if (!cycle.workers || cycle.workers.length !== 12) {
+  throw new Error(`Expected 12 agency workers, got ${cycle.workers?.length || 0}.`);
 }
 
 if (cycle.current_worker_key !== "signals") {
@@ -77,6 +91,19 @@ const readyCycle = buildAgencyCycleStatus({
   },
   riskSnapshot: { status: "ok", hard_blocks: [] },
   positionMonitor: { position_count: 1, open_order_count: 0 },
+  portfolioPolicy: { status: "ok", summary: "Policy clear.", hard_blocks: [] },
+  llmSelection: {
+    status: "shadow",
+    mode: "shadow",
+    recommendations: [{ ticker: "AAPL", action: "long" }, { ticker: "MSFT", action: "long" }]
+  },
+  finalSelection: {
+    counts: { final_buy: 2, final_sell: 0, executable: 2, review: 0, watch: 0, visible: 2 },
+    candidates: [
+      { ticker: "AAPL", final_action: "long", execution_allowed: true },
+      { ticker: "MSFT", final_action: "long", execution_allowed: true }
+    ]
+  },
   secQueue: {
     tracked_companies: 168,
     pending_bootstrap_companies: 0,

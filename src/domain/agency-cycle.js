@@ -32,12 +32,36 @@ const WORKERS = [
     action: { kind: "runtime", action: "poll_once", source: "live_news", label: "Poll News", icon: "newspaper" }
   },
   {
-    key: "selection",
-    label: "Selection Agent",
+    key: "policy",
+    label: "Portfolio Policy Agent",
+    view: "portfolio",
+    automation: "automatic_policy_gate_user_editable",
+    mission: "Own the user-editable portfolio rules: weekly target, drawdown, position caps, cash reserve, stops, targets, adds, and reductions.",
+    action: { kind: "view", view: "portfolio", label: "Open Policy", icon: "tune" }
+  },
+  {
+    key: "deterministic_selection",
+    label: "Deterministic Selection Agent",
     view: "trading",
     automation: "automatic_ranking",
-    mission: "Combine fundamentals, market context, and signals into buy, sell, watch, and blocked recommendations.",
-    action: { kind: "view", view: "trading", label: "Open Selection", icon: "assignment" }
+    mission: "Score the allowed universe with the rules engine: fundamentals, market context, signals, money flow, runtime trust, and price plan.",
+    action: { kind: "view", view: "trading", label: "Open Rules Selector", icon: "assignment" }
+  },
+  {
+    key: "llm_selection",
+    label: "LLM Selection Agent",
+    view: "trading",
+    automation: "automatic_parallel_shadow_review",
+    mission: "Review the same evidence pack in parallel, explain support and concerns, and flag disagreements with the deterministic selector.",
+    action: { kind: "view", view: "trading", label: "Open LLM Selector", icon: "psychology_alt" }
+  },
+  {
+    key: "final_selection",
+    label: "Final Selection Agent",
+    view: "trading",
+    automation: "automatic_policy_arbitration",
+    mission: "Arbitrate deterministic and LLM outputs, apply portfolio policy, and produce the final buy/sell/review list.",
+    action: { kind: "view", view: "trading", label: "Open Final Selection", icon: "fact_check" }
   },
   {
     key: "risk",
@@ -94,6 +118,19 @@ function countTradeSetups(tradeSetups = {}) {
     watch: counts.watch || setups.filter((setup) => setup.action === "watch").length,
     noTrade: counts.no_trade || setups.filter((setup) => setup.action === "no_trade").length,
     visible: setups.length
+  };
+}
+
+function countFinalSelection(finalSelection = {}) {
+  const counts = finalSelection?.counts || {};
+  const candidates = finalSelection?.candidates || [];
+  return {
+    finalBuy: counts.final_buy ?? candidates.filter((item) => item.execution_allowed && item.final_action === "long").length,
+    finalSell: counts.final_sell ?? candidates.filter((item) => item.execution_allowed && item.final_action === "short").length,
+    executable: counts.executable ?? candidates.filter((item) => item.execution_allowed).length,
+    review: counts.review ?? candidates.filter((item) => item.final_action === "review").length,
+    watch: counts.watch ?? candidates.filter((item) => item.final_action === "watch").length,
+    visible: counts.visible ?? candidates.length
   };
 }
 
@@ -200,11 +237,38 @@ export function chooseAgencyCycleAdvance(cycle = {}) {
     };
   }
 
-  if (key === "selection") {
+  if (key === "policy") {
     return {
       type: "view",
-      label: "Open Selection Agent",
-      reason: "Selection updates automatically from current Fundamentals, Market, and Signals inputs.",
+      label: "Open Portfolio Policy",
+      reason: "Portfolio policy is user-editable and gates sizing, capacity, stops, targets, cash reserve, and final selection.",
+      view: "portfolio"
+    };
+  }
+
+  if (key === "deterministic_selection") {
+    return {
+      type: "view",
+      label: "Open Deterministic Selector",
+      reason: "The rules-based selector updates automatically from current Fundamentals, Market, Signals, and runtime inputs.",
+      view: "trading"
+    };
+  }
+
+  if (key === "llm_selection") {
+    return {
+      type: "view",
+      label: "Open LLM Selector",
+      reason: "The LLM selection lane runs in parallel and explains agreement, demotion, or disagreement with the deterministic selector.",
+      view: "trading"
+    };
+  }
+
+  if (key === "final_selection") {
+    return {
+      type: "view",
+      label: "Open Final Selection",
+      reason: "Final Selection applies dual-selector agreement plus portfolio policy before Risk and Execution.",
       view: "trading"
     };
   }
@@ -264,15 +328,20 @@ export function buildAgencyCycleStatus({
   executionStatus,
   riskSnapshot,
   positionMonitor,
+  portfolioPolicy = null,
+  llmSelection = null,
+  finalSelection = null,
   secQueue,
   executionLog = [],
   advanceLog = []
 }) {
   const setupCounts = countTradeSetups(tradeSetups);
   const tradableCount = setupCounts.long + setupCounts.short;
+  const finalCounts = countFinalSelection(finalSelection);
   const sources = sourceByKey(workflowStatus);
   const broker = executionStatus?.broker || positionMonitor?.broker || {};
   const riskBlocked = riskSnapshot?.status === "blocked" || Boolean(riskSnapshot?.hard_blocks?.length);
+  const policyBlocked = portfolioPolicy?.status === "blocked" || Boolean(portfolioPolicy?.hard_blocks?.length);
   const positionCount = positionMonitor?.position_count || positionMonitor?.positions?.length || 0;
   const openOrderCount = positionMonitor?.open_order_count || positionMonitor?.open_orders?.length || 0;
   const decisionCount = Array.isArray(executionLog) ? executionLog.length : 0;
@@ -298,11 +367,26 @@ export function buildAgencyCycleStatus({
     signals: freshDecisionEvidence > 0
       ? workerStatus("complete", `${freshDecisionEvidence} fresh decision evidence item(s) are available.`)
       : workerStatus("blocked", "Fresh alerts/watch evidence is missing."),
-    selection: tradableCount
-      ? workerStatus("ready", `${tradableCount} buy/sell setup(s) can be reviewed.`)
+    policy: policyBlocked
+      ? workerStatus("blocked", portfolioPolicy?.summary || "Portfolio policy is blocking new selections.")
+      : portfolioPolicy?.status === "caution"
+        ? workerStatus("review", portfolioPolicy.summary || "Portfolio policy has caution flags.")
+        : workerStatus("complete", portfolioPolicy?.summary || "Portfolio policy is available."),
+    deterministic_selection: tradableCount
+      ? workerStatus("complete", `${tradableCount} deterministic buy/sell setup(s) can be reviewed.`)
       : setupCounts.watch
-        ? workerStatus("review", `${setupCounts.watch} watch setup(s), no buy/sell candidate yet.`)
-        : workerStatus("waiting", "No current setup clears the final threshold."),
+        ? workerStatus("review", `${setupCounts.watch} deterministic watch setup(s), no buy/sell candidate yet.`)
+        : workerStatus("waiting", "No deterministic setup clears the trade threshold."),
+    llm_selection: llmSelection?.recommendations?.length
+      ? workerStatus(["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status) ? "review" : "complete", `${llmSelection.recommendations.length} LLM-lane review(s); mode ${automationLabel(llmSelection.mode)}.`)
+      : workerStatus("waiting", "LLM selection has not reviewed current candidates yet."),
+    final_selection: policyBlocked
+      ? workerStatus("blocked", "Final Selection is blocked by Portfolio Policy.")
+      : finalCounts.executable
+        ? workerStatus("ready", `${finalCounts.executable} final executable candidate(s) passed dual-selector and policy gates.`)
+        : finalCounts.review || finalCounts.watch
+          ? workerStatus("review", `${finalCounts.review} review and ${finalCounts.watch} watch candidate(s), no final executable candidate.`)
+          : workerStatus("waiting", "No final selection candidate is available."),
     risk: riskBlocked
       ? workerStatus("blocked", riskSnapshot?.blocked_reason || "Portfolio risk hard block is active.")
       : workerStatus("ready", `Risk status is ${riskSnapshot?.status || positionMonitor?.risk_status || "available"}.`),
@@ -326,7 +410,10 @@ export function buildAgencyCycleStatus({
       fundamentals: `${secCoveragePct}% SEC`,
       market: livePricingReady ? "pricing ready" : runtimeReliability?.status || "unknown",
       signals: `${freshDecisionEvidence} fresh`,
-      selection: `${setupCounts.long}/${setupCounts.short} buy/sell`,
+      policy: portfolioPolicy?.status || "policy",
+      deterministic_selection: `${setupCounts.long}/${setupCounts.short} buy/sell`,
+      llm_selection: llmSelection?.mode || "shadow",
+      final_selection: `${finalCounts.finalBuy}/${finalCounts.finalSell} final`,
       risk: riskSnapshot?.status || positionMonitor?.risk_status || "unknown",
       execution: broker.ready_for_order_submission ? "paper ready" : broker.configured ? "gated" : "preview only",
       portfolio: `${positionCount} pos / ${openOrderCount} ord`,
@@ -335,8 +422,9 @@ export function buildAgencyCycleStatus({
     return buildWorker(worker, index, status.status, status.detail, metric);
   });
 
-  const canPreview = Boolean(workflowStatus?.can_preview_orders);
-  const canSubmit = Boolean(workflowStatus?.can_submit_orders);
+  const hasFinalSelection = Boolean(finalSelection);
+  const canPreview = Boolean(workflowStatus?.can_preview_orders) && (!hasFinalSelection || finalCounts.executable > 0);
+  const canSubmit = Boolean(workflowStatus?.can_submit_orders) && (!hasFinalSelection || finalCounts.executable > 0);
   const canUseForDecisions = Boolean(workflowStatus?.can_use_for_decisions);
   const executionWorker = workers.find((worker) => worker.key === "execution");
   const current = (canSubmit || canPreview) && executionWorker ? executionWorker : currentWorker(workers);
@@ -361,9 +449,9 @@ export function buildAgencyCycleStatus({
     summary: canSubmit
       ? "The agency can prepare a supervised Alpaca paper approval."
       : canPreview
-        ? "The agency can preview trade tickets, but submission remains guarded."
+        ? "The agency can preview final-selected trade tickets, but submission remains guarded."
         : "The agency is still collecting or refreshing inputs before trade decisions.",
-    supervision: "Analysis, ranking, risk checks, monitoring, and learning run automatically from available telemetry. Alpaca paper submission remains supervised and requires explicit approval.",
+    supervision: "Universe, fundamentals, market, signals, policy, deterministic selection, LLM selection, final selection, risk checks, monitoring, and learning run automatically from available telemetry. Alpaca paper submission remains supervised and requires explicit approval.",
     current_worker_key: current?.key || null,
     current_worker_label: current?.label || null,
     current_worker_step: current?.step || null,

@@ -1566,6 +1566,29 @@ export function createSentimentApp() {
         riskSnapshot,
         positionMonitor
       });
+      const rawPortfolioPolicy = readPortfolioPolicy(config);
+      const portfolioPolicy = buildPortfolioPolicySnapshot({
+        config,
+        riskSnapshot,
+        positionMonitor
+      });
+      const llmSelection = buildLlmSelectionSnapshot({
+        config,
+        tradeSetups,
+        portfolioPolicy: rawPortfolioPolicy,
+        riskSnapshot,
+        positionMonitor
+      });
+      const finalSelection = buildFinalSelectionSnapshot({
+        config,
+        tradeSetups,
+        llmSelection,
+        portfolioPolicy: rawPortfolioPolicy,
+        riskSnapshot,
+        positionMonitor,
+        window,
+        limit: options.limit ? Number(options.limit) : 25
+      });
 
       return buildAgencyCycleStatus({
         readiness: getReadiness(),
@@ -1575,6 +1598,9 @@ export function createSentimentApp() {
         executionStatus,
         riskSnapshot,
         positionMonitor,
+        portfolioPolicy,
+        llmSelection,
+        finalSelection,
         secQueue: buildSecFundamentalsQueue(store, config, { limit: 8 }),
         executionLog: store.executionLog,
         advanceLog: store.agencyCycleLog || []
