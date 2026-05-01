@@ -117,7 +117,7 @@ function buildRawFlowDocument(entry, flow) {
 
   return {
     source_name: "market_flow",
-    source_type: "manual",
+    source_type: "market_flow",
     source_priority: 0.76,
     canonical_url: `market-flow://${entry.ticker}/${encodeURIComponent(flow.timestamp)}`,
     url: `market-flow://${entry.ticker}/${encodeURIComponent(flow.timestamp)}`,

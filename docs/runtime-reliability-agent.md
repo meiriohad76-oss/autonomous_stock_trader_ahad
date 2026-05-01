@@ -29,8 +29,8 @@ Collectors and persistence
 
 Downstream components should use it as a guardrail:
 
-- dashboards show whether data is live, stale, fallback, disabled, or manual
-- trade setup logic reduces conviction when key sources are degraded, fallback, stale, disabled, or intentionally manual
+- dashboards show whether data is live, stale, fallback, unconfigured, disabled, or manual
+- trade setup logic reduces conviction when key sources are degraded, fallback, stale, unconfigured, disabled, or intentionally manual
 - deploy scripts can check whether the Pi is safe before enabling heavy collectors
 - future scheduler/orchestrator logic can use the `collector_plan`
 
@@ -38,7 +38,7 @@ Downstream components should use it as a guardrail:
 
 Each source receives:
 
-- `status`: `healthy`, `fallback`, `manual`, `pending`, `polling`, `stale`, `degraded`, `error`, or `disabled`
+- `status`: `healthy`, `fallback`, `manual`, `pending`, `polling`, `stale`, `degraded`, `error`, `unconfigured`, or `disabled`
 - `action`: recommended next operational action
 - `severity`: `info`, `warning`, or `critical`
 - `reason`: human-readable explanation
@@ -50,6 +50,9 @@ The current source set includes:
 - Live News
 - Market Data
 - Market Flow
+- Earnings Calendar
+- StockTwits Social Pulse
+- Delayed Trade Prints
 - Fundamental Market Reference
 - SEC Fundamentals
 - SEC Form 4 Insider Flow
@@ -67,7 +70,17 @@ The pressure model checks:
 - system free memory
 - CPU load per core
 
-When the system is constrained, the collector plan recommends keeping expensive collectors manual instead of auto-starting them.
+When `AGENCY_AUTONOMOUS_DATA_ENABLED=true`, enabled live-data workers auto-start even when older Pi-light auto-start flags are still false. The pressure model can still warn about CPU or memory pressure, but it no longer keeps core data workers manual by default. Alpaca order submission remains separate and supervised.
+
+## Autonomous Live Data
+
+The `autonomous_live` runtime profile is the default target once a Twelve Data key is available. It keeps lightweight JSON persistence for the Pi, starts live news, market data, market flow, earnings, SEC fundamentals, Form 4, 13F, and fundamental market-reference refreshes, and keeps broker submission guarded.
+
+Expected optional gaps:
+
+- `stocktwits_stream` is `unconfigured` until `STOCKTWITS_API_KEY` is set, because unauthenticated server requests are commonly blocked.
+- `trade_prints` is `unconfigured` until `POLYGON_API_KEY`, `IEX_API_KEY`, or `TRADE_PRINTS_API_KEY` is set.
+- Earnings use Yahoo with a crumb/cookie handshake by default. Twelve Data can be selected with `EARNINGS_PROVIDER=twelvedata`, but some earnings endpoints are plan-gated.
 
 ## API
 
@@ -96,15 +109,19 @@ Supported payloads:
 { "action": "backup_now" }
 { "action": "apply_profile", "profile": "emergency", "apply": false }
 { "action": "apply_profile", "profile": "live_news_only", "apply": true }
+{ "action": "apply_profile", "profile": "autonomous_live", "apply": true }
 { "action": "poll_once", "source": "live_news" }
 { "action": "poll_once", "source": "market_flow" }
+{ "action": "poll_once", "source": "earnings_calendar" }
+{ "action": "poll_once", "source": "stocktwits_stream" }
+{ "action": "poll_once", "source": "trade_prints" }
 { "action": "poll_once", "source": "sec_form4" }
 { "action": "poll_once", "source": "sec_13f" }
 { "action": "poll_once", "source": "sec_fundamentals" }
 { "action": "poll_once", "source": "fundamental_market_data" }
 ```
 
-Disabled sources are blocked by default and return a clear error. Enable the relevant `.env` flag before running that source.
+Disabled sources are blocked by default and return a clear error. Unconfigured sources stay visible in the dashboard with the exact missing key/provider requirement.
 
 ## System tab control console
 

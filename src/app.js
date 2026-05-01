@@ -379,6 +379,7 @@ const RUNTIME_PROFILE_CONFIG_FIELDS = {
   LIGHTWEIGHT_STATE_ENABLED: { key: "lightweightStateEnabled", type: "boolean" },
   SQLITE_BACKUP_ENABLED: { key: "sqliteBackupEnabled", type: "boolean" },
   SQLITE_BACKUP_ON_STARTUP: { key: "sqliteBackupOnStartup", type: "boolean" },
+  AGENCY_AUTONOMOUS_DATA_ENABLED: { key: "autonomousDataEnabled", type: "boolean" },
   LIVE_NEWS_ENABLED: { key: "liveNewsEnabled", type: "boolean" },
   LIVE_NEWS_POLL_MS: { key: "liveNewsPollMs", type: "number" },
   LIVE_NEWS_MAX_ITEMS_PER_TICKER: { key: "liveNewsMaxItemsPerTicker", type: "number" },
@@ -386,7 +387,10 @@ const RUNTIME_PROFILE_CONFIG_FIELDS = {
   MARKET_DATA_REFRESH_MS: { key: "marketDataRefreshMs", type: "number" },
   MARKET_FLOW_ENABLED: { key: "marketFlowEnabled", type: "boolean" },
   AUTO_START_MARKET_FLOW: { key: "autoStartMarketFlow", type: "boolean" },
+  MARKET_FLOW_POLL_MS: { key: "marketFlowPollMs", type: "number" },
   EARNINGS_ENABLED: { key: "earningsEnabled", type: "boolean" },
+  EARNINGS_PROVIDER: { key: "earningsProvider", type: "string" },
+  EARNINGS_MAX_TICKERS_PER_POLL: { key: "earningsMaxTickersPerPoll", type: "number" },
   EARNINGS_POLL_MS: { key: "earningsPollMs", type: "number" },
   STOCKTWITS_ENABLED: { key: "stocktwitsEnabled", type: "boolean" },
   STOCKTWITS_POLL_MS: { key: "stocktwitsPollMs", type: "number" },
@@ -395,6 +399,7 @@ const RUNTIME_PROFILE_CONFIG_FIELDS = {
   TRADE_PRINTS_POLL_MS: { key: "tradePrintsPollMs", type: "number" },
   FUNDAMENTAL_MARKET_DATA_PROVIDER: { key: "fundamentalMarketDataProvider", type: "string" },
   AUTO_START_FUNDAMENTAL_MARKET_DATA: { key: "autoStartFundamentalMarketData", type: "boolean" },
+  FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL: { key: "fundamentalMarketDataMaxCompaniesPerPoll", type: "number" },
   FUNDAMENTAL_SEC_ENABLED: { key: "fundamentalSecEnabled", type: "boolean" },
   AUTO_START_SEC_FUNDAMENTALS: { key: "autoStartSecFundamentals", type: "boolean" },
   FUNDAMENTAL_SEC_CONCURRENCY: { key: "fundamentalSecConcurrency", type: "number" },
@@ -1078,6 +1083,7 @@ export function createSentimentApp() {
         seed_data_on_empty: config.seedDataOnEmpty,
         seed_data_in_decisions: config.seedDataInDecisions,
         live_news_enabled: config.liveNewsEnabled,
+        autonomous_data_enabled: config.autonomousDataEnabled,
         market_data_provider: config.marketDataProvider,
         market_flow_enabled: config.marketFlowEnabled,
         auto_start_market_flow: config.autoStartMarketFlow,
@@ -1094,15 +1100,18 @@ export function createSentimentApp() {
         },
         fundamental_market_data_provider: config.fundamentalMarketDataProvider,
         auto_start_fundamental_market_data: config.autoStartFundamentalMarketData,
+        fundamental_market_data_max_companies_per_poll: config.fundamentalMarketDataMaxCompaniesPerPoll,
         fundamental_sec_enabled: config.fundamentalSecEnabled,
         fundamental_sec_max_companies_per_poll: config.fundamentalSecMaxCompaniesPerPoll,
         auto_start_sec_fundamentals: config.autoStartSecFundamentals,
         sec_form4_enabled: config.secForm4Enabled,
         sec_13f_enabled: config.sec13fEnabled,
         auto_start_sec_13f: config.autoStartSec13f,
-        earnings_enabled: config.earningsEnabled,
-        stocktwits_enabled: config.stocktwitsEnabled,
-        trade_prints_enabled: config.tradePrintsEnabled,
+        earnings_enabled: config.earningsEnabled || config.autonomousDataEnabled,
+        earnings_provider: config.earningsProvider,
+        earnings_max_tickers_per_poll: config.earningsMaxTickersPerPoll,
+        stocktwits_enabled: config.stocktwitsEnabled || config.autonomousDataEnabled,
+        trade_prints_enabled: config.tradePrintsEnabled || config.autonomousDataEnabled,
         trade_prints_provider: config.tradePrintsProvider,
         broker_adapter: config.brokerAdapter,
         execution: executionAgent.getStatus(),
@@ -1164,19 +1173,22 @@ export function createSentimentApp() {
       const forceUniverse = Boolean(payload.forceUniverse || payload.force_universe);
       const profileKey = String(payload.profile || "").trim();
       const applyProfile = Boolean(payload.apply);
+      const earningsEnabled = Boolean(config.earningsEnabled || config.autonomousDataEnabled);
+      const stocktwitsEnabled = Boolean(config.stocktwitsEnabled || config.autonomousDataEnabled);
+      const tradePrintsEnabled = Boolean(config.tradePrintsEnabled || config.autonomousDataEnabled);
 
       const disabledSources = {
         live_news: !config.liveNewsEnabled,
         market_flow: !config.marketFlowEnabled,
-        earnings_calendar: !config.earningsEnabled,
-        yahoo_earnings_calendar: !config.earningsEnabled,
-        earnings: !config.earningsEnabled,
-        stocktwits_stream: !config.stocktwitsEnabled,
-        stocktwits: !config.stocktwitsEnabled,
-        trade_prints: !config.tradePrintsEnabled,
-        polygon_trade_prints: !config.tradePrintsEnabled,
-        iex_trade_prints: !config.tradePrintsEnabled,
-        [`${config.tradePrintsProvider}_trade_prints`]: !config.tradePrintsEnabled,
+        earnings_calendar: !earningsEnabled,
+        yahoo_earnings_calendar: !earningsEnabled,
+        earnings: !earningsEnabled,
+        stocktwits_stream: !stocktwitsEnabled,
+        stocktwits: !stocktwitsEnabled,
+        trade_prints: !tradePrintsEnabled,
+        polygon_trade_prints: !tradePrintsEnabled,
+        iex_trade_prints: !tradePrintsEnabled,
+        [`${config.tradePrintsProvider}_trade_prints`]: !tradePrintsEnabled,
         sec_form4: !config.secForm4Enabled,
         sec_13f: !config.sec13fEnabled,
         sec_fundamentals: !config.fundamentalSecEnabled,
@@ -2047,42 +2059,46 @@ export function createSentimentApp() {
   app.startLiveSources = async function startLiveSources() {
     await persistenceReady;
     await ensureFundamentalCoverage();
+    const autonomous = Boolean(config.autonomousDataEnabled);
     const starts = [
       liveNewsCollector.start(),
       marketDataService.start(),
       secInsiderCollector.start()
     ];
 
-    if (config.autoStartSec13f) {
+    if (config.sec13fEnabled && (config.autoStartSec13f || autonomous)) {
       starts.push(secInstitutionalCollector.start());
     }
 
-    if (config.autoStartFundamentalMarketData) {
+    const fundamentalMarketConfigured =
+      config.fundamentalMarketDataProvider !== "twelvedata" || Boolean(config.twelveDataApiKey);
+    if ((config.autoStartFundamentalMarketData || autonomous) && fundamentalMarketConfigured) {
       starts.push(fundamentalMarketDataService.start({
         getCompanies: () => fundamentals.getTrackedCompanies(),
         onUpdate: async (referenceMap) => fundamentals.refreshMarketReference(referenceMap)
       }));
     }
 
-    if (config.autoStartSecFundamentals) {
+    if (config.fundamentalSecEnabled && (config.autoStartSecFundamentals || autonomous)) {
       starts.push(secFundamentalsCollector.start());
     }
 
-    if (config.earningsEnabled) {
+    const earningsConfigured = config.earningsProvider !== "twelvedata" || Boolean(config.earningsApiKey || config.twelveDataApiKey);
+    if ((config.earningsEnabled || autonomous) && earningsConfigured) {
       starts.push(corporateEventsCollector.start());
     }
 
-    if (config.stocktwitsEnabled) {
+    if ((config.stocktwitsEnabled || autonomous) && config.stocktwitsApiKey) {
       starts.push(socialSentimentCollector.start());
     }
 
-    if (config.tradePrintsEnabled) {
+    if ((config.tradePrintsEnabled || autonomous) && config.tradePrintsApiKey) {
       starts.push(tradePrintsCollector.start());
     }
 
     await Promise.all(starts);
 
-    if (config.autoStartMarketFlow) {
+    if (config.marketFlowEnabled && (config.autoStartMarketFlow || autonomous)) {
       await marketFlowMonitor.start();
     }
 

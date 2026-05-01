@@ -17,14 +17,19 @@ function buildSeenKey(ticker) {
   return `stocktwits:${ticker}:${hourlySlot()}`;
 }
 
-async function fetchStream(ticker, timeoutMs) {
+async function fetchStream(ticker, config) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), config.stocktwitsRequestTimeoutMs);
+  const headers = { "User-Agent": "SentimentAnalyst/1.0 (+social-sentiment)" };
+  if (config.stocktwitsApiKey) {
+    headers.Authorization = `Bearer ${config.stocktwitsApiKey}`;
+  }
   try {
     const response = await fetch(buildStreamUrl(ticker), {
       signal: controller.signal,
-      headers: { "User-Agent": "SentimentAnalyst/1.0 (+social-sentiment)" }
+      headers
     });
+    if (response.status === 403) throw new Error("StockTwits blocked this request; configure STOCKTWITS_API_KEY or keep this optional source disabled.");
     if (response.status === 429) throw new Error("StockTwits rate-limited");
     if (!response.ok) throw new Error(`StockTwits ${response.status}`);
     const json = await response.json();
@@ -89,10 +94,14 @@ export function createSocialSentimentCollector(app) {
   let running = false;
   let inFlight = false;
 
+  function isEnabled() {
+    return Boolean(config.stocktwitsEnabled || config.autonomousDataEnabled);
+  }
+
   function ensureHealthEntry() {
     if (!store.health.liveSources.stocktwits_stream) {
       store.health.liveSources.stocktwits_stream = {
-        enabled: config.stocktwitsEnabled,
+        enabled: isEnabled(),
         polling: false,
         last_poll_at: null,
         last_success_at: null,
@@ -102,11 +111,12 @@ export function createSocialSentimentCollector(app) {
         ingested_documents: 0
       };
     }
+    store.health.liveSources.stocktwits_stream.enabled = isEnabled();
     return store.health.liveSources.stocktwits_stream;
   }
 
   async function pollOnce() {
-    if (!config.stocktwitsEnabled || inFlight) return { ingested: 0, skipped: 0 };
+    if (!isEnabled() || inFlight) return { ingested: 0, skipped: 0 };
 
     inFlight = true;
     const health = ensureHealthEntry();
@@ -117,6 +127,7 @@ export function createSocialSentimentCollector(app) {
     let ingested = 0;
     let skipped = 0;
     let errors = 0;
+    let lastFailure = null;
 
     try {
       for (const entry of WATCHLIST) {
@@ -128,8 +139,9 @@ export function createSocialSentimentCollector(app) {
 
         let messages;
         try {
-          messages = await fetchStream(entry.ticker, config.stocktwitsRequestTimeoutMs);
-        } catch {
+          messages = await fetchStream(entry.ticker, config);
+        } catch (error) {
+          lastFailure = error.message;
           errors += 1;
           continue;
         }
@@ -156,7 +168,7 @@ export function createSocialSentimentCollector(app) {
 
       health.ingested_documents += ingested;
       if (ingested > 0 || errors < WATCHLIST.length) health.last_success_at = new Date().toISOString();
-      health.last_error = errors > 0 ? `${errors} tickers failed` : null;
+      health.last_error = errors > 0 ? `${errors} tickers failed${lastFailure ? `: ${lastFailure}` : ""}` : null;
       health.consecutive_failures = errors === WATCHLIST.length ? health.consecutive_failures + 1 : 0;
       return { ingested, skipped, errors };
     } finally {
@@ -166,7 +178,7 @@ export function createSocialSentimentCollector(app) {
   }
 
   function scheduleNext() {
-    if (!running || !config.stocktwitsEnabled) return;
+    if (!running || !isEnabled()) return;
     timer = setTimeout(async () => {
       await pollOnce();
       scheduleNext();
@@ -176,7 +188,7 @@ export function createSocialSentimentCollector(app) {
   return {
     async start() {
       ensureHealthEntry();
-      if (running || !config.stocktwitsEnabled) return;
+      if (running || !isEnabled()) return;
       running = true;
       await pollOnce();
       scheduleNext();

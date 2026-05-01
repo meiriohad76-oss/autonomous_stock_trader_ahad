@@ -3,6 +3,7 @@ import { rmSync } from "node:fs";
 process.env.DATABASE_ENABLED = process.env.DATABASE_ENABLED || "false";
 process.env.SEED_DATA_IN_DECISIONS = "true";
 process.env.PI_PERFORMANCE_MODE = process.env.PI_PERFORMANCE_MODE || "true";
+process.env.AGENCY_AUTONOMOUS_DATA_ENABLED = process.env.AGENCY_AUTONOMOUS_DATA_ENABLED || "false";
 process.env.LIGHTWEIGHT_STATE_ENABLED = process.env.LIGHTWEIGHT_STATE_ENABLED || "true";
 process.env.LIGHTWEIGHT_STATE_PATH = process.env.LIGHTWEIGHT_STATE_PATH || "data/runtime-reliability-test-state.json";
 process.env.LIVE_NEWS_ENABLED = process.env.LIVE_NEWS_ENABLED || "false";

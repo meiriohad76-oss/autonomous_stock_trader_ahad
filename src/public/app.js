@@ -373,7 +373,7 @@ function sourceStatusClass(status) {
   if (["healthy", "fallback", "manual", "pending", "polling"].includes(status)) {
     return "neutral";
   }
-  if (["degraded", "error", "stale"].includes(status)) {
+  if (["degraded", "error", "stale", "unconfigured"].includes(status)) {
     return "bearish";
   }
   return "neutral";
@@ -389,6 +389,7 @@ function sourceStatusMeaning(status) {
     stale: "Usable data exists, but it is older than the freshness target.",
     degraded: "Usable data exists, but recent errors lower confidence.",
     error: "No usable successful refresh yet.",
+    unconfigured: "Enabled for autonomous mode, but missing the API key or provider setting needed for live data.",
     disabled: "Off by configuration."
   };
   return meanings[status] || "Status unavailable.";

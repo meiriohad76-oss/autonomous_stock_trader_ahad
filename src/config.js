@@ -60,6 +60,17 @@ function envBoolean(name, fallback, piFallback = fallback) {
   return String(value).toLowerCase() !== "false";
 }
 
+const autonomousDataEnabled = envBoolean("AGENCY_AUTONOMOUS_DATA_ENABLED", "true", "true");
+const hasTwelveDataKey = Boolean(process.env.TWELVE_DATA_API_KEY);
+
+function marketProvider(envName) {
+  const requested = process.env[envName];
+  if (autonomousDataEnabled && hasTwelveDataKey && (!requested || requested === "synthetic")) {
+    return "twelvedata";
+  }
+  return requested || (hasTwelveDataKey ? "twelvedata" : "synthetic");
+}
+
 export const config = {
   piPerformanceMode,
   host: process.env.HOST || "127.0.0.1",
@@ -91,7 +102,8 @@ export const config = {
   liveNewsLookbackHours: Number(process.env.LIVE_NEWS_LOOKBACK_HOURS || 24),
   liveNewsRequestTimeoutMs: Number(process.env.LIVE_NEWS_REQUEST_TIMEOUT_MS || 12000),
   liveNewsRequestRetries: envNumber("LIVE_NEWS_REQUEST_RETRIES", 1, 0),
-  marketDataProvider: process.env.MARKET_DATA_PROVIDER || (process.env.TWELVE_DATA_API_KEY ? "twelvedata" : "synthetic"),
+  autonomousDataEnabled,
+  marketDataProvider: marketProvider("MARKET_DATA_PROVIDER"),
   marketDataInterval: process.env.MARKET_DATA_INTERVAL || "15min",
   marketDataHistoryPoints: Number(process.env.MARKET_DATA_HISTORY_POINTS || 18),
   marketDataCacheMs: Number(process.env.MARKET_DATA_CACHE_MS || 60000),
@@ -109,11 +121,12 @@ export const config = {
   marketFlowBlockTradeMinNotionalUsd: Number(process.env.MARKET_FLOW_BLOCK_TRADE_MIN_NOTIONAL_USD || 25000000),
   marketFlowAbnormalVolumeMinNotionalUsd: Number(process.env.MARKET_FLOW_ABNORMAL_VOLUME_MIN_NOTIONAL_USD || 10000000),
   fundamentalMarketDataProvider:
-    process.env.FUNDAMENTAL_MARKET_DATA_PROVIDER || (process.env.TWELVE_DATA_API_KEY ? "twelvedata" : "synthetic"),
+    marketProvider("FUNDAMENTAL_MARKET_DATA_PROVIDER"),
   autoStartFundamentalMarketData: envBoolean("AUTO_START_FUNDAMENTAL_MARKET_DATA", "true", "false"),
   fundamentalMarketDataCacheMs: Number(process.env.FUNDAMENTAL_MARKET_DATA_CACHE_MS || 900000),
   fundamentalMarketDataRefreshMs: envNumber("FUNDAMENTAL_MARKET_DATA_REFRESH_MS", 900000, 1800000),
   fundamentalMarketDataRequestTimeoutMs: Number(process.env.FUNDAMENTAL_MARKET_DATA_REQUEST_TIMEOUT_MS || 12000),
+  fundamentalMarketDataMaxCompaniesPerPoll: envNumber("FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL", 25, 8),
   fundamentalSecEnabled: String(process.env.FUNDAMENTAL_SEC_ENABLED || "true").toLowerCase() !== "false",
   autoStartSecFundamentals: envBoolean("AUTO_START_SEC_FUNDAMENTALS", "true", "false"),
   fundamentalSecPollMs: Number(process.env.FUNDAMENTAL_SEC_POLL_MS || 21600000),
@@ -204,10 +217,12 @@ export const config = {
   secUserAgent:
     process.env.SEC_USER_AGENT || "SentimentAnalyst/1.0 contact=local@example.com",
   earningsEnabled: String(process.env.EARNINGS_ENABLED || "true").toLowerCase() !== "false",
-  earningsApiKey: process.env.EARNINGS_API_KEY || "",
+  earningsProvider: process.env.EARNINGS_PROVIDER || "yahoo",
+  earningsApiKey: process.env.EARNINGS_API_KEY || process.env.TWELVE_DATA_API_KEY || "",
   earningsLookAheadDays: Number(process.env.EARNINGS_LOOK_AHEAD_DAYS || 14),
   earningsPollMs: Number(process.env.EARNINGS_POLL_MS || 14400000),
   earningsRequestTimeoutMs: Number(process.env.EARNINGS_REQUEST_TIMEOUT_MS || 12000),
+  earningsMaxTickersPerPoll: envNumber("EARNINGS_MAX_TICKERS_PER_POLL", 12, 6),
   stocktwitsEnabled: String(process.env.STOCKTWITS_ENABLED || "false").toLowerCase() !== "false",
   stocktwitsApiKey: process.env.STOCKTWITS_API_KEY || "",
   stocktwitsPollMs: Number(process.env.STOCKTWITS_POLL_MS || 300000),

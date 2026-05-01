@@ -107,10 +107,14 @@ export function createTradePrintsCollector(app) {
   let running = false;
   let inFlight = false;
 
+  function isEnabled() {
+    return Boolean(config.tradePrintsEnabled || config.autonomousDataEnabled);
+  }
+
   function ensureHealthEntry() {
     if (!store.health.liveSources[healthKey]) {
       store.health.liveSources[healthKey] = {
-        enabled: config.tradePrintsEnabled,
+        enabled: isEnabled(),
         polling: false,
         last_poll_at: null,
         last_success_at: null,
@@ -120,14 +124,17 @@ export function createTradePrintsCollector(app) {
         ingested_documents: 0
       };
     }
+    store.health.liveSources[healthKey].enabled = isEnabled();
     return store.health.liveSources[healthKey];
   }
 
   async function pollOnce() {
-    if (!config.tradePrintsEnabled || inFlight) return { ingested: 0, skipped: 0 };
+    if (!isEnabled() || inFlight) return { ingested: 0, skipped: 0 };
     if (!config.tradePrintsApiKey) {
-      ensureHealthEntry().last_error = "no API key configured";
-      return { ingested: 0, skipped: 0 };
+      const health = ensureHealthEntry();
+      health.last_poll_at = new Date().toISOString();
+      health.last_error = "no API key configured";
+      return { ingested: 0, skipped: 0, error: health.last_error };
     }
 
     inFlight = true;
@@ -182,7 +189,7 @@ export function createTradePrintsCollector(app) {
   }
 
   function scheduleNext() {
-    if (!running || !config.tradePrintsEnabled) return;
+    if (!running || !isEnabled()) return;
     timer = setTimeout(async () => {
       await pollOnce();
       scheduleNext();
@@ -192,7 +199,7 @@ export function createTradePrintsCollector(app) {
   return {
     async start() {
       ensureHealthEntry();
-      if (running || !config.tradePrintsEnabled) return;
+      if (running || !isEnabled()) return;
       running = true;
       await pollOnce();
       scheduleNext();

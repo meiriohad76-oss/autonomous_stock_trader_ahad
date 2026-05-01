@@ -152,6 +152,7 @@ function mapLiveReference(ticker, quotePayload, statsPayload, fallbackCompany) {
   const cashFlow = statsPayload?.statistics?.cash_flow || {};
   const stockStats = statsPayload?.statistics?.stock_statistics || {};
   const priceSummary = statsPayload?.statistics?.stock_price_summary || {};
+  const fallbackMetrics = fallbackCompany?.metrics || {};
   const currentPrice = asNumber(quotePayload?.close) ?? asNumber(quotePayload?.price) ?? asNumber(quotePayload?.previous_close);
   const previousClose = asNumber(quotePayload?.previous_close);
   const absoluteChange = asNumber(quotePayload?.change) ?? (currentPrice && previousClose ? currentPrice - previousClose : null);
@@ -169,21 +170,21 @@ function mapLiveReference(ticker, quotePayload, statsPayload, fallbackCompany) {
     current_price: currentPrice ?? fallbackCompany?.market_reference?.current_price ?? null,
     absolute_change: absoluteChange,
     percent_change: percentChange,
-    market_cap: marketCap,
-    enterprise_value: asNumber(valuations.enterprise_value),
-    shares_outstanding: asNumber(stockStats.shares_outstanding),
-    beta: asNumber(priceSummary.beta),
-    trailing_pe: asNumber(valuations.trailing_pe),
-    price_to_sales_ttm: asNumber(valuations.price_to_sales_ttm),
-    enterprise_to_ebitda: asNumber(valuations.enterprise_to_ebitda),
-    peg: asNumber(valuations.peg_ratio),
-    gross_margin: asNumber(financials.gross_margin),
-    operating_margin: asNumber(financials.operating_margin),
-    net_margin: asNumber(financials.profit_margin),
-    return_on_equity_ttm: asNumber(financials.return_on_equity_ttm),
-    quarterly_revenue_growth: asNumber(incomeStatement.quarterly_revenue_growth),
+    market_cap: marketCap ?? fallbackCompany?.market_reference?.market_cap ?? null,
+    enterprise_value: asNumber(valuations.enterprise_value) ?? fallbackCompany?.market_reference?.enterprise_value ?? null,
+    shares_outstanding: asNumber(stockStats.shares_outstanding) ?? fallbackCompany?.market_reference?.shares_outstanding ?? null,
+    beta: asNumber(priceSummary.beta) ?? fallbackCompany?.market_reference?.beta ?? null,
+    trailing_pe: asNumber(valuations.trailing_pe) ?? fallbackMetrics.pe_ttm ?? null,
+    price_to_sales_ttm: asNumber(valuations.price_to_sales_ttm) ?? fallbackMetrics.price_to_sales_ttm ?? null,
+    enterprise_to_ebitda: asNumber(valuations.enterprise_to_ebitda) ?? fallbackMetrics.ev_to_ebitda_ttm ?? null,
+    peg: asNumber(valuations.peg_ratio) ?? fallbackMetrics.peg ?? null,
+    gross_margin: asNumber(financials.gross_margin) ?? fallbackMetrics.gross_margin ?? null,
+    operating_margin: asNumber(financials.operating_margin) ?? fallbackMetrics.operating_margin ?? null,
+    net_margin: asNumber(financials.profit_margin) ?? fallbackMetrics.net_margin ?? null,
+    return_on_equity_ttm: asNumber(financials.return_on_equity_ttm) ?? fallbackMetrics.roe ?? null,
+    quarterly_revenue_growth: asNumber(incomeStatement.quarterly_revenue_growth) ?? fallbackMetrics.revenue_growth_yoy ?? null,
     levered_free_cash_flow_ttm: leveredFreeCashFlow,
-    fcf_yield: marketCap && leveredFreeCashFlow ? round(leveredFreeCashFlow / marketCap, 6) : null
+    fcf_yield: marketCap && leveredFreeCashFlow ? round(leveredFreeCashFlow / marketCap, 6) : fallbackMetrics.fcf_yield ?? null
   };
 }
 
@@ -193,10 +194,16 @@ export function createFundamentalMarketDataService({ config, store }) {
   let running = false;
   let getCompanies = () => [];
   let onUpdate = async () => undefined;
+  let refreshCursor = 0;
+
+  function cacheKey(company) {
+    return `${config.fundamentalMarketDataProvider}:${company.ticker}`;
+  }
 
   async function getReference(company) {
     const health = updateHealthSnapshot(store, config, cache.size);
-    const cached = cache.get(company.ticker);
+    const key = cacheKey(company);
+    const cached = cache.get(key);
     const now = Date.now();
 
     if (cached && now - cached.fetchedAt <= config.fundamentalMarketDataCacheMs) {
@@ -205,7 +212,7 @@ export function createFundamentalMarketDataService({ config, store }) {
 
     if (config.fundamentalMarketDataProvider !== "twelvedata" || !config.twelveDataApiKey) {
       const synthetic = buildSyntheticReference(company);
-      cache.set(company.ticker, { fetchedAt: now, payload: synthetic });
+      cache.set(key, { fetchedAt: now, payload: synthetic });
       updateHealthSnapshot(store, config, cache.size);
       return synthetic;
     }
@@ -214,17 +221,25 @@ export function createFundamentalMarketDataService({ config, store }) {
     health.last_poll_at = new Date().toISOString();
 
     try {
-      const [quotePayload, statsPayload] = await Promise.all([fetchQuote(config, company.ticker), fetchStatistics(config, company.ticker)]);
+      const quotePayload = await fetchQuote(config, company.ticker);
+      let statsPayload = null;
+      let partialError = null;
+      try {
+        statsPayload = await fetchStatistics(config, company.ticker);
+      } catch (error) {
+        partialError = error.message;
+      }
       const payload = mapLiveReference(company.ticker, quotePayload, statsPayload, company);
-      cache.set(company.ticker, { fetchedAt: now, payload });
+      cache.set(key, { fetchedAt: now, payload });
       health.last_success_at = new Date().toISOString();
       health.last_error = null;
+      health.partial_error = partialError;
       updateHealthSnapshot(store, config, cache.size);
       return payload;
     } catch (error) {
       health.last_error = error.message;
       const fallback = buildSyntheticReference(company);
-      cache.set(company.ticker, { fetchedAt: now, payload: fallback });
+      cache.set(key, { fetchedAt: now, payload: fallback });
       updateHealthSnapshot(store, config, cache.size);
       return fallback;
     } finally {
@@ -241,6 +256,17 @@ export function createFundamentalMarketDataService({ config, store }) {
     return map;
   }
 
+  function selectRefreshBatch(companies) {
+    const limit = Math.max(0, Math.floor(Number(config.fundamentalMarketDataMaxCompaniesPerPoll || 0)));
+    if (!limit || limit >= companies.length) {
+      return companies;
+    }
+    const offset = refreshCursor % companies.length;
+    const rotated = [...companies.slice(offset), ...companies.slice(0, offset)];
+    refreshCursor = (refreshCursor + limit) % companies.length;
+    return rotated.slice(0, limit);
+  }
+
   async function refreshLoop() {
     if (!running) {
       return;
@@ -249,13 +275,15 @@ export function createFundamentalMarketDataService({ config, store }) {
     const companies = getCompanies();
     if (companies.length) {
       try {
-        const referenceMap = await getReferenceBatch(companies);
+        const batch = selectRefreshBatch(companies);
+        const referenceMap = await getReferenceBatch(batch);
         await onUpdate(referenceMap);
         store.bus.emit("event", {
           type: "fundamental_market_reference_update",
           timestamp: new Date().toISOString(),
           provider: config.fundamentalMarketDataProvider,
-          coverage_count: companies.length
+          coverage_count: batch.length,
+          total_companies: companies.length
         });
       } catch (error) {
         marketHealth(store, config).last_error = error.message;

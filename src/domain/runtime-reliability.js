@@ -13,6 +13,7 @@ export const RUNTIME_PROFILES = {
       LIGHTWEIGHT_STATE_ENABLED: "true",
       SQLITE_BACKUP_ENABLED: "false",
       SQLITE_BACKUP_ON_STARTUP: "false",
+      AGENCY_AUTONOMOUS_DATA_ENABLED: "false",
       LIVE_NEWS_ENABLED: "false",
       MARKET_DATA_PROVIDER: "synthetic",
       MARKET_FLOW_ENABLED: "false",
@@ -38,6 +39,7 @@ export const RUNTIME_PROFILES = {
       LIGHTWEIGHT_STATE_ENABLED: "true",
       SQLITE_BACKUP_ENABLED: "false",
       SQLITE_BACKUP_ON_STARTUP: "false",
+      AGENCY_AUTONOMOUS_DATA_ENABLED: "false",
       LIVE_NEWS_ENABLED: "true",
       LIVE_NEWS_POLL_MS: "900000",
       LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
@@ -65,6 +67,7 @@ export const RUNTIME_PROFILES = {
       LIGHTWEIGHT_STATE_ENABLED: "true",
       SQLITE_BACKUP_ENABLED: "false",
       SQLITE_BACKUP_ON_STARTUP: "false",
+      AGENCY_AUTONOMOUS_DATA_ENABLED: "false",
       LIVE_NEWS_ENABLED: "true",
       LIVE_NEWS_POLL_MS: "900000",
       LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
@@ -87,6 +90,46 @@ export const RUNTIME_PROFILES = {
       SEC_REQUEST_RETRIES: "0"
     }
   },
+  autonomous_live: {
+    label: "Autonomous Live Data",
+    description: "Pi-safe autonomous data mode. Starts live-data workers from available keys while keeping Alpaca order submission supervised.",
+    env: {
+      PI_PERFORMANCE_MODE: "false",
+      DATABASE_ENABLED: "false",
+      LIGHTWEIGHT_STATE_ENABLED: "true",
+      SQLITE_BACKUP_ENABLED: "false",
+      SQLITE_BACKUP_ON_STARTUP: "false",
+      AGENCY_AUTONOMOUS_DATA_ENABLED: "true",
+      LIVE_NEWS_ENABLED: "true",
+      LIVE_NEWS_POLL_MS: "600000",
+      LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
+      MARKET_DATA_PROVIDER: "twelvedata",
+      MARKET_DATA_REFRESH_MS: "300000",
+      MARKET_FLOW_ENABLED: "true",
+      AUTO_START_MARKET_FLOW: "true",
+      MARKET_FLOW_POLL_MS: "300000",
+      EARNINGS_ENABLED: "true",
+      EARNINGS_PROVIDER: "yahoo",
+      EARNINGS_MAX_TICKERS_PER_POLL: "9",
+      EARNINGS_POLL_MS: "14400000",
+      STOCKTWITS_ENABLED: "true",
+      STOCKTWITS_POLL_MS: "900000",
+      TRADE_PRINTS_ENABLED: "false",
+      TRADE_PRINTS_PROVIDER: "polygon",
+      TRADE_PRINTS_POLL_MS: "300000",
+      FUNDAMENTAL_MARKET_DATA_PROVIDER: "twelvedata",
+      AUTO_START_FUNDAMENTAL_MARKET_DATA: "true",
+      FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL: "12",
+      FUNDAMENTAL_SEC_ENABLED: "true",
+      AUTO_START_SEC_FUNDAMENTALS: "true",
+      FUNDAMENTAL_SEC_CONCURRENCY: "1",
+      FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL: "8",
+      SEC_FORM4_ENABLED: "true",
+      SEC_13F_ENABLED: "true",
+      AUTO_START_SEC_13F: "true",
+      SEC_REQUEST_RETRIES: "1"
+    }
+  },
   full_live: {
     label: "Full Live",
     description: "Maximum live coverage. Use only after the Pi is stable or persistence/collectors are moved off-Pi.",
@@ -96,6 +139,7 @@ export const RUNTIME_PROFILES = {
       LIGHTWEIGHT_STATE_ENABLED: "false",
       SQLITE_BACKUP_ENABLED: "true",
       SQLITE_BACKUP_ON_STARTUP: "false",
+      AGENCY_AUTONOMOUS_DATA_ENABLED: "true",
       LIVE_NEWS_ENABLED: "true",
       LIVE_NEWS_POLL_MS: "300000",
       MARKET_DATA_PROVIDER: "twelvedata",
@@ -103,6 +147,8 @@ export const RUNTIME_PROFILES = {
       MARKET_FLOW_ENABLED: "true",
       AUTO_START_MARKET_FLOW: "true",
       EARNINGS_ENABLED: "true",
+      EARNINGS_PROVIDER: "yahoo",
+      EARNINGS_MAX_TICKERS_PER_POLL: "0",
       EARNINGS_POLL_MS: "14400000",
       STOCKTWITS_ENABLED: "true",
       STOCKTWITS_POLL_MS: "300000",
@@ -111,6 +157,7 @@ export const RUNTIME_PROFILES = {
       TRADE_PRINTS_POLL_MS: "60000",
       FUNDAMENTAL_MARKET_DATA_PROVIDER: "twelvedata",
       AUTO_START_FUNDAMENTAL_MARKET_DATA: "true",
+      FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL: "25",
       FUNDAMENTAL_SEC_ENABLED: "true",
       AUTO_START_SEC_FUNDAMENTALS: "true",
       FUNDAMENTAL_SEC_CONCURRENCY: "2",
@@ -129,6 +176,7 @@ const PROFILE_CONFIG_READERS = {
   LIGHTWEIGHT_STATE_ENABLED: (config) => config.lightweightStateEnabled,
   SQLITE_BACKUP_ENABLED: (config) => config.sqliteBackupEnabled,
   SQLITE_BACKUP_ON_STARTUP: (config) => config.sqliteBackupOnStartup,
+  AGENCY_AUTONOMOUS_DATA_ENABLED: (config) => config.autonomousDataEnabled,
   LIVE_NEWS_ENABLED: (config) => config.liveNewsEnabled,
   LIVE_NEWS_POLL_MS: (config) => config.liveNewsPollMs,
   LIVE_NEWS_MAX_ITEMS_PER_TICKER: (config) => config.liveNewsMaxItemsPerTicker,
@@ -136,7 +184,10 @@ const PROFILE_CONFIG_READERS = {
   MARKET_DATA_REFRESH_MS: (config) => config.marketDataRefreshMs,
   MARKET_FLOW_ENABLED: (config) => config.marketFlowEnabled,
   AUTO_START_MARKET_FLOW: (config) => config.autoStartMarketFlow,
+  MARKET_FLOW_POLL_MS: (config) => config.marketFlowPollMs,
   EARNINGS_ENABLED: (config) => config.earningsEnabled,
+  EARNINGS_PROVIDER: (config) => config.earningsProvider,
+  EARNINGS_MAX_TICKERS_PER_POLL: (config) => config.earningsMaxTickersPerPoll,
   EARNINGS_POLL_MS: (config) => config.earningsPollMs,
   STOCKTWITS_ENABLED: (config) => config.stocktwitsEnabled,
   STOCKTWITS_POLL_MS: (config) => config.stocktwitsPollMs,
@@ -145,6 +196,7 @@ const PROFILE_CONFIG_READERS = {
   TRADE_PRINTS_POLL_MS: (config) => config.tradePrintsPollMs,
   FUNDAMENTAL_MARKET_DATA_PROVIDER: (config) => config.fundamentalMarketDataProvider,
   AUTO_START_FUNDAMENTAL_MARKET_DATA: (config) => config.autoStartFundamentalMarketData,
+  FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL: (config) => config.fundamentalMarketDataMaxCompaniesPerPoll,
   FUNDAMENTAL_SEC_ENABLED: (config) => config.fundamentalSecEnabled,
   AUTO_START_SEC_FUNDAMENTALS: (config) => config.autoStartSecFundamentals,
   FUNDAMENTAL_SEC_CONCURRENCY: (config) => config.fundamentalSecConcurrency,
@@ -159,7 +211,27 @@ function enabledLabel(enabled) {
   return enabled ? "enabled" : "disabled";
 }
 
+function dataAutoStart(config, enabled, explicitAutoStart = true) {
+  return Boolean(enabled && (config.autonomousDataEnabled || explicitAutoStart));
+}
+
+function hasTwelveData(config) {
+  return Boolean(config.twelveDataApiKey);
+}
+
+function hasEarningsAccess(config) {
+  return config.earningsProvider !== "twelvedata" || Boolean(config.earningsApiKey || config.twelveDataApiKey);
+}
+
+function hasTradePrintsAccess(config) {
+  return Boolean(config.tradePrintsApiKey);
+}
+
 function sourceSpecs(config) {
+  const stocktwitsEnabled = Boolean(config.stocktwitsEnabled || config.autonomousDataEnabled);
+  const tradePrintsEnabled = Boolean(config.tradePrintsEnabled || config.autonomousDataEnabled);
+  const earningsEnabled = Boolean(config.earningsEnabled || config.autonomousDataEnabled);
+
   return [
     {
       key: "fundamental_universe",
@@ -190,6 +262,8 @@ function sourceSpecs(config) {
       autoStart: true,
       intervalMs: config.marketDataRefreshMs,
       criticality: "high",
+      configured: config.marketDataProvider === "synthetic" || hasTwelveData(config),
+      missingConfigReason: "TWELVE_DATA_API_KEY is required for live Twelve Data pricing.",
       notes: `Ticker charts and market snapshots use ${config.marketDataProvider}.`
     },
     {
@@ -197,9 +271,11 @@ function sourceSpecs(config) {
       label: "Market Flow",
       category: "money_flow",
       enabled: config.marketFlowEnabled,
-      autoStart: config.autoStartMarketFlow,
+      autoStart: dataAutoStart(config, config.marketFlowEnabled, config.autoStartMarketFlow),
       intervalMs: config.marketFlowPollMs,
       criticality: "medium",
+      configured: config.marketDataProvider !== "twelvedata" || hasTwelveData(config),
+      missingConfigReason: "Market Flow needs live market bars. Set TWELVE_DATA_API_KEY and MARKET_DATA_PROVIDER=twelvedata.",
       notes: "Turns abnormal volume and price shocks into money-flow events."
     },
     {
@@ -207,20 +283,24 @@ function sourceSpecs(config) {
       healthKey: "yahoo_earnings_calendar",
       label: "Earnings Calendar",
       category: "events",
-      enabled: config.earningsEnabled,
-      autoStart: config.earningsEnabled,
+      enabled: earningsEnabled,
+      autoStart: dataAutoStart(config, earningsEnabled, config.earningsEnabled),
       intervalMs: config.earningsPollMs,
       criticality: "medium",
-      notes: "Checks Yahoo Finance earnings dates and feeds upcoming/release risk flags."
+      configured: hasEarningsAccess(config),
+      missingConfigReason: "Twelve Data earnings mode needs TWELVE_DATA_API_KEY or EARNINGS_API_KEY.",
+      notes: `Checks ${config.earningsProvider || "earnings"} earnings dates and feeds upcoming/release risk flags.`
     },
     {
       key: "stocktwits_stream",
       label: "StockTwits Social Pulse",
       category: "social",
-      enabled: config.stocktwitsEnabled,
-      autoStart: config.stocktwitsEnabled,
+      enabled: stocktwitsEnabled,
+      autoStart: dataAutoStart(config, stocktwitsEnabled, config.stocktwitsEnabled),
       intervalMs: config.stocktwitsPollMs,
       criticality: "low",
+      configured: Boolean(config.stocktwitsApiKey),
+      missingConfigReason: "StockTwits now blocks unauthenticated server requests in many environments. Set STOCKTWITS_API_KEY or leave this optional source unconfigured.",
       notes: "Turns strong tagged bullish/bearish crowd skew into social-buzz evidence."
     },
     {
@@ -228,10 +308,12 @@ function sourceSpecs(config) {
       healthKey: `${config.tradePrintsProvider}_trade_prints`,
       label: "Delayed Trade Prints",
       category: "money_flow",
-      enabled: config.tradePrintsEnabled,
-      autoStart: config.tradePrintsEnabled,
+      enabled: tradePrintsEnabled,
+      autoStart: dataAutoStart(config, tradePrintsEnabled, config.tradePrintsEnabled),
       intervalMs: config.tradePrintsPollMs,
       criticality: "medium",
+      configured: hasTradePrintsAccess(config),
+      missingConfigReason: "Delayed exchange trade prints need POLYGON_API_KEY, IEX_API_KEY, or TRADE_PRINTS_API_KEY.",
       notes: `Classifies delayed block prints from ${config.tradePrintsProvider}.`
     },
     {
@@ -239,17 +321,19 @@ function sourceSpecs(config) {
       label: "Fundamental Market Reference",
       category: "fundamentals",
       enabled: true,
-      autoStart: config.autoStartFundamentalMarketData,
+      autoStart: dataAutoStart(config, true, config.autoStartFundamentalMarketData),
       intervalMs: config.fundamentalMarketDataRefreshMs,
       criticality: "medium",
-      notes: `Valuation/reference fields use ${config.fundamentalMarketDataProvider}.`
+      configured: config.fundamentalMarketDataProvider === "synthetic" || hasTwelveData(config),
+      missingConfigReason: "Live fundamental market reference needs TWELVE_DATA_API_KEY and FUNDAMENTAL_MARKET_DATA_PROVIDER=twelvedata.",
+      notes: `Valuation/reference fields use ${config.fundamentalMarketDataProvider} in batches of ${config.fundamentalMarketDataMaxCompaniesPerPoll || "all"}.`
     },
     {
       key: "sec_fundamentals",
       label: "SEC Fundamentals",
       category: "fundamentals",
       enabled: config.fundamentalSecEnabled,
-      autoStart: config.autoStartSecFundamentals,
+      autoStart: dataAutoStart(config, config.fundamentalSecEnabled, config.autoStartSecFundamentals),
       intervalMs: config.fundamentalSecPollMs,
       criticality: "high",
       notes: `Refreshes company fundamentals from SEC submissions and Company Facts in batches of ${config.fundamentalSecMaxCompaniesPerPoll || "all"}.`
@@ -269,7 +353,7 @@ function sourceSpecs(config) {
       label: "SEC 13F Institutional Flow",
       category: "filings",
       enabled: config.sec13fEnabled,
-      autoStart: config.autoStartSec13f,
+      autoStart: dataAutoStart(config, config.sec13fEnabled, config.autoStartSec13f),
       intervalMs: config.sec13fPollMs,
       criticality: "low",
       notes: "Tracks slower quarterly institutional position changes."
@@ -321,6 +405,15 @@ function classifySource(spec, health, pressure) {
       action: "leave_disabled",
       severity: "info",
       reason: `${spec.label} is disabled by configuration.`
+    };
+  }
+
+  if (spec.configured === false) {
+    return {
+      status: "unconfigured",
+      action: "add_configuration",
+      severity: spec.criticality === "high" ? "warning" : "info",
+      reason: spec.missingConfigReason || `${spec.label} needs additional configuration before it can run live.`
     };
   }
 
@@ -458,6 +551,9 @@ function buildPlan(sources, pressure, config) {
   const investigate = sources
     .filter((source) => ["error", "degraded"].includes(source.status))
     .map((source) => source.key);
+  const needsConfiguration = sources
+    .filter((source) => source.status === "unconfigured")
+    .map((source) => source.key);
   const disabled = sources
     .filter((source) => !source.enabled)
     .map((source) => source.key);
@@ -475,6 +571,9 @@ function buildPlan(sources, pressure, config) {
   if (investigate.length) {
     recommendations.push(`Investigate degraded sources: ${investigate.join(", ")}.`);
   }
+  if (needsConfiguration.length) {
+    recommendations.push(`Add credentials or choose a fallback for: ${needsConfiguration.join(", ")}.`);
+  }
   if (!recommendations.length) {
     recommendations.push("Runtime plan is stable; keep current collector schedule.");
   }
@@ -483,6 +582,7 @@ function buildPlan(sources, pressure, config) {
     safe_to_autostart: safeToAutostart,
     keep_manual: keepManual,
     investigate,
+    needs_configuration: needsConfiguration,
     disabled,
     recommendations
   };
@@ -490,6 +590,10 @@ function buildPlan(sources, pressure, config) {
 
 function buildAvailableActions(sources, config) {
   const byKey = new Map(sources.map((source) => [source.key, source]));
+  const sourceCanRun = (key) => {
+    const source = byKey.get(key);
+    return Boolean(source?.enabled && source.status !== "unconfigured");
+  };
   const actions = [
     {
       action: "snapshot",
@@ -512,7 +616,7 @@ function buildAvailableActions(sources, config) {
       label: "Poll News Once",
       source: "live_news",
       safe: true,
-      enabled: Boolean(byKey.get("live_news")?.enabled),
+      enabled: sourceCanRun("live_news"),
       description: "Fetch one batch of Google/Yahoo RSS news without starting a timer."
     },
     {
@@ -520,7 +624,7 @@ function buildAvailableActions(sources, config) {
       label: "Poll Market Flow Once",
       source: "market_flow",
       safe: true,
-      enabled: Boolean(byKey.get("market_flow")?.enabled),
+      enabled: sourceCanRun("market_flow"),
       description: "Run one abnormal volume/flow scan without starting a timer."
     },
     {
@@ -528,7 +632,7 @@ function buildAvailableActions(sources, config) {
       label: "Poll Earnings Calendar Once",
       source: "earnings_calendar",
       safe: true,
-      enabled: Boolean(byKey.get("earnings_calendar")?.enabled),
+      enabled: sourceCanRun("earnings_calendar"),
       description: "Fetch one Yahoo Finance earnings-calendar batch without starting a timer."
     },
     {
@@ -536,7 +640,7 @@ function buildAvailableActions(sources, config) {
       label: "Poll StockTwits Once",
       source: "stocktwits_stream",
       safe: true,
-      enabled: Boolean(byKey.get("stocktwits_stream")?.enabled),
+      enabled: sourceCanRun("stocktwits_stream"),
       description: "Fetch one StockTwits social-sentiment batch without starting a timer."
     },
     {
@@ -544,7 +648,7 @@ function buildAvailableActions(sources, config) {
       label: "Poll Trade Prints Once",
       source: "trade_prints",
       safe: true,
-      enabled: Boolean(byKey.get("trade_prints")?.enabled),
+      enabled: sourceCanRun("trade_prints"),
       description: "Fetch one delayed trade-prints batch without starting a timer."
     },
     {
@@ -552,7 +656,7 @@ function buildAvailableActions(sources, config) {
       label: "Poll SEC Form 4 Once",
       source: "sec_form4",
       safe: true,
-      enabled: Boolean(byKey.get("sec_form4")?.enabled),
+      enabled: sourceCanRun("sec_form4"),
       description: "Fetch one insider-filing batch without starting a timer."
     },
     {
@@ -560,7 +664,7 @@ function buildAvailableActions(sources, config) {
       label: "Poll SEC 13F Once",
       source: "sec_13f",
       safe: false,
-      enabled: Boolean(byKey.get("sec_13f")?.enabled),
+      enabled: sourceCanRun("sec_13f"),
       description: "Run one institutional 13F scan. This can be slower than other actions."
     },
     {
@@ -568,7 +672,7 @@ function buildAvailableActions(sources, config) {
       label: "Poll SEC Fundamentals Once",
       source: "sec_fundamentals",
       safe: false,
-      enabled: Boolean(byKey.get("sec_fundamentals")?.enabled),
+      enabled: sourceCanRun("sec_fundamentals"),
       description: "Refresh SEC submissions/company facts once. This is the heaviest source."
     },
     {
@@ -605,10 +709,17 @@ function buildAvailableActions(sources, config) {
     }
   ];
 
-  return actions.map((item) => ({
-    ...item,
-    disabled_reason: item.enabled ? null : `${item.source || item.action} is disabled by current configuration.`
-  }));
+  return actions.map((item) => {
+    const source = item.source ? byKey.get(item.source) : null;
+    return {
+      ...item,
+      disabled_reason: item.enabled
+        ? null
+        : source?.status === "unconfigured"
+          ? source.reason
+          : `${item.source || item.action} is disabled by current configuration.`
+    };
+  });
 }
 
 function normalizeProfileValue(value) {
@@ -652,6 +763,8 @@ function buildRuntimeProfiles(config, pressure) {
     recommended = "emergency";
   } else if (!config.databaseEnabled && config.liveNewsEnabled && !config.marketFlowEnabled && !config.secForm4Enabled) {
     recommended = "live_news_only";
+  } else if (config.twelveDataApiKey && !config.databaseEnabled) {
+    recommended = "autonomous_live";
   } else if (!pressure.isConstrained && config.databaseEnabled) {
     recommended = "full_live";
   }
@@ -730,6 +843,7 @@ export function createRuntimeReliabilityAgent({ config, store }) {
         fallback: sources.filter((source) => source.status === "fallback").length,
         manual: sources.filter((source) => source.status === "manual").length,
         degraded: sources.filter((source) => ["degraded", "error"].includes(source.status)).length,
+        unconfigured: sources.filter((source) => source.status === "unconfigured").length,
         disabled: sources.filter((source) => source.status === "disabled").length
       },
       collector_plan: buildPlan(sources, pressure, config),
