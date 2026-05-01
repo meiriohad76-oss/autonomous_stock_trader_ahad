@@ -371,6 +371,21 @@ const calendarSnapshot = app.getEarningsCalendar();
 if (typeof calendarSnapshot !== "object" || calendarSnapshot === null)
   throw new Error("getEarningsCalendar() did not return an object");
 
+if (!(app.store.pendingApprovals instanceof Map))
+  throw new Error("store.pendingApprovals is not a Map");
+if (!(app.store.positions instanceof Map))
+  throw new Error("store.positions is not a Map");
+if (!(app.store.orders instanceof Map))
+  throw new Error("store.orders is not a Map");
+if (typeof app.store.executionState !== "object" || app.store.executionState === null)
+  throw new Error("store.executionState is not an object");
+if (!Array.isArray(app.store.executionLog))
+  throw new Error("store.executionLog is not an array");
+if (typeof app.getExecutionState !== "function")
+  throw new Error("app.getExecutionState is not a function");
+if (typeof app.setKillSwitch !== "function")
+  throw new Error("app.setKillSwitch is not a function");
+
 console.log(
   JSON.stringify(
     {
@@ -395,6 +410,9 @@ console.log(
       trade_setups_long: longSetups.length,
       trade_setups_provisional: provisionalSetups.length,
       earnings_calendar_tickers: app.store.earningsCalendar.size,
+      execution_enabled: app.store.executionState.enabled,
+      execution_kill_switch: app.store.executionState.killSwitch,
+      open_positions: app.store.positions.size,
     },
     null,
     2
