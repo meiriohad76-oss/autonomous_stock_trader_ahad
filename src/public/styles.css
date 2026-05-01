@@ -452,6 +452,114 @@ input:focus-visible {
   padding-left: 18px;
 }
 
+.agency-status-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.agency-status-pill {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 2px 8px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(173, 198, 255, 0.14);
+  background: rgba(255, 255, 255, 0.028);
+  color: var(--text);
+  text-align: left;
+  overflow: hidden;
+}
+
+.agency-status-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: rgba(173, 198, 255, 0.35);
+}
+
+.agency-status-pill.active {
+  border-color: rgba(19, 255, 67, 0.3);
+  background: rgba(19, 255, 67, 0.055);
+  box-shadow: inset 0 0 0 1px rgba(19, 255, 67, 0.18);
+}
+
+.agency-status-pill.bullish::before {
+  background: var(--green);
+}
+
+.agency-status-pill.bearish::before {
+  background: var(--red);
+}
+
+.agency-status-pill.loading {
+  opacity: 0.78;
+}
+
+.agency-status-pill.loading::after {
+  content: "";
+  position: absolute;
+  inset: auto 10px 7px 28px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(173, 198, 255, 0.45), transparent);
+  animation: status-scan 1.8s ease-in-out infinite;
+}
+
+.agency-status-pill span {
+  grid-row: span 2;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  color: var(--green);
+  background: rgba(19, 255, 67, 0.08);
+  border: 1px solid rgba(19, 255, 67, 0.16);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.agency-status-pill strong,
+.agency-status-pill small {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agency-status-pill strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.agency-status-pill small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+@keyframes status-scan {
+  0% {
+    transform: translateX(-55%);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(55%);
+    opacity: 0;
+  }
+}
+
 .agency-cycle-timeline {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -3007,6 +3115,10 @@ input:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .agency-status-strip {
+    grid-template-columns: repeat(4, minmax(112px, 1fr));
+  }
+
   .agent-flow {
     align-items: flex-start;
     flex-direction: column;
@@ -3060,6 +3172,10 @@ input:focus-visible {
 
   .selector-lane-grid {
     grid-template-columns: 1fr;
+  }
+
+  .agency-status-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -3243,6 +3359,7 @@ input:focus-visible {
 
   .agent-roster,
   .agency-cycle-timeline,
+  .agency-status-strip,
   .cycle-advance-log li,
   .agent-handoff-grid,
   .agent-decision-grid,

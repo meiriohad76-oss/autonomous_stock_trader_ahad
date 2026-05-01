@@ -1588,8 +1588,98 @@ function buildAgentProcess(agentKey) {
         runtimeActionButton("poll_once", "trade_prints", "Poll Prints", "receipt_long")
       ]
     },
-    selection: {
-      title: "Selection Agent Process",
+    policy: {
+      title: "Portfolio Policy Agent Process",
+      mode: "Automatic Policy Gate + User Editable Rules",
+      status: state.portfolioPolicy?.status || "ok",
+      statusClass: monitorActionClass(state.portfolioPolicy?.status || "ok"),
+      summary: "Defines the portfolio rules every selection and execution preview must obey before a ticket can reach Risk.",
+      inputs: [
+        `Weekly target: ${formatNumber((state.portfolioPolicySettings.portfolioWeeklyTargetPct || 0.03) * 100, 1)}%`,
+        `Max position: ${formatNumber((state.portfolioPolicySettings.portfolioMaxPositionPct || 0.03) * 100, 1)}%`,
+        `New positions per cycle: ${state.portfolioPolicySettings.portfolioMaxNewPositionsPerCycle || 3}`
+      ],
+      checks: (state.portfolioPolicy?.guardrails || []).slice(0, 4).map((gate) =>
+        processCheck(gate.label, gate.pass ? "ok" : "check", gate.pass ? "bullish" : "bearish", gate.detail || "")
+      ),
+      outputs: [
+        `Policy status: ${prettyLabel(state.portfolioPolicy?.status || "ok")}`,
+        `Cash reserve: ${formatNumber((state.portfolioPolicySettings.portfolioCashReservePct || 0) * 100, 1)}%`,
+        `Stop/target: ${formatNumber((state.portfolioPolicySettings.portfolioDefaultStopLossPct || 0.06) * 100, 1)}% / ${formatNumber((state.portfolioPolicySettings.portfolioDefaultTakeProfitPct || 0.09) * 100, 1)}%`
+      ],
+      handoff: [
+        "Deterministic and LLM selections are not enough by themselves.",
+        "Final Selection applies these rules before Risk sees a candidate.",
+        "Portfolio Monitor uses stop, target, and reduction rules after execution."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="portfolio"><span class="material-symbols-outlined">tune</span>Open Policy</button>`
+      ]
+    },
+    deterministic_selection: {
+      title: "Deterministic Selection Agent Process",
+      mode: "Automatic Rules-Based Ranking",
+      status: setupSummary.tradable.length ? "ranked" : setupSummary.watch ? "watching" : "waiting",
+      statusClass: setupSummary.tradable.length ? "bullish" : "neutral",
+      summary: "Scores the allowed universe using transparent rules across fundamentals, market context, signals, money flow, runtime trust, and price plan.",
+      inputs: [
+        `${counts.eligible || 0} eligible fundamentals names`,
+        `${activeRows.length} fresh market-signal names`,
+        `${state.alerts.length + state.highImpact.length + moneyFlowSignals.length} signal items`
+      ],
+      checks: [
+        processCheck("Buy candidates", `${setupSummary.long}`, setupSummary.long ? "bullish" : "neutral"),
+        processCheck("Sell candidates", `${setupSummary.short}`, setupSummary.short ? "bearish" : "neutral"),
+        processCheck("Watch candidates", `${setupSummary.watch}`, setupSummary.watch ? "neutral" : "bullish"),
+        processCheck("Runtime trust", prettyLabel(state.tradeSetups?.runtime_reliability?.status || "unknown"), "neutral")
+      ],
+      outputs: [
+        `${setupSummary.long} rules buy, ${setupSummary.short} rules sell, ${setupSummary.watch} watch`,
+        `Top rules candidates: ${topTickersLabel(setups.map((setup) => ({ ticker: setup.ticker })), 5)}`,
+        `Runtime trust: ${prettyLabel(state.tradeSetups?.runtime_reliability?.status || "unknown")}`
+      ],
+      handoff: [
+        "LLM Selection reviews the same evidence pack in parallel.",
+        "Final Selection requires agreement or sends disagreement to review.",
+        "Watch candidates stay out of Alpaca tickets."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="trading"><span class="material-symbols-outlined">assignment</span>Open Rules</button>`
+      ]
+    },
+    llm_selection: {
+      title: "LLM Selection Agent Process",
+      mode: "Automatic Parallel Shadow Review",
+      status: finalSelection.llm_agent?.status || "shadow",
+      statusClass: "neutral",
+      summary: "Reviews deterministic candidates qualitatively, explains support and concerns, and highlights demotions or disagreements.",
+      inputs: [
+        `${setups.length} deterministic setup pack(s)`,
+        `Mode: ${prettyLabel(finalSelection.llm_agent?.mode || "shadow")}`,
+        `Model: ${finalSelection.llm_agent?.model || state.config?.llm_selection?.model || "shadow reviewer"}`
+      ],
+      checks: [
+        processCheck("LLM buy", `${finalSelection.llm_agent?.counts?.long || 0}`, finalSelection.llm_agent?.counts?.long ? "bullish" : "neutral"),
+        processCheck("LLM sell", `${finalSelection.llm_agent?.counts?.short || 0}`, finalSelection.llm_agent?.counts?.short ? "bearish" : "neutral"),
+        processCheck("LLM watch", `${finalSelection.llm_agent?.counts?.watch || 0}`, "neutral"),
+        processCheck("Provider", prettyLabel(finalSelection.llm_agent?.mode || "shadow"), "neutral")
+      ],
+      outputs: [
+        `${finalSelection.llm_agent?.counts?.long || 0} LLM buy, ${finalSelection.llm_agent?.counts?.short || 0} LLM sell`,
+        `${finalSelection.llm_agent?.counts?.watch || 0} LLM watch`,
+        "LLM-only promotions remain watch/review until deterministic rules agree."
+      ],
+      handoff: [
+        "Final Selection combines LLM review with deterministic output.",
+        "Disagreements become review items.",
+        "The LLM lane explains why each stock was supported or demoted."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="trading"><span class="material-symbols-outlined">psychology_alt</span>Open LLM Lane</button>`
+      ]
+    },
+    final_selection: {
+      title: "Final Selection Agent Process",
       mode: "Automatic After Latest Inputs Refresh",
       status: finalCounts.executable ? "finalized" : workflow.status || (setups.length ? "review" : "waiting"),
       statusClass: finalCounts.executable ? "bullish" : workflowStatusClass(workflow.status || (setups.length ? "ready" : "not_ready")),
@@ -1615,6 +1705,36 @@ function buildAgentProcess(agentKey) {
         "Risk Manager receives final-selected recommendations.",
         "Execution Agent previews only final buy/sell candidates that passed policy.",
         "LLM-only promotions stay on watch or review; they do not reach Alpaca by themselves."
+      ],
+      actions: [
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="risk"><span class="material-symbols-outlined">shield</span>Open Risk</button>`,
+        `<button type="button" class="panel-action runtime-action-button" data-agent-view="execution"><span class="material-symbols-outlined">order_approve</span>Open Execution</button>`
+      ]
+    },
+    selection: {
+      title: "Selection Agent Process",
+      mode: "Automatic Dual-Lane Selection",
+      status: finalCounts.executable ? "finalized" : workflow.status || (setups.length ? "review" : "waiting"),
+      statusClass: finalCounts.executable ? "bullish" : workflowStatusClass(workflow.status || (setups.length ? "ready" : "not_ready")),
+      summary: "Shows the combined deterministic, LLM, and final policy-arbitrated selection process.",
+      inputs: [
+        `${setupSummary.long + setupSummary.short} deterministic buy/sell`,
+        `${finalSelection.llm_agent?.counts?.long || 0}/${finalSelection.llm_agent?.counts?.short || 0} LLM buy/sell`,
+        `${finalCounts.executable || 0} final executable`
+      ],
+      checks: [
+        processCheck("Workflow", prettyLabel(workflow.status || "unknown"), workflowStatusClass(workflow.status || "not_ready"), workflow.summary || ""),
+        processCheck("Policy", prettyLabel(state.portfolioPolicy?.status || "ok"), monitorActionClass(state.portfolioPolicy?.status || "ok")),
+        processCheck("Final executable", `${finalCounts.executable || 0}`, finalCounts.executable ? "bullish" : "neutral")
+      ],
+      outputs: [
+        `${finalCounts.final_buy || 0} final buy, ${finalCounts.final_sell || 0} final sell, ${finalCounts.review || 0} review`,
+        `Top final candidates: ${topTickersLabel(finalCandidates.map((candidate) => ({ ticker: candidate.ticker })), 5)}`
+      ],
+      handoff: [
+        "Risk Manager receives final-selected recommendations.",
+        "Execution Agent previews only final buy/sell candidates that passed policy.",
+        "LLM-only promotions stay on watch or review."
       ],
       actions: [
         `<button type="button" class="panel-action runtime-action-button" data-agent-view="risk"><span class="material-symbols-outlined">shield</span>Open Risk</button>`,
@@ -1790,9 +1910,52 @@ function renderAgencyRunLog() {
   `;
 }
 
+function fallbackAgencyCycleWorkers() {
+  return AGENCY_WORKERS.map((worker, index) => {
+    const process = buildAgentProcess(worker.key);
+    return {
+      step: index + 1,
+      key: worker.key,
+      label: worker.worker,
+      view: worker.view,
+      status: process?.status || "loading",
+      status_class: process?.statusClass || "neutral",
+      detail: process?.summary || "Waiting for the agency cycle endpoint.",
+      metric: process?.outputs?.[0] || process?.mode || "loading",
+      automation_label: process?.mode || "automatic"
+    };
+  });
+}
+
+function renderAgencyStatusStrip(workers = [], currentKey = null, { loading = false } = {}) {
+  const rows = workers.length ? workers : fallbackAgencyCycleWorkers();
+
+  return `
+    <div class="agency-status-strip" aria-label="Agent status overview">
+      ${rows
+        .map(
+          (worker) => `
+            <button
+              type="button"
+              class="agency-status-pill ${worker.status_class || "neutral"} ${worker.key === currentKey ? "active" : ""} ${loading ? "loading" : ""}"
+              data-agent-view="${escapeHtml(worker.view || "overview")}"
+              title="${escapeHtml(worker.detail || "")}"
+            >
+              <span>${String(worker.step || 0).padStart(2, "0")}</span>
+              <strong>${escapeHtml(worker.label || prettyLabel(worker.key))}</strong>
+              <small>${escapeHtml(prettyLabel(worker.status || "loading"))}</small>
+            </button>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderAgencyCyclePanel(cycle) {
   if (!cycle?.workers?.length) {
     const error = state.agencyCycleError;
+    const fallbackWorkers = fallbackAgencyCycleWorkers();
     return `
       <section class="agency-cycle-panel panel">
         <div class="agent-process-head">
@@ -1802,6 +1965,7 @@ function renderAgencyCyclePanel(cycle) {
             <p>${error ? `The agency cycle endpoint did not return worker data: ${escapeHtml(error)}` : "The agency is preparing the worker-by-worker operating flow."}</p>
           </div>
         </div>
+        ${renderAgencyStatusStrip(fallbackWorkers, null, { loading: true })}
         ${
           error
             ? `<div class="process-action-row">
@@ -1828,6 +1992,7 @@ function renderAgencyCyclePanel(cycle) {
         </div>
         <span class="sentiment-badge ${cycle.status_class || "neutral"}">${escapeHtml(prettyLabel(cycle.mode_label || cycle.status || "observing"))}</span>
       </div>
+      ${renderAgencyStatusStrip(cycle.workers, cycle.current_worker_key)}
       <div class="agency-cycle-focus">
         <div class="agency-cycle-current ${currentWorker?.status_class || "neutral"}">
           <span>Step ${String(cycle.current_worker_step || currentWorker?.step || 1).padStart(2, "0")}</span>
