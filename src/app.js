@@ -10,7 +10,11 @@ import {
 import { createFundamentalMarketDataService } from "./domain/fundamental-market-data.js";
 import { loadFundamentalUniverse } from "./domain/fundamental-universe.js";
 import { filterFreshEvidence, shouldUseEvidence } from "./domain/freshness-policy.js";
-import { createFundamentalsEngine } from "./domain/fundamentals.js";
+import {
+  buildFundamentalResearchGovernance,
+  createFundamentalsEngine,
+  settingsForFundamentalProfile
+} from "./domain/fundamentals.js";
 import { createLiveNewsCollector } from "./domain/live-news.js";
 import { createMarketDataService } from "./domain/market-data.js";
 import { createMarketFlowMonitor } from "./domain/market-flow.js";
@@ -1079,6 +1083,7 @@ export function createSentimentApp() {
         auto_start_market_flow: config.autoStartMarketFlow,
         market_flow_settings: readMarketFlowSettings(config),
         screener_settings: readScreenerSettings(config),
+        fundamental_screener_governance: buildFundamentalResearchGovernance(readScreenerSettings(config)),
         portfolio_policy_settings: readPortfolioPolicy(config),
         llm_selection: {
           enabled: config.llmSelectionEnabled,
@@ -1320,8 +1325,9 @@ export function createSentimentApp() {
       return readMarketFlowSettings(config);
     },
     getScreenerSettings() {
+      const settings = readScreenerSettings(config);
       return {
-        settings: readScreenerSettings(config),
+        settings,
         fields: Object.entries(FUNDAMENTAL_SCREENER_FIELDS).map(([key, spec]) => ({
           key,
           type: spec.type,
@@ -1330,7 +1336,8 @@ export function createSentimentApp() {
           min: spec.min ?? null,
           max: spec.max ?? null,
           step: spec.step ?? null
-        }))
+        })),
+        governance: buildFundamentalResearchGovernance(settings)
       };
     },
     getPortfolioPolicySettings() {
@@ -1378,13 +1385,22 @@ export function createSentimentApp() {
       return readMarketFlowSettings(config);
     },
     async updateScreenerSettings(nextSettings, { persist = true } = {}) {
+      const profileKey = String(nextSettings.profile || nextSettings.profile_key || "").trim();
+      const profileSettings = profileKey ? settingsForFundamentalProfile(profileKey) : null;
+      if (profileKey && !profileSettings) {
+        throw new Error(`Unsupported fundamental screener profile: ${profileKey}`);
+      }
+      const requestedSettings = {
+        ...(profileSettings || {}),
+        ...nextSettings
+      };
       const updates = {};
 
       for (const [key, spec] of Object.entries(FUNDAMENTAL_SCREENER_FIELDS)) {
-        if (!(key in nextSettings)) {
+        if (!(key in requestedSettings)) {
           continue;
         }
-        updates[key] = normalizeScreenerSettingValue(nextSettings[key], spec);
+        updates[key] = normalizeScreenerSettingValue(requestedSettings[key], spec);
       }
 
       Object.assign(config, updates);

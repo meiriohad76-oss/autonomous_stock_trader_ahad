@@ -690,6 +690,69 @@ input:focus-visible {
   gap: 12px;
 }
 
+.fundamental-governance-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(173, 198, 255, 0.14);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.fundamental-profile-strip,
+.fundamental-criteria-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.fundamental-profile-strip {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.fundamental-profile-pill,
+.fundamental-criteria-card {
+  min-width: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(173, 198, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fundamental-profile-pill {
+  display: grid;
+  gap: 4px;
+}
+
+.fundamental-profile-pill.active {
+  border-color: rgba(19, 255, 67, 0.24);
+  background: rgba(19, 255, 67, 0.06);
+}
+
+.fundamental-profile-pill strong,
+.fundamental-criteria-card strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.fundamental-profile-pill span,
+.fundamental-criteria-card p,
+.fundamental-criteria-card small,
+.criteria-rule {
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.fundamental-criteria-grid {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.fundamental-criteria-card {
+  display: grid;
+  gap: 8px;
+}
+
 .agent-card {
   display: grid;
   gap: 14px;

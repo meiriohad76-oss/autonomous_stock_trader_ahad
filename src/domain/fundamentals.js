@@ -140,6 +140,139 @@ const INITIAL_SCREENER_CRITERIA = [
   { key: "valuation_sanity", label: "Valuation is still tradable" }
 ];
 
+export const FUNDAMENTAL_RESEARCH_REFERENCES = {
+  piotroski_2000: {
+    key: "piotroski_2000",
+    label: "Piotroski 2000",
+    title: "Value Investing: The Use of Historical Financial Statement Information to Separate Winners from Losers",
+    source: "Journal of Accounting Research",
+    takeaway: "Accounting-based signals can help distinguish stronger and weaker companies inside a broad candidate set."
+  },
+  fama_french_2015: {
+    key: "fama_french_2015",
+    label: "Fama-French 2015",
+    title: "A Five-Factor Asset Pricing Model",
+    source: "Journal of Financial Economics",
+    takeaway: "Profitability and investment/quality-style factors help explain cross-sectional return patterns."
+  },
+  sloan_1996: {
+    key: "sloan_1996",
+    label: "Sloan 1996",
+    title: "Do Stock Prices Fully Reflect Information in Accruals and Cash Flows about Future Earnings?",
+    source: "The Accounting Review",
+    takeaway: "Cash-flow quality matters because accrual-heavy earnings can be less persistent."
+  },
+  novy_marx_2013: {
+    key: "novy_marx_2013",
+    label: "Novy-Marx 2013",
+    title: "The Other Side of Value: The Gross Profitability Premium",
+    source: "Journal of Financial Economics",
+    takeaway: "Gross profitability is a useful quality signal and can complement valuation."
+  },
+  factor_zoo_caution: {
+    key: "factor_zoo_caution",
+    label: "Factor validation caution",
+    title: "Multiple-testing and factor-zoo caution",
+    source: "Empirical asset-pricing literature",
+    takeaway: "Research-aligned factors still need local, out-of-sample validation before thresholds are treated as proven."
+  }
+};
+
+export const FUNDAMENTAL_SCREENER_PROFILES = {
+  balanced: {
+    key: "balanced",
+    label: "Balanced",
+    description: "Default blend of quality, growth, cash efficiency, valuation sanity, and reporting confidence.",
+    settings: {
+      screenerMinReportingConfidence: 0.85,
+      screenerMinDataFreshness: 0.85,
+      screenerMaxMissingFields: 2,
+      screenerMinRevenueGrowth: 0.08,
+      screenerMinEpsGrowth: 0.1,
+      screenerMinOperatingMargin: 0.12,
+      screenerMinGrossMargin: 0.35,
+      screenerMinCurrentRatio: 1,
+      screenerMaxNetDebtToEbitda: 3,
+      screenerMinFcfConversion: 0.75,
+      screenerMinFcfMargin: 0.08,
+      screenerMaxPeTtm: 45,
+      screenerMaxPeg: 2.5,
+      screenerMinFcfYield: 0.02,
+      screenerEligibleScore: 0.71,
+      screenerWatchScore: 0.43
+    }
+  },
+  conservative_quality: {
+    key: "conservative_quality",
+    label: "Conservative Quality",
+    description: "Tighter reporting, profitability, balance-sheet, and cash-conversion gates for lower false-positive risk.",
+    settings: {
+      screenerMinReportingConfidence: 0.9,
+      screenerMinDataFreshness: 0.9,
+      screenerMaxMissingFields: 1,
+      screenerMinRevenueGrowth: 0.05,
+      screenerMinEpsGrowth: 0.08,
+      screenerMinOperatingMargin: 0.18,
+      screenerMinGrossMargin: 0.45,
+      screenerMinCurrentRatio: 1.2,
+      screenerMaxNetDebtToEbitda: 2.2,
+      screenerMinFcfConversion: 0.9,
+      screenerMinFcfMargin: 0.1,
+      screenerMaxPeTtm: 38,
+      screenerMaxPeg: 2,
+      screenerMinFcfYield: 0.025,
+      screenerEligibleScore: 0.86,
+      screenerWatchScore: 0.57
+    }
+  },
+  growth_compounder: {
+    key: "growth_compounder",
+    label: "Growth Compounder",
+    description: "Higher growth and margin hurdles while allowing richer valuation when business quality is strong.",
+    settings: {
+      screenerMinReportingConfidence: 0.85,
+      screenerMinDataFreshness: 0.85,
+      screenerMaxMissingFields: 2,
+      screenerMinRevenueGrowth: 0.12,
+      screenerMinEpsGrowth: 0.15,
+      screenerMinOperatingMargin: 0.15,
+      screenerMinGrossMargin: 0.4,
+      screenerMinCurrentRatio: 1,
+      screenerMaxNetDebtToEbitda: 3.2,
+      screenerMinFcfConversion: 0.7,
+      screenerMinFcfMargin: 0.07,
+      screenerMaxPeTtm: 60,
+      screenerMaxPeg: 3,
+      screenerMinFcfYield: 0.012,
+      screenerEligibleScore: 0.71,
+      screenerWatchScore: 0.43
+    }
+  },
+  value_quality: {
+    key: "value_quality",
+    label: "Value Quality",
+    description: "Sharper valuation and free-cash-flow yield requirements while preserving basic quality and balance-sheet gates.",
+    settings: {
+      screenerMinReportingConfidence: 0.85,
+      screenerMinDataFreshness: 0.85,
+      screenerMaxMissingFields: 2,
+      screenerMinRevenueGrowth: 0.03,
+      screenerMinEpsGrowth: 0.05,
+      screenerMinOperatingMargin: 0.1,
+      screenerMinGrossMargin: 0.3,
+      screenerMinCurrentRatio: 1,
+      screenerMaxNetDebtToEbitda: 3,
+      screenerMinFcfConversion: 0.8,
+      screenerMinFcfMargin: 0.08,
+      screenerMaxPeTtm: 28,
+      screenerMaxPeg: 1.8,
+      screenerMinFcfYield: 0.04,
+      screenerEligibleScore: 0.71,
+      screenerWatchScore: 0.43
+    }
+  }
+};
+
 function screenerSettingsFromConfig(config = {}) {
   return {
     requireLiveSecForEligible: Boolean(config.screenerRequireLiveSecForEligible),
@@ -162,58 +295,270 @@ function screenerSettingsFromConfig(config = {}) {
   };
 }
 
+export function settingsForFundamentalProfile(profileKey) {
+  const profile = FUNDAMENTAL_SCREENER_PROFILES[profileKey];
+  return profile ? { ...profile.settings } : null;
+}
+
+function settingValue(settings, key, formatter = (value) => value) {
+  return formatter(settings[key]);
+}
+
+function percentValue(value, digits = 1) {
+  return `${round(Number(value || 0) * 100, digits)}%`;
+}
+
+function backtestPlaceholder(criteriaKey) {
+  return {
+    status: "pending_validation",
+    last_backtest_at: null,
+    hit_rate: null,
+    average_forward_return: null,
+    max_drawdown: null,
+    false_positive_rate: null,
+    sector_sensitivity: null,
+    sample_size: 0,
+    notes:
+      `Criterion ${criteriaKey} is research-aligned, but this repo does not yet have point-in-time fundamentals plus forward-return history for S&P 100 + QQQ threshold validation.`
+  };
+}
+
+function criterionResearchBasis(keys) {
+  return keys.map((key) => FUNDAMENTAL_RESEARCH_REFERENCES[key]).filter(Boolean);
+}
+
+function profileDiff(settings, profile) {
+  return Object.entries(profile.settings).map(([key, desired]) => ({
+    key,
+    current: settings[key],
+    desired,
+    matches: String(settings[key]) === String(desired)
+  }));
+}
+
+function detectCurrentFundamentalProfile(settings) {
+  return Object.values(FUNDAMENTAL_SCREENER_PROFILES).find((profile) =>
+    profileDiff(settings, profile).every((item) => item.matches)
+  )?.key || "custom";
+}
+
+function buildScoreFactorRegistry() {
+  return [
+    {
+      key: "quality",
+      label: FACTOR_LABELS.quality,
+      weight: SCORE_WEIGHTS.quality,
+      factor_family: "profitability_quality",
+      inputs: ["gross_margin", "operating_margin", "net_margin", "roe", "roic", "fcf_conversion"],
+      research_basis: criterionResearchBasis(["fama_french_2015", "novy_marx_2013", "piotroski_2000"]),
+      why_it_matters: FACTOR_SUMMARY.quality,
+      backtest_status: backtestPlaceholder("quality_score")
+    },
+    {
+      key: "growth",
+      label: FACTOR_LABELS.growth,
+      weight: SCORE_WEIGHTS.growth,
+      factor_family: "fundamental_growth",
+      inputs: ["revenue_growth_yoy", "eps_growth_yoy", "fcf_growth_yoy"],
+      research_basis: criterionResearchBasis(["piotroski_2000", "factor_zoo_caution"]),
+      why_it_matters: FACTOR_SUMMARY.growth,
+      backtest_status: backtestPlaceholder("growth_score")
+    },
+    {
+      key: "valuation",
+      label: FACTOR_LABELS.valuation,
+      weight: SCORE_WEIGHTS.valuation,
+      factor_family: "valuation",
+      inputs: ["pe_ttm", "ev_to_ebitda_ttm", "price_to_sales_ttm", "peg", "fcf_yield"],
+      research_basis: criterionResearchBasis(["piotroski_2000", "factor_zoo_caution"]),
+      why_it_matters: FACTOR_SUMMARY.valuation,
+      backtest_status: backtestPlaceholder("valuation_score")
+    },
+    {
+      key: "balance_sheet",
+      label: FACTOR_LABELS.balance_sheet,
+      weight: SCORE_WEIGHTS.balanceSheet,
+      factor_family: "financial_strength",
+      inputs: ["debt_to_equity", "net_debt_to_ebitda", "current_ratio", "interest_coverage"],
+      research_basis: criterionResearchBasis(["piotroski_2000"]),
+      why_it_matters: FACTOR_SUMMARY.balance_sheet,
+      backtest_status: backtestPlaceholder("balance_sheet_score")
+    },
+    {
+      key: "efficiency",
+      label: FACTOR_LABELS.efficiency,
+      weight: SCORE_WEIGHTS.efficiency,
+      factor_family: "cash_efficiency",
+      inputs: ["asset_turnover", "fcf_margin", "fcf_conversion"],
+      research_basis: criterionResearchBasis(["sloan_1996", "piotroski_2000"]),
+      why_it_matters: FACTOR_SUMMARY.efficiency,
+      backtest_status: backtestPlaceholder("efficiency_score")
+    },
+    {
+      key: "earnings_stability",
+      label: FACTOR_LABELS.earnings_stability,
+      weight: SCORE_WEIGHTS.stability,
+      factor_family: "stability_quality",
+      inputs: ["margin_stability", "revenue_consistency", "anomaly_penalty"],
+      research_basis: criterionResearchBasis(["sloan_1996", "factor_zoo_caution"]),
+      why_it_matters: FACTOR_SUMMARY.earnings_stability,
+      backtest_status: backtestPlaceholder("earnings_stability_score")
+    },
+    {
+      key: "sector",
+      label: FACTOR_LABELS.sector,
+      weight: SCORE_WEIGHTS.sector,
+      factor_family: "sector_context",
+      inputs: ["growth_breadth", "profitability_strength", "revision_breadth", "macro_fit"],
+      research_basis: criterionResearchBasis(["factor_zoo_caution"]),
+      why_it_matters: FACTOR_SUMMARY.sector,
+      backtest_status: backtestPlaceholder("sector_score")
+    }
+  ];
+}
+
+export function buildFundamentalResearchGovernance(settings = screenerSettingsFromConfig()) {
+  const profiles = Object.values(FUNDAMENTAL_SCREENER_PROFILES).map((profile) => {
+    const changes = profileDiff(settings, profile).filter((item) => !item.matches);
+    return {
+      ...profile,
+      matches_current: changes.length === 0,
+      change_count: changes.length,
+      changes
+    };
+  });
+
+  return {
+    version: "research_governed_v1",
+    current_profile: detectCurrentFundamentalProfile(settings),
+    validation_status: "research_aligned_thresholds_pending_local_backtest",
+    explanation:
+      "The factor families are grounded in published empirical finance and accounting research, but exact thresholds remain defaults until validated on point-in-time S&P 100 + QQQ history.",
+    references: Object.values(FUNDAMENTAL_RESEARCH_REFERENCES),
+    profiles,
+    criteria: buildScreenerCriteria(settings),
+    score_factors: buildScoreFactorRegistry(),
+    backtest_policy: {
+      required_before_proven: true,
+      minimum_sample: "At least 3-5 years of point-in-time fundamentals, daily prices, sector labels, and simulated execution costs.",
+      target_outputs: ["hit_rate", "average_forward_return", "max_drawdown", "false_positive_rate", "sector_sensitivity"],
+      current_status: "not_yet_available_in_local_store"
+    }
+  };
+}
+
 function buildScreenerCriteria(settings = screenerSettingsFromConfig()) {
   return [
     {
       key: "scale",
       label: "Large-cap scale",
+      factor_family: "liquidity_and_size",
+      default_value: "large_cap or mega_cap",
+      current_value: "large_cap or mega_cap",
       summary: "The name must already be trading at meaningful institutional scale.",
       why: "This keeps the first-pass screen focused on names with deeper liquidity and broader institutional sponsorship.",
+      why_it_matters: "A large, liquid universe lowers execution and data-quality risk before the ranking model starts.",
+      research_basis: criterionResearchBasis(["factor_zoo_caution"]),
+      backtest_status: backtestPlaceholder("scale"),
       rule: "Market-cap bucket must be large_cap or mega_cap."
     },
     {
       key: "filing_quality",
       label: "High filing quality",
+      factor_family: "data_quality",
+      default_value: "reporting >= 0.85, freshness >= 0.85, missing fields <= 2",
+      current_value: `reporting >= ${round(settings.minReportingConfidence, 2)}, freshness >= ${round(settings.minDataFreshness, 2)}, missing fields <= ${settings.maxMissingFields}`,
       summary: "The filing data needs to be recent, complete, and internally reliable.",
       why: "A strong fundamental call is less trustworthy if the latest filing snapshot is stale or incomplete.",
+      why_it_matters: "The ranking should not promote a stock when the underlying financial statement snapshot is thin or stale.",
+      research_basis: criterionResearchBasis(["piotroski_2000", "sloan_1996"]),
+      backtest_status: backtestPlaceholder("filing_quality"),
       rule: `Reporting >= ${round(settings.minReportingConfidence, 2)}, freshness >= ${round(settings.minDataFreshness, 2)}, missing fields <= ${settings.maxMissingFields}.`
     },
     {
       key: "growth",
       label: "Growth clears baseline",
+      factor_family: "fundamental_growth",
+      default_value: "revenue growth >= 8% OR EPS growth >= 10%",
+      current_value: `revenue growth >= ${percentValue(settings.minRevenueGrowth)} OR EPS growth >= ${percentValue(settings.minEpsGrowth)}`,
       summary: "At least one core growth signal should already be above the baseline hurdle.",
       why: "The screener wants evidence that the business is still expanding rather than merely looking optically cheap.",
+      why_it_matters: "Growth is a candidate-quality input, but it must later be checked against valuation and cash conversion.",
+      research_basis: criterionResearchBasis(["piotroski_2000", "factor_zoo_caution"]),
+      backtest_status: backtestPlaceholder("growth"),
       rule: `Revenue growth >= ${round(settings.minRevenueGrowth * 100, 1)}% OR EPS growth >= ${round(settings.minEpsGrowth * 100, 1)}%.`
     },
     {
       key: "profitability",
       label: "Profitability clears baseline",
+      factor_family: "profitability_quality",
+      default_value: "operating margin >= 12% OR gross margin >= 35%",
+      current_value: `operating margin >= ${percentValue(settings.minOperatingMargin)} OR gross margin >= ${percentValue(settings.minGrossMargin)}`,
       summary: "The company needs either healthy operating leverage or strong gross economics.",
       why: "A business can grow quickly and still be low quality if margins are too thin or deteriorating.",
+      why_it_matters: "Profitability helps distinguish durable businesses from revenue growth that requires weak economics.",
+      research_basis: criterionResearchBasis(["fama_french_2015", "novy_marx_2013"]),
+      backtest_status: backtestPlaceholder("profitability"),
       rule: `Operating margin >= ${round(settings.minOperatingMargin * 100, 1)}% OR gross margin >= ${round(settings.minGrossMargin * 100, 1)}%.`
     },
     {
       key: "balance_sheet",
       label: "Balance sheet is healthy",
+      factor_family: "financial_strength",
+      default_value: "current ratio >= 1 OR net debt / EBITDA <= 3",
+      current_value: `current ratio >= ${settingValue(settings, "minCurrentRatio", (value) => round(value, 2))} OR net debt / EBITDA <= ${round(settings.maxNetDebtToEbitda, 2)}`,
       summary: "Near-term liquidity or leverage must stay inside acceptable bounds.",
       why: "Even attractive growth stories can fail a first-pass screen if the balance sheet creates financing risk.",
+      why_it_matters: "Balance-sheet strength reduces the chance that a promising setup is overwhelmed by financing pressure.",
+      research_basis: criterionResearchBasis(["piotroski_2000"]),
+      backtest_status: backtestPlaceholder("balance_sheet"),
       rule: `Current ratio >= ${round(settings.minCurrentRatio, 2)} OR net debt / EBITDA <= ${round(settings.maxNetDebtToEbitda, 2)}.`
     },
     {
       key: "cash_efficiency",
       label: "Cash conversion is acceptable",
+      factor_family: "cash_quality",
+      default_value: "FCF conversion >= 75% OR FCF margin >= 8%",
+      current_value: `FCF conversion >= ${percentValue(settings.minFcfConversion, 0)} OR FCF margin >= ${percentValue(settings.minFcfMargin)}`,
       summary: "Reported earnings or growth should translate into real cash generation.",
       why: "This helps filter out names where accounting strength is not yet showing up in free cash flow.",
+      why_it_matters: "Cash conversion is the first defense against accounting profits that do not become owner cash flow.",
+      research_basis: criterionResearchBasis(["sloan_1996", "piotroski_2000"]),
+      backtest_status: backtestPlaceholder("cash_efficiency"),
       rule: `FCF conversion >= ${round(settings.minFcfConversion, 2)} OR FCF margin >= ${round(settings.minFcfMargin * 100, 1)}%.`
     },
     {
       key: "valuation_sanity",
       label: "Valuation is still tradable",
+      factor_family: "valuation",
+      default_value: "P/E <= 45 OR PEG <= 2.5 OR FCF yield >= 2%",
+      current_value: `P/E <= ${round(settings.maxPeTtm, 1)} OR PEG <= ${round(settings.maxPeg, 2)} OR FCF yield >= ${percentValue(settings.minFcfYield)}`,
       summary: "The valuation cannot already be so stretched that the setup becomes hard to underwrite.",
       why: "The screen is trying to keep names investable, not just fundamentally interesting at any price.",
+      why_it_matters: "Valuation sanity keeps high-quality companies from being treated as attractive at any price.",
+      research_basis: criterionResearchBasis(["piotroski_2000", "factor_zoo_caution"]),
+      backtest_status: backtestPlaceholder("valuation_sanity"),
       rule: `P/E <= ${round(settings.maxPeTtm, 1)} OR PEG <= ${round(settings.maxPeg, 2)} OR FCF yield >= ${round(settings.minFcfYield * 100, 1)}%.`
     }
   ];
+}
+
+function buildCriterionDiagnostics(leaderboard, criteria) {
+  return criteria.map((criterion) => {
+    const rowsWithCheck = leaderboard
+      .map((row) => (row.initial_screen?.checks || []).find((check) => check.key === criterion.key))
+      .filter(Boolean);
+    const passCount = rowsWithCheck.filter((check) => check.passed).length;
+    const failCount = rowsWithCheck.length - passCount;
+    return {
+      key: criterion.key,
+      label: criterion.label,
+      evaluated_count: rowsWithCheck.length,
+      pass_count: passCount,
+      fail_count: failCount,
+      pass_rate: rowsWithCheck.length ? round(passCount / rowsWithCheck.length, 3) : null
+    };
+  });
 }
 
 function buildScreenerView(leaderboard, baseScreener = {}, screenerSettings = screenerSettingsFromConfig()) {
@@ -222,9 +567,12 @@ function buildScreenerView(leaderboard, baseScreener = {}, screenerSettings = sc
   const rejected = leaderboard.filter((item) => item.initial_screen?.stage === "reject");
   const bootstrapPlaceholders = leaderboard.filter((item) => item.data_source === "bootstrap_placeholder");
   const liveSecBacked = leaderboard.filter((item) => item.data_source === "live_sec_filing");
+  const criteria = baseScreener.criteria || buildScreenerCriteria(screenerSettings);
 
   return {
-    criteria: baseScreener.criteria || buildScreenerCriteria(screenerSettings),
+    criteria,
+    governance: buildFundamentalResearchGovernance(screenerSettings),
+    criterion_diagnostics: buildCriterionDiagnostics(leaderboard, criteria),
     explanation:
       baseScreener.explanation || {
         headline: "Stage one is a first-pass gate, not the final ranking model.",
@@ -576,10 +924,15 @@ function evaluateInitialScreener(company, settings) {
     hardFailures.push("too many missing fields");
   }
 
-  const passedChecks = checks.filter((item) => item.passed).map((item) => item.label);
-  const failedChecks = checks.filter((item) => !item.passed).map((item) => item.label);
+  const checkResults = checks.map((item) => ({
+    key: item.key,
+    label: item.label,
+    passed: Boolean(item.passed)
+  }));
+  const passedChecks = checkResults.filter((item) => item.passed).map((item) => item.label);
+  const failedChecks = checkResults.filter((item) => !item.passed).map((item) => item.label);
   const passedCount = passedChecks.length;
-  const screenScore = round(passedCount / checks.length, 3);
+  const screenScore = round(passedCount / checkResults.length, 3);
 
   let stage = "reject";
   if (!hardFailures.length && screenScore >= settings.eligibleScore) {
@@ -598,7 +951,8 @@ function evaluateInitialScreener(company, settings) {
     passed: stage === "eligible",
     score: screenScore,
     passed_count: passedCount,
-    total_checks: checks.length,
+    total_checks: checkResults.length,
+    checks: checkResults,
     provisional: awaitingSecRefresh,
     passed_checks: passedChecks,
     failed_checks: failedChecks,

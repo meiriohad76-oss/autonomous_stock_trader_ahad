@@ -1345,6 +1345,74 @@ function orderedLearningSuggestionGroups(suggestions = []) {
   return [...groups, ...extraGroups];
 }
 
+function researchBasisLabels(items = []) {
+  return items.map((item) => item.label || item.key || "").filter(Boolean).join(", ");
+}
+
+function backtestStatusLabel(status = {}) {
+  if (!status || status.status === "pending_validation") {
+    return "Backtest pending";
+  }
+  return prettyLabel(status.status || "unknown");
+}
+
+function renderFundamentalGovernancePanel() {
+  const governance = state.config?.fundamental_screener_governance || {};
+  const criteria = governance.criteria || [];
+  const profiles = governance.profiles || [];
+  if (!criteria.length && !profiles.length) {
+    return "";
+  }
+
+  return `
+    <section class="fundamental-governance-panel">
+      <div class="agent-process-head">
+        <div>
+          <div class="section-kicker">Research-Governed Defaults</div>
+          <h3>Criteria registry, profiles, and validation status</h3>
+          <p>${escapeHtml(governance.explanation || "Fundamental rules are research-aligned defaults until local backtests validate their thresholds.")}</p>
+        </div>
+        <span class="sentiment-badge neutral">${escapeHtml(prettyLabel(governance.current_profile || "custom"))}</span>
+      </div>
+      ${
+        profiles.length
+          ? `<div class="fundamental-profile-strip">
+              ${profiles
+                .map(
+                  (profile) => `
+                    <div class="fundamental-profile-pill ${profile.matches_current ? "active" : ""}">
+                      <strong>${escapeHtml(profile.label)}</strong>
+                      <span>${escapeHtml(profile.matches_current ? "current" : `${profile.change_count || 0} differences`)}</span>
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>`
+          : ""
+      }
+      <div class="fundamental-criteria-grid">
+        ${criteria
+          .map(
+            (criterion) => `
+              <article class="fundamental-criteria-card">
+                <div class="runtime-source-head">
+                  <strong>${escapeHtml(criterion.label)}</strong>
+                  <span class="sentiment-badge neutral">${escapeHtml(criterion.factor_family || "factor")}</span>
+                </div>
+                <p>${escapeHtml(criterion.why_it_matters || criterion.why || criterion.summary || "")}</p>
+                <div class="criteria-rule"><strong>Default:</strong> ${escapeHtml(String(criterion.default_value || "n/a"))}</div>
+                <div class="criteria-rule"><strong>Current:</strong> ${escapeHtml(String(criterion.current_value || criterion.rule || "n/a"))}</div>
+                <small>${escapeHtml(researchBasisLabels(criterion.research_basis) || "Research basis not attached")}</small>
+                <small>${escapeHtml(backtestStatusLabel(criterion.backtest_status))}</small>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderProcessItems(items = []) {
   return items
     .map((item) => {
@@ -5134,6 +5202,7 @@ function renderUniverseAgentView() {
 
   if (elements.fundamentalsAgentTable) {
     elements.fundamentalsAgentTable.innerHTML = `
+      ${renderFundamentalGovernancePanel()}
       <div class="agent-table-shell leaderboard-shell">
         <table class="leaderboard-table compact-agent-table">
           <thead>

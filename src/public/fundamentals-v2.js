@@ -112,6 +112,17 @@ function criteriaTooltip(item = {}) {
   return [item.summary, item.rule, item.why].filter(Boolean).join(" ");
 }
 
+function researchBasisLabels(items = []) {
+  return items.map((item) => item.label || item.key || "").filter(Boolean).join(", ");
+}
+
+function backtestLabel(status = {}) {
+  if (!status || status.status === "pending_validation") {
+    return "Backtest pending";
+  }
+  return titleCase(status.status || "unknown");
+}
+
 function buildEmptyDashboard() {
   return {
     as_of: null,
@@ -133,6 +144,8 @@ function buildEmptyDashboard() {
         reject: "Rejected names fail too many checks or trip a hard failure."
       },
       criteria: [],
+      governance: null,
+      criterion_diagnostics: [],
       tracked_count: 0,
       eligible_count: 0,
       watch_count: 0,
@@ -242,6 +255,8 @@ function deriveScreener(rows) {
 
   return {
     criteria: base.criteria || [],
+    governance: base.governance || null,
+    criterion_diagnostics: base.criterion_diagnostics || [],
     explanation: base.explanation || buildEmptyDashboard().screener.explanation,
     tracked_count: rows.length,
     eligible_count: eligible.length,
@@ -452,13 +467,16 @@ function renderStages() {
 
 function renderCriteria() {
   const criteria = getBaseScreener().criteria || [];
+  const diagnostics = new Map((getBaseScreener().criterion_diagnostics || []).map((item) => [item.key, item]));
   const activeKey = state.selectedCriteriaKey || criteria[0]?.key || null;
   state.selectedCriteriaKey = activeKey;
 
   elements.criteriaList.innerHTML = criteria.length
     ? criteria
         .map(
-          (item) => `
+          (item) => {
+            const diagnostic = diagnostics.get(item.key);
+            return `
             <button
               type="button"
               class="criteria-tile ${activeKey === item.key ? "active" : ""}"
@@ -467,24 +485,38 @@ function renderCriteria() {
               title="${criteriaTooltip(item)}"
             >
               <strong>${item.label}</strong>
-              <span>${item.summary || "Part of the stage-one gate."} Hover or click for the pass rule and why it matters.</span>
+              <span>${item.factor_family ? titleCase(item.factor_family) : "Stage-one gate"} - ${diagnostic?.pass_rate !== null && diagnostic?.pass_rate !== undefined ? `${pct(diagnostic.pass_rate, 0)} pass rate` : backtestLabel(item.backtest_status)}</span>
             </button>
-          `
+          `;
+          }
         )
         .join("")
     : `<div class="note-card">No criteria loaded.</div>`;
 
   const active = criteria.find((item) => item.key === activeKey);
+  const activeDiagnostic = active ? diagnostics.get(active.key) : null;
   elements.criteriaDetail.innerHTML = active
     ? `
         <article class="criteria-card detail-card">
           <div class="criteria-card-head">
             <strong>${active.label}</strong>
-            <span class="chip">${active.key}</span>
+            <span class="chip">${active.factor_family || active.key}</span>
           </div>
           <p>${active.summary || "This rule is part of the stage-one gate."}</p>
           <div class="criteria-rule"><strong>Pass rule:</strong> ${active.rule || "Not specified."}</div>
+          <div class="criteria-rule"><strong>Default:</strong> ${active.default_value || "n/a"}</div>
+          <div class="criteria-rule"><strong>Current:</strong> ${active.current_value || active.rule || "n/a"}</div>
           <p><strong>Why it matters:</strong> ${active.why || "This helps reduce weak first-pass candidates."}</p>
+          <p><strong>Research basis:</strong> ${researchBasisLabels(active.research_basis) || "Not attached yet."}</p>
+          <div class="criteria-rule">
+            <strong>Current universe:</strong>
+            ${activeDiagnostic ? `${activeDiagnostic.pass_count}/${activeDiagnostic.evaluated_count} pass this rule (${pct(activeDiagnostic.pass_rate || 0, 0)}).` : "No diagnostic sample yet."}
+          </div>
+          <div class="criteria-rule">
+            <strong>Backtest status:</strong>
+            ${backtestLabel(active.backtest_status)}.
+            ${active.backtest_status?.notes || "Point-in-time validation is not available yet."}
+          </div>
         </article>
       `
     : `<div class="note-card">Select a rule to inspect it.</div>`;
@@ -500,6 +532,8 @@ function renderCriteria() {
 function renderSettings() {
   const fields = state.screenerConfig?.fields || [];
   const values = state.screenerConfig?.settings || {};
+  const governance = state.screenerConfig?.governance || getBaseScreener().governance || {};
+  const profiles = governance.profiles || [];
 
   if (!fields.length) {
     elements.settingsList.innerHTML = `<div class="note-card">Screener settings are unavailable right now.</div>`;
@@ -507,6 +541,26 @@ function renderSettings() {
   }
 
   elements.settingsList.innerHTML = `
+    ${
+      profiles.length
+        ? `<div class="profile-grid">
+            ${profiles
+              .map(
+                (profile) => `
+                  <article class="profile-card ${profile.matches_current ? "active" : ""}">
+                    <strong>${profile.label}</strong>
+                    <span>${profile.description}</span>
+                    <small>${profile.matches_current ? "Current profile" : `${profile.change_count || 0} setting differences`}</small>
+                    <button type="button" class="ghost-button" data-screener-profile="${profile.key}" ${profile.matches_current ? "disabled" : ""}>
+                      ${profile.matches_current ? "Applied" : "Apply Profile"}
+                    </button>
+                  </article>
+                `
+              )
+              .join("")}
+          </div>`
+        : ""
+    }
     <div class="settings-grid">
       ${fields
         .map((field) => {
@@ -547,6 +601,27 @@ function renderSettings() {
     input.addEventListener("input", () => {
       state.screenerSaveState = "";
       values[key] = input.type === "checkbox" ? input.checked : Number(input.value);
+    });
+  }
+
+  for (const button of elements.settingsList.querySelectorAll("[data-screener-profile]")) {
+    button.addEventListener("click", async () => {
+      state.screenerSaveState = "saving";
+      renderSettings();
+      try {
+        const payload = await getJson("/api/settings/fundamental-screener", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile: button.dataset.screenerProfile, persist: true })
+        });
+        state.screenerConfig = payload.screener;
+        state.screenerSaveState = "saved";
+        await reloadBaseData();
+      } catch (error) {
+        console.error(error);
+        state.screenerSaveState = "";
+        renderSettings();
+      }
     });
   }
 
