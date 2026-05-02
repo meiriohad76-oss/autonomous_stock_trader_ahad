@@ -295,6 +295,44 @@ function screenerSettingsFromConfig(config = {}) {
   };
 }
 
+function screenerConfigFromSettings(settings = {}) {
+  return {
+    screenerRequireLiveSecForEligible: Boolean(settings.requireLiveSecForEligible),
+    screenerMinReportingConfidence: Number(settings.minReportingConfidence ?? 0.85),
+    screenerMinDataFreshness: Number(settings.minDataFreshness ?? 0.85),
+    screenerMaxMissingFields: Number(settings.maxMissingFields ?? 2),
+    screenerMinRevenueGrowth: Number(settings.minRevenueGrowth ?? 0.08),
+    screenerMinEpsGrowth: Number(settings.minEpsGrowth ?? 0.1),
+    screenerMinOperatingMargin: Number(settings.minOperatingMargin ?? 0.12),
+    screenerMinGrossMargin: Number(settings.minGrossMargin ?? 0.35),
+    screenerMinCurrentRatio: Number(settings.minCurrentRatio ?? 1),
+    screenerMaxNetDebtToEbitda: Number(settings.maxNetDebtToEbitda ?? 3),
+    screenerMinFcfConversion: Number(settings.minFcfConversion ?? 0.75),
+    screenerMinFcfMargin: Number(settings.minFcfMargin ?? 0.08),
+    screenerMaxPeTtm: Number(settings.maxPeTtm ?? 45),
+    screenerMaxPeg: Number(settings.maxPeg ?? 2.5),
+    screenerMinFcfYield: Number(settings.minFcfYield ?? 0.02),
+    screenerEligibleScore: Number(settings.eligibleScore ?? 0.71),
+    screenerWatchScore: Number(settings.watchScore ?? 0.43)
+  };
+}
+
+function normalizeScreenerGovernanceInput(settings = {}) {
+  const hasConfigShape = Object.keys(settings).some((key) => key.startsWith("screener"));
+  if (hasConfigShape) {
+    return {
+      profileSettings: { ...FUNDAMENTAL_SCREENER_PROFILES.balanced.settings, ...settings },
+      criteriaSettings: screenerSettingsFromConfig(settings)
+    };
+  }
+
+  const criteriaSettings = { ...screenerSettingsFromConfig(), ...settings };
+  return {
+    profileSettings: screenerConfigFromSettings(criteriaSettings),
+    criteriaSettings
+  };
+}
+
 export function settingsForFundamentalProfile(profileKey) {
   const profile = FUNDAMENTAL_SCREENER_PROFILES[profileKey];
   return profile ? { ...profile.settings } : null;
@@ -418,8 +456,9 @@ function buildScoreFactorRegistry() {
 }
 
 export function buildFundamentalResearchGovernance(settings = screenerSettingsFromConfig()) {
+  const { profileSettings, criteriaSettings } = normalizeScreenerGovernanceInput(settings);
   const profiles = Object.values(FUNDAMENTAL_SCREENER_PROFILES).map((profile) => {
-    const changes = profileDiff(settings, profile).filter((item) => !item.matches);
+    const changes = profileDiff(profileSettings, profile).filter((item) => !item.matches);
     return {
       ...profile,
       matches_current: changes.length === 0,
@@ -430,13 +469,13 @@ export function buildFundamentalResearchGovernance(settings = screenerSettingsFr
 
   return {
     version: "research_governed_v1",
-    current_profile: detectCurrentFundamentalProfile(settings),
+    current_profile: detectCurrentFundamentalProfile(profileSettings),
     validation_status: "research_aligned_thresholds_pending_local_backtest",
     explanation:
       "The factor families are grounded in published empirical finance and accounting research, but exact thresholds remain defaults until validated on point-in-time S&P 100 + QQQ history.",
     references: Object.values(FUNDAMENTAL_RESEARCH_REFERENCES),
     profiles,
-    criteria: buildScreenerCriteria(settings),
+    criteria: buildScreenerCriteria(criteriaSettings),
     score_factors: buildScoreFactorRegistry(),
     backtest_policy: {
       required_before_proven: true,
