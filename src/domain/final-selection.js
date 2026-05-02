@@ -117,6 +117,154 @@ function policyReason(candidate) {
   return `${candidate.ticker} is not an executable final selection right now.`;
 }
 
+function uniqueStrings(items, limit = 8) {
+  return [...new Set((items || []).filter(Boolean).map((item) => String(item)))].slice(0, limit);
+}
+
+function reportStatus(candidate) {
+  if (candidate.execution_allowed && isTradable(candidate.final_action)) {
+    return "approved_for_alpaca_preview";
+  }
+  if (candidate.final_action === "review") {
+    return "requires_human_review";
+  }
+  if (candidate.final_action === "watch") {
+    return "watch_only";
+  }
+  return "not_selected";
+}
+
+function agentVote(agent, status, result, evidence = null, detail = null) {
+  return { agent, status, result, evidence, detail };
+}
+
+function passedOrReview(condition, reviewStatus = "review") {
+  return condition ? "passed" : reviewStatus;
+}
+
+function evidencePhrase(setup = {}) {
+  const positiveCount = setup.evidence?.positive?.length || 0;
+  const negativeCount = setup.evidence?.negative?.length || 0;
+  const quality = setup.evidence_quality?.label || setup.evidence_quality?.status || null;
+  return `${positiveCount} positive / ${negativeCount} negative evidence item(s)${quality ? `, ${quality}` : ""}.`;
+}
+
+function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positionMonitor, config }) {
+  const setup = candidate.setup || {};
+  const deterministic = candidate.deterministic_explanation || {};
+  const llm = candidate.llm_explanation || {};
+  const failedGates = candidate.policy_gates.filter((gate) => !gate.pass);
+  const approved = candidate.execution_allowed && isTradable(candidate.final_action);
+  const adjustedSetup = candidate.setup_for_execution || {};
+  const stopLoss = adjustedSetup.stop_loss ?? setup.stop_loss ?? null;
+  const takeProfit = adjustedSetup.take_profit ?? setup.take_profit ?? null;
+  const currentPrice = adjustedSetup.current_price ?? setup.current_price ?? null;
+  const equity = Number(riskSnapshot?.equity || positionMonitor?.account?.equity || config.executionDefaultEquityUsd || 0);
+  const estimatedNotional = equity && candidate.position_size_pct ? round(equity * Number(candidate.position_size_pct || 0), 2) : null;
+  const llmReviewer = llm?.reviewer || (llm?.action ? "external_or_shadow_reviewer" : "unavailable");
+
+  const whySelected = uniqueStrings(
+    [
+      candidate.final_reason,
+      approved ? "Deterministic and LLM selection lanes agree on a tradable action." : null,
+      approved ? "Portfolio policy gates passed for this cycle." : null,
+      setup.fundamentals?.screen_stage ? `Fundamentals stage: ${setup.fundamentals.screen_stage}.` : null,
+      setup.macro_regime?.regime_label ? `Market regime: ${setup.macro_regime.regime_label}.` : null,
+      setup.summary,
+      ...(deterministic.thesis || []),
+      ...(llm.supporting_factors || [])
+    ],
+    10
+  );
+
+  const concerns = uniqueStrings(
+    [
+      ...(deterministic.risk_flags || []),
+      ...(deterministic.negative_evidence || []),
+      ...(llm.concerns || []),
+      ...failedGates.map((gate) => gate.detail),
+      candidate.final_conviction_gap ? `Final conviction is short by ${round(candidate.final_conviction_gap * 100, 1)} percentage points.` : null
+    ],
+    10
+  );
+
+  return {
+    ticker: candidate.ticker,
+    company_name: candidate.company_name,
+    sector: candidate.sector,
+    generated_at: new Date().toISOString(),
+    status: reportStatus(candidate),
+    title: `${candidate.ticker} Selection Report`,
+    headline: approved
+      ? `${candidate.ticker} passed Final Selection and is ready for supervised Alpaca preview.`
+      : `${candidate.ticker} did not pass every gate for execution yet.`,
+    executive_summary: approved
+      ? `${candidate.ticker} is selected because the deterministic selector and LLM lane agree on ${candidate.final_action}, final conviction is ${round(candidate.final_conviction * 100, 1)}%, and portfolio policy currently allows the proposed size.`
+      : `${candidate.ticker} is visible for review because the workflow produced evidence, but ${candidate.final_reason}`,
+    approval_scope: "This report approves only a supervised paper-trade preview. Alpaca submission still requires explicit user approval.",
+    agent_votes: [
+      agentVote("Universe Agent", "passed", "Inside allowed universe", "Candidate came from the S&P 100 + QQQ workflow boundary."),
+      agentVote(
+        "Fundamentals Agent",
+        passedOrReview(setup.fundamentals?.screen_stage === "eligible"),
+        setup.fundamentals?.screen_stage || "unknown",
+        setup.fundamentals?.direction_label || "No fundamentals direction label available.",
+        setup.fundamentals?.summary || null
+      ),
+      agentVote(
+        "Market Agent",
+        setup.macro_regime?.regime_label ? "passed" : "review",
+        setup.macro_regime?.regime_label || "unknown",
+        setup.macro_regime?.bias_label || setup.macro_regime?.summary || "No market-regime label available."
+      ),
+      agentVote("Signals Agent", (setup.evidence?.positive || []).length ? "passed" : "review", evidencePhrase(setup), uniqueStrings(setup.evidence?.positive, 3).join(" | ") || "No positive signal summary available."),
+      agentVote("Deterministic Selection Agent", isTradable(candidate.deterministic_action) ? "passed" : "review", candidate.deterministic_action, `${round(Number(candidate.deterministic_conviction || 0) * 100, 1)}% conviction.`),
+      agentVote("LLM Selection Agent", candidate.agreement === "agree" ? "passed" : "review", candidate.llm_action, `${llmReviewer}; ${round(Number(candidate.llm_confidence || 0) * 100, 1)}% confidence.`),
+      agentVote("Final Selection Agent", approved ? "passed" : "review", candidate.final_action, `${round(Number(candidate.final_conviction || 0) * 100, 1)}% final conviction; ${round(Number(candidate.required_final_conviction || 0) * 100, 1)}% required.`),
+      agentVote("Risk Manager", riskSnapshot?.status === "blocked" ? "blocked" : "passed", riskSnapshot?.status || "not_blocked", failedGates.length ? failedGates[0].detail : "No hard risk block is active."),
+      agentVote("Execution Agent", approved ? "ready_for_preview" : "gated", approved ? "Alpaca preview can be prepared" : "Not ready for Alpaca preview", "No order is submitted automatically.")
+    ],
+    scoring: {
+      deterministic_conviction: candidate.deterministic_conviction,
+      llm_confidence: candidate.llm_confidence,
+      final_conviction: candidate.final_conviction,
+      required_final_conviction: candidate.required_final_conviction,
+      final_conviction_gap: candidate.final_conviction_gap,
+      agreement: candidate.agreement
+    },
+    evidence_summary: {
+      why_selected: whySelected,
+      concerns,
+      recent_documents: (setup.recent_documents || []).slice(0, 5).map((doc) => ({
+        headline: doc.headline,
+        source_name: doc.source_name,
+        published_at: doc.published_at,
+        event_type: doc.event_type,
+        confidence: doc.confidence
+      }))
+    },
+    policy_gates: candidate.policy_gates.map((gate) => ({
+      key: gate.key,
+      pass: gate.pass,
+      detail: gate.detail,
+      value: gate.value,
+      limit: gate.limit
+    })),
+    trade_plan: {
+      action: candidate.final_action,
+      side: candidate.final_action === "long" ? "buy" : candidate.final_action === "short" ? "sell_short" : "none",
+      position_size_pct: candidate.position_size_pct,
+      estimated_notional_usd: estimatedNotional,
+      current_price: currentPrice,
+      entry_zone: adjustedSetup.entry_zone || setup.entry_zone || null,
+      stop_loss: stopLoss,
+      take_profit: takeProfit,
+      stop_loss_pct: portfolioPolicy.portfolioDefaultStopLossPct,
+      take_profit_pct: portfolioPolicy.portfolioDefaultTakeProfitPct
+    }
+  };
+}
+
 function buildDeterministicExplanation(setup) {
   return {
     action: setup.action,
@@ -288,6 +436,12 @@ function applyPortfolioProcedure({ candidates, portfolioPolicy, riskSnapshot, po
             finalConviction: next.final_conviction
           })
         : null;
+      next.selection_report = buildSelectionReport(next, {
+        portfolioPolicy,
+        riskSnapshot,
+        positionMonitor,
+        config
+      });
 
       return next;
     });

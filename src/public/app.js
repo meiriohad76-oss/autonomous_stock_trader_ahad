@@ -188,6 +188,7 @@ const elements = {
   signalDrawerTime: document.querySelector("#signal-drawer-time"),
   signalDrawerSummary: document.querySelector("#signal-drawer-summary"),
   signalDrawerStats: document.querySelector("#signal-drawer-stats"),
+  signalDrawerReport: document.querySelector("#signal-drawer-report"),
   signalDrawerExplanation: document.querySelector("#signal-drawer-explanation"),
   signalDrawerContext: document.querySelector("#signal-drawer-context"),
   signalFocusButton: document.querySelector("#signal-focus-button"),
@@ -2500,10 +2501,140 @@ function buildSignalFromTradeSetup(setup) {
   };
 }
 
+function reportStatusClass(status) {
+  if (["passed", "approved_for_alpaca_preview", "ready_for_preview"].includes(status)) {
+    return "bullish";
+  }
+  if (["blocked", "gated", "not_selected"].includes(status)) {
+    return "bearish";
+  }
+  return "neutral";
+}
+
+function reportMetricValue(value, kind = "text") {
+  if (value === null || value === undefined || value === "") {
+    return "n/a";
+  }
+  if (kind === "percent") {
+    return `${formatNumber(Number(value || 0) * 100, 1)}%`;
+  }
+  if (kind === "usd") {
+    return formatUsdCompact(value);
+  }
+  if (kind === "price") {
+    return `$${formatNumber(value, 2)}`;
+  }
+  return escapeHtml(String(value));
+}
+
+function reportList(items = []) {
+  return items.length
+    ? `<ul class="workspace-list selection-report-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+    : `<p class="selection-report-muted">No items reported.</p>`;
+}
+
+function renderSelectionReport(report) {
+  const votes = report.agent_votes || [];
+  const gates = report.policy_gates || [];
+  const evidence = report.evidence_summary || {};
+  const tradePlan = report.trade_plan || {};
+  const docs = evidence.recent_documents || [];
+
+  return `
+    <section class="selection-report-card">
+      <div class="runtime-source-head">
+        <div>
+          <div class="section-kicker">Selection Report</div>
+          <h3>${escapeHtml(report.title || `${report.ticker || "Ticker"} report`)}</h3>
+        </div>
+        <span class="sentiment-badge ${reportStatusClass(report.status)}">${escapeHtml(prettyLabel(report.status || "review"))}</span>
+      </div>
+      <p class="selection-report-summary">${escapeHtml(report.executive_summary || report.headline || "Final Selection report is available.")}</p>
+      <p class="selection-report-muted">${escapeHtml(report.approval_scope || "Alpaca submission still requires explicit approval.")}</p>
+
+      <div class="selection-report-metrics">
+        <div><span>Action</span><strong>${escapeHtml(prettyLabel(tradePlan.action || "none"))}</strong></div>
+        <div><span>Final Score</span><strong>${reportMetricValue(report.scoring?.final_conviction, "percent")}</strong></div>
+        <div><span>Required</span><strong>${reportMetricValue(report.scoring?.required_final_conviction, "percent")}</strong></div>
+        <div><span>Size</span><strong>${reportMetricValue(tradePlan.position_size_pct, "percent")}</strong></div>
+        <div><span>Notional</span><strong>${reportMetricValue(tradePlan.estimated_notional_usd, "usd")}</strong></div>
+        <div><span>Price</span><strong>${reportMetricValue(tradePlan.current_price, "price")}</strong></div>
+        <div><span>Stop</span><strong>${reportMetricValue(tradePlan.stop_loss, "price")}</strong></div>
+        <div><span>Target</span><strong>${reportMetricValue(tradePlan.take_profit, "price")}</strong></div>
+      </div>
+
+      <div class="selection-report-section">
+        <h4>Agent Votes</h4>
+        <div class="selection-report-vote-grid">
+          ${votes
+            .map(
+              (vote) => `
+                <div class="selection-report-vote ${reportStatusClass(vote.status)}">
+                  <div>
+                    <strong>${escapeHtml(vote.agent || "Agent")}</strong>
+                    <span>${escapeHtml(prettyLabel(vote.status || "review"))}</span>
+                  </div>
+                  <p>${escapeHtml(vote.result || "No result")}</p>
+                  ${vote.evidence ? `<small>${escapeHtml(vote.evidence)}</small>` : ""}
+                  ${vote.detail ? `<small>${escapeHtml(vote.detail)}</small>` : ""}
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+      </div>
+
+      <div class="selection-report-two-col">
+        <div class="selection-report-section">
+          <h4>Why It Passed</h4>
+          ${reportList(evidence.why_selected || [])}
+        </div>
+        <div class="selection-report-section">
+          <h4>Concerns To Watch</h4>
+          ${reportList(evidence.concerns || [])}
+        </div>
+      </div>
+
+      <div class="selection-report-section">
+        <h4>Policy Gates</h4>
+        <div class="selection-report-gates">
+          ${gates
+            .map(
+              (gate) => `
+                <div class="selection-report-gate ${gate.pass ? "bullish" : "bearish"}">
+                  <span>${gate.pass ? "Pass" : "Block"}</span>
+                  <strong>${escapeHtml(prettyLabel(gate.key || "gate"))}</strong>
+                  <small>${escapeHtml(gate.detail || "")}</small>
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+      </div>
+
+      ${
+        docs.length
+          ? `<div class="selection-report-section">
+              <h4>Recent Evidence</h4>
+              <ul class="workspace-list selection-report-list">
+                ${docs
+                  .map(
+                    (doc) => `<li>${escapeHtml(doc.headline || "Untitled evidence")}${doc.source_name ? ` <span>${escapeHtml(doc.source_name)}</span>` : ""}</li>`
+                  )
+                  .join("")}
+              </ul>
+            </div>`
+          : ""
+      }
+    </section>
+  `;
+}
+
 function buildSignalFromFinalSelection(candidate) {
   const deterministic = candidate.deterministic_explanation || {};
   const llm = candidate.llm_explanation || {};
   const gates = candidate.policy_gates || [];
+  const report = candidate.selection_report || null;
   const failedGates = gates.filter((gate) => !gate.pass);
   const contextItems = [
     `Deterministic: ${prettyLabel(candidate.deterministic_action)} at ${formatNumber((candidate.deterministic_conviction || 0) * 100, 0)}%.`,
@@ -2535,6 +2666,7 @@ function buildSignalFromFinalSelection(candidate) {
     sourceMetadata: null,
     downstreamWeight: candidate.final_conviction || 0,
     contextItems,
+    reportHtml: report ? renderSelectionReport(report) : "",
     statsHtml: `
       <div class="workspace-stat-card"><span>Ticker</span><strong>${candidate.ticker || "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Final</span><strong>${prettyLabel(candidate.final_action)}</strong></div>
@@ -4334,6 +4466,9 @@ function renderSignalDrawer() {
     elements.signalDrawerTime.textContent = "-";
     elements.signalDrawerSummary.textContent = "Select a live event, alert, or document to inspect it here.";
     elements.signalDrawerStats.innerHTML = "";
+    if (elements.signalDrawerReport) {
+      elements.signalDrawerReport.innerHTML = "";
+    }
     elements.signalDrawerExplanation.textContent = "No signal selected yet.";
     elements.signalDrawerContext.innerHTML = "<li>No context available.</li>";
     elements.signalFocusButton.disabled = true;
@@ -4359,6 +4494,9 @@ function renderSignalDrawer() {
       <div class="workspace-stat-card"><span>Downstream Weight</span><strong>${signal.downstreamWeight !== null && signal.downstreamWeight !== undefined ? formatNumber(signal.downstreamWeight, 2) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Source</span><strong>${signal.sourceName || signal.subtitle}</strong></div>
     `;
+  if (elements.signalDrawerReport) {
+    elements.signalDrawerReport.innerHTML = signal.reportHtml || "";
+  }
   elements.signalDrawerExplanation.textContent = signal.explanation;
   const contextItems =
     signal.contextItems ||

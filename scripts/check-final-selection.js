@@ -182,6 +182,15 @@ if (finalSelection.counts.executable !== 1 || !finalSelection.algorithm?.steps?.
   throw new Error("Final selector should expose procedure metadata and executable counts.");
 }
 
+if (
+  apple.selection_report?.status !== "approved_for_alpaca_preview" ||
+  !apple.selection_report?.agent_votes?.length ||
+  !apple.selection_report?.evidence_summary?.why_selected?.length ||
+  apple.selection_report?.trade_plan?.position_size_pct !== 0.03
+) {
+  throw new Error("Final selector should expose a per-stock approval report for executable candidates.");
+}
+
 console.log(
   JSON.stringify(
     {
@@ -191,6 +200,7 @@ console.log(
       review: finalSelection.counts.review,
       llm_mode: finalSelection.llm_agent.mode,
       top_candidate: apple.ticker,
+      report_status: apple.selection_report.status,
       microsoft_reason: microsoft.reason_codes[0]
     },
     null,
