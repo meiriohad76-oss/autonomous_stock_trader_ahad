@@ -26,6 +26,18 @@ body {
     var(--bg);
 }
 
+body,
+.fund-shell,
+.panel,
+.dashboard-grid > *,
+.detail-grid > *,
+.screener-explainer > *,
+.settings-grid > *,
+.hero-grid > *,
+.detail-summary > * {
+  min-width: 0;
+}
+
 button,
 input,
 select {
@@ -425,6 +437,7 @@ h1 {
 
 .table-wrap {
   overflow: auto;
+  max-width: 100%;
 }
 
 .leaderboard-table {
@@ -487,6 +500,20 @@ h1 {
   display: block;
   margin-top: 8px;
   font-size: 1.3rem;
+}
+
+.hero-card,
+.summary-card,
+.explain-card,
+.criteria-card,
+.sector-card,
+.factor-card,
+.history-card,
+.feed-card,
+.setting-card,
+.timeline-item,
+.fact-point {
+  overflow-wrap: anywhere;
 }
 
 .detail-grid {
