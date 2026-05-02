@@ -2637,10 +2637,10 @@ function buildSignalFromFinalSelection(candidate) {
   const report = candidate.selection_report || null;
   const failedGates = gates.filter((gate) => !gate.pass);
   const contextItems = [
-    `Deterministic: ${prettyLabel(candidate.deterministic_action)} at ${formatNumber((candidate.deterministic_conviction || 0) * 100, 0)}%.`,
-    `LLM lane: ${prettyLabel(candidate.llm_action)}${candidate.llm_confidence !== null && candidate.llm_confidence !== undefined ? ` at ${formatNumber(candidate.llm_confidence * 100, 0)}%` : ""}.`,
+    `Deterministic: ${prettyLabel(candidate.deterministic_action)} at ${formatNumber((candidate.deterministic_conviction || 0) * 100, 1)}%.`,
+    `LLM lane: ${prettyLabel(candidate.llm_action)}${candidate.llm_confidence !== null && candidate.llm_confidence !== undefined ? ` at ${formatNumber(candidate.llm_confidence * 100, 1)}%` : ""}.`,
     `Agreement: ${prettyLabel(candidate.agreement)}.`,
-    `Execution minimum: ${formatNumber((candidate.required_final_conviction || 0) * 100, 0)}%.`,
+    `Execution minimum: ${formatNumber((candidate.required_final_conviction || 0) * 100, 1)}%.`,
     candidate.final_conviction_gap ? `Final score is short by ${formatNumber(candidate.final_conviction_gap * 100, 1)}%.` : "",
     `Policy size: ${formatNumber((candidate.position_size_pct || 0) * 100, 1)}%.`,
     ...(deterministic.thesis || []).slice(0, 3).map((item) => `Deterministic thesis: ${item}`),
@@ -2660,7 +2660,7 @@ function buildSignalFromFinalSelection(candidate) {
     sourceName: "Final Selector",
     headline: candidate.final_reason || "Final selector decision",
     explanation:
-      `${candidate.final_reason || "The final selector combined the deterministic and LLM lanes."} Deterministic action was ${prettyLabel(candidate.deterministic_action)}, LLM action was ${prettyLabel(candidate.llm_action)}, and final conviction is ${formatNumber((candidate.final_conviction || 0) * 100, 0)}%.`,
+      `${candidate.final_reason || "The final selector combined the deterministic and LLM lanes."} Deterministic action was ${prettyLabel(candidate.deterministic_action)}, LLM action was ${prettyLabel(candidate.llm_action)}, and final conviction is ${formatNumber((candidate.final_conviction || 0) * 100, 1)}%.`,
     eventType: "final_selection",
     url: null,
     sourceMetadata: null,
@@ -2671,8 +2671,8 @@ function buildSignalFromFinalSelection(candidate) {
       <div class="workspace-stat-card"><span>Ticker</span><strong>${candidate.ticker || "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Final</span><strong>${prettyLabel(candidate.final_action)}</strong></div>
       <div class="workspace-stat-card"><span>Executable</span><strong>${candidate.execution_allowed ? "Yes" : "No"}</strong></div>
-      <div class="workspace-stat-card"><span>Final Score</span><strong>${formatNumber((candidate.final_conviction || 0) * 100, 0)}%</strong></div>
-      <div class="workspace-stat-card"><span>Required</span><strong>${formatNumber((candidate.required_final_conviction || 0) * 100, 0)}%</strong></div>
+      <div class="workspace-stat-card"><span>Final Score</span><strong>${formatNumber((candidate.final_conviction || 0) * 100, 1)}%</strong></div>
+      <div class="workspace-stat-card"><span>Required</span><strong>${formatNumber((candidate.required_final_conviction || 0) * 100, 1)}%</strong></div>
       <div class="workspace-stat-card"><span>Deterministic</span><strong>${prettyLabel(candidate.deterministic_action)}</strong></div>
       <div class="workspace-stat-card"><span>LLM</span><strong>${prettyLabel(candidate.llm_action)}</strong></div>
       <div class="workspace-stat-card"><span>Agreement</span><strong>${prettyLabel(candidate.agreement)}</strong></div>
@@ -3630,7 +3630,7 @@ function renderFinalSelectionLists(finalSelection, options = {}) {
                             <div class="trade-list-row trade-list-row-with-action final-selection-row">
                               <button type="button" class="trade-list-main" data-final-selection-ticker="${escapeHtml(candidate.ticker)}">
                                 <span>${escapeHtml(candidate.ticker)}</span>
-                                <small>${formatNumber((candidate.final_conviction || 0) * 100, 0)}% final / ${formatNumber((candidate.required_final_conviction || 0) * 100, 0)}% min - ${prettyLabel(candidate.agreement)} - ${prettyLabel(candidate.final_action)}</small>
+                                <small>${formatNumber((candidate.final_conviction || 0) * 100, 1)}% final / ${formatNumber((candidate.required_final_conviction || 0) * 100, 1)}% min - ${prettyLabel(candidate.agreement)} - ${prettyLabel(candidate.final_action)}</small>
                               </button>
                               ${
                                 includePreview

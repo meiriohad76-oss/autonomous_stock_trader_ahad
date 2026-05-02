@@ -29,6 +29,77 @@ function effectiveExecutionMinConviction(config, portfolioPolicy) {
   return Number(portfolioPolicy?.portfolioExecutionMinConviction ?? config.executionMinConviction ?? 0.62);
 }
 
+function finiteNumber(value, fallback = null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function directionSupportAdjustment(setup, action) {
+  const direction = setup.fundamentals?.direction_label || "";
+  if (action === "long") {
+    if (direction === "bullish_supportive") return 0.012;
+    if (direction === "bearish_headwind") return -0.018;
+  }
+  if (action === "short") {
+    if (direction === "bearish_headwind") return 0.012;
+    if (direction === "bullish_supportive") return -0.018;
+  }
+  return 0;
+}
+
+function setupQualityAdjustment(setup, action, deterministicConviction) {
+  const scoreComponents = setup.score_components || {};
+  const evidenceQuality = setup.evidence_quality || {};
+  const fundamentals = setup.fundamentals || {};
+  const rawDirectionalScore = finiteNumber(
+    action === "long"
+      ? scoreComponents.raw_long ?? scoreComponents.long
+      : action === "short"
+        ? scoreComponents.raw_short ?? scoreComponents.short
+        : scoreComponents.gap,
+    deterministicConviction
+  );
+  const gap = finiteNumber(scoreComponents.gap, 0);
+  const evidenceWeight = finiteNumber(evidenceQuality.average_downstream_weight, null);
+  const weakQualityItems = finiteNumber(evidenceQuality.weak_quality_items, 0);
+  const alertQualityItems = finiteNumber(evidenceQuality.alert_quality_items, 0);
+  const fundamentalConfidence = finiteNumber(fundamentals.final_confidence, null);
+  const fundamentalComposite = finiteNumber(fundamentals.composite_fundamental_score, null);
+
+  const directionalScoreAdjustment = clamp((rawDirectionalScore - deterministicConviction) * 0.12, -0.025, 0.025);
+  const gapAdjustment = clamp((gap - 0.35) * 0.035, -0.015, 0.018);
+  const evidenceWeightAdjustment =
+    evidenceWeight === null ? 0 : clamp((evidenceWeight - 0.62) * 0.08, -0.025, 0.025);
+  const evidenceTierAdjustment = clamp(alertQualityItems * 0.006 - weakQualityItems * 0.004, -0.02, 0.02);
+  const fundamentalConfidenceAdjustment =
+    fundamentalConfidence === null ? 0 : clamp((fundamentalConfidence - 0.8) * 0.05, -0.02, 0.02);
+  const fundamentalCompositeAdjustment =
+    fundamentalComposite === null ? 0 : clamp((fundamentalComposite - 0.5) * 0.04, -0.025, 0.025);
+  const directionAdjustment = directionSupportAdjustment(setup, action);
+  const total = clamp(
+    directionalScoreAdjustment +
+      gapAdjustment +
+      evidenceWeightAdjustment +
+      evidenceTierAdjustment +
+      fundamentalConfidenceAdjustment +
+      fundamentalCompositeAdjustment +
+      directionAdjustment,
+    -0.06,
+    0.06
+  );
+
+  return {
+    total: round(total, 4),
+    directional_score: round(directionalScoreAdjustment, 4),
+    score_gap: round(gapAdjustment, 4),
+    evidence_weight: round(evidenceWeightAdjustment, 4),
+    evidence_tier: round(evidenceTierAdjustment, 4),
+    fundamental_confidence: round(fundamentalConfidenceAdjustment, 4),
+    fundamental_composite: round(fundamentalCompositeAdjustment, 4),
+    direction_support: round(directionAdjustment, 4)
+  };
+}
+
 function baseDecision(setup, llm, config, portfolioPolicy) {
   const deterministicAction = setup.action;
   const llmAction = llm?.action || "watch";
@@ -48,8 +119,10 @@ function baseDecision(setup, llm, config, portfolioPolicy) {
   const runtimeMultiplier = Number(setup.runtime_reliability?.adjustment_multiplier || 1);
   const runtimePenalty = clamp(1 - runtimeMultiplier, 0, 0.35);
   const riskFlagPenalty = Math.min(0.12, (setup.risk_flags || []).length * 0.015);
+  const qualityAdjustment = setupQualityAdjustment(setup, deterministicAction, deterministicConviction);
+  const baseScore = deterministicConviction * 0.62 + llmConfidence * 0.28;
   const score = clamp(
-    deterministicConviction * 0.62 + llmConfidence * 0.28 + agreementBonus - runtimePenalty - riskFlagPenalty,
+    baseScore + agreementBonus + qualityAdjustment.total - runtimePenalty - riskFlagPenalty,
     0,
     0.99
   );
@@ -89,6 +162,15 @@ function baseDecision(setup, llm, config, portfolioPolicy) {
     required_final_conviction: round(requiredFinalConviction, 3),
     final_conviction_gap: round(Math.max(0, requiredFinalConviction - score), 3),
     agreement,
+    final_score_components: {
+      deterministic: round(deterministicConviction * 0.62, 4),
+      llm: round(llmConfidence * 0.28, 4),
+      base: round(baseScore, 4),
+      agreement_bonus: round(agreementBonus, 4),
+      setup_quality_adjustment: qualityAdjustment,
+      runtime_penalty: round(runtimePenalty, 4),
+      risk_flag_penalty: round(riskFlagPenalty, 4)
+    },
     reason_codes: reasonCodes
   };
 }
@@ -234,7 +316,8 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
       final_conviction: candidate.final_conviction,
       required_final_conviction: candidate.required_final_conviction,
       final_conviction_gap: candidate.final_conviction_gap,
-      agreement: candidate.agreement
+      agreement: candidate.agreement,
+      components: candidate.final_score_components
     },
     evidence_summary: {
       why_selected: whySelected,
@@ -338,6 +421,7 @@ function buildInitialCandidates({ tradeSetups, llmSelection, portfolioPolicy, ri
       final_conviction: decision.final_conviction,
       required_final_conviction: decision.required_final_conviction,
       final_conviction_gap: decision.final_conviction_gap,
+      final_score_components: decision.final_score_components,
       execution_allowed: decision.execution_allowed && !riskBlocked,
       agreement: decision.agreement,
       reason_codes: [...decision.reason_codes],
@@ -494,6 +578,7 @@ export function buildFinalSelectionSnapshot({
         deterministic: 0.62,
         llm: 0.28,
         agreement_bonus: 0.07,
+        setup_quality_adjustment: "up to +/-0.06 from score gap, evidence quality, fundamentals, and directional support",
         disagreement_penalties: "0.09 to 0.18",
         runtime_and_risk_penalties: "dynamic"
       }
