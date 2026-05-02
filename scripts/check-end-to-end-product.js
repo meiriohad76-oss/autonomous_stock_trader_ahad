@@ -86,6 +86,11 @@ try {
   assert(app.config.twelveDataApiKey === "", "Placeholder Twelve Data key should be ignored by config.");
   assert(config.credential_warnings.some((item) => item.env === "TWELVE_DATA_API_KEY"), "Credential warnings should mention ignored Twelve Data placeholder.");
   assert(doctor.agents.worker_count === 12, `Expected 12 agency workers, got ${doctor.agents.worker_count}.`);
+  const cycle = await app.getAgencyCycleStatus({ window: "1h", limit: 20, minConviction: 0 });
+  assert(cycle.data_progress?.worker_count === 12, "Agency cycle should expose aggregate data-loading progress for all 12 workers.");
+  assert(cycle.workers.every((worker) => worker.data_state && typeof worker.progress_pct === "number" && worker.progress_label), "Every worker must expose data_state, progress_pct, and progress_label.");
+  assert(doctor.agents.data_progress?.worker_count === 12, "System doctor should include aggregate worker data progress.");
+  assert(doctor.agents.worker_readiness?.length === 12, "System doctor should include each worker readiness row.");
   assert(doctor.checks.some((item) => item.key === "allowed_universe" && item.status === "pass"), "Doctor should confirm the full allowed universe.");
   assert(doctor.checks.some((item) => item.key === "production_data_mode" && item.status === "pass"), "Seed/sample data must be blocked from decisions.");
   assert(doctor.checks.some((item) => item.key === "signals" && item.status === "pass"), "Doctor should see fresh live-like decision evidence.");
@@ -100,6 +105,7 @@ try {
         status: "ok",
         doctor_status: doctor.status,
         worker_count: doctor.agents.worker_count,
+        data_progress_pct: cycle.data_progress.pct,
         checks: doctor.checks.length,
         can_use_for_decisions: doctor.can_use_for_decisions,
         can_preview_orders: doctor.can_preview_orders,

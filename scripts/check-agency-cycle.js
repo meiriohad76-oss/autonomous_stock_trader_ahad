@@ -52,6 +52,16 @@ if (!cycle.workers || cycle.workers.length !== 12) {
   throw new Error(`Expected 12 agency workers, got ${cycle.workers?.length || 0}.`);
 }
 
+for (const worker of cycle.workers) {
+  if (!worker.data_state || typeof worker.progress_pct !== "number" || !worker.progress_label) {
+    throw new Error(`Worker ${worker.key} is missing data readiness/progress telemetry.`);
+  }
+}
+
+if (!cycle.data_progress || typeof cycle.data_progress.pct !== "number" || !cycle.data_progress.label) {
+  throw new Error("Agency cycle is missing aggregate data progress telemetry.");
+}
+
 if (cycle.current_worker_key !== "signals") {
   throw new Error(`Expected Signals Agent to be current blocker, got ${cycle.current_worker_key}.`);
 }
@@ -114,6 +124,10 @@ const readyCycle = buildAgencyCycleStatus({
 
 if (readyCycle.status !== "paper_ready" || !readyCycle.can_submit_orders) {
   throw new Error("Expected ready cycle to be paper-ready.");
+}
+
+if (!readyCycle.workers.every((worker) => typeof worker.progress_pct === "number" && worker.data_state)) {
+  throw new Error("Ready cycle workers should all expose data progress fields.");
 }
 
 const readyAdvance = chooseAgencyCycleAdvance(readyCycle);

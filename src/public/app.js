@@ -2045,16 +2045,25 @@ function renderAgencyRunLog() {
 function fallbackAgencyCycleWorkers() {
   return AGENCY_WORKERS.map((worker, index) => {
     const process = buildAgentProcess(worker.key);
+    const fallbackStatus = process?.status || "loading";
+    const fallbackReady = ["completed", "ready", "reviewing"].includes(fallbackStatus);
     return {
       step: index + 1,
       key: worker.key,
       label: worker.worker,
       view: worker.view,
-      status: process?.status || "loading",
+      status: fallbackStatus,
       status_class: process?.statusClass || "neutral",
       detail: process?.summary || "Waiting for the agency cycle endpoint.",
       metric: process?.outputs?.[0] || process?.mode || "loading",
-      automation_label: process?.mode || "automatic"
+      automation_label: process?.mode || "automatic",
+      data_state: fallbackReady ? "ready" : "loading",
+      data_state_label: fallbackReady ? "ready" : "loading",
+      data_ready: fallbackReady,
+      loading: !fallbackReady,
+      progress_pct: fallbackReady ? 100 : 15,
+      progress_label: fallbackReady ? "telemetry ready" : "waiting for telemetry",
+      remaining: fallbackReady ? [] : ["agency cycle endpoint"]
     };
   });
 }
@@ -2066,18 +2075,29 @@ function renderAgencyStatusStrip(workers = [], currentKey = null, { loading = fa
     <div class="agency-status-strip" aria-label="Agent status overview">
       ${rows
         .map(
-          (worker) => `
+          (worker) => {
+            const pct = Math.min(100, Math.max(0, Number(worker.progress_pct || 0)));
+            const dataState = worker.data_state || (loading ? "loading" : "observing");
+            const title = [
+              worker.detail,
+              worker.progress_label ? `Progress: ${worker.progress_label}` : null,
+              worker.remaining?.length ? `Remaining: ${worker.remaining.join(", ")}` : null
+            ].filter(Boolean).join(" | ");
+
+            return `
             <button
               type="button"
-              class="agency-status-pill ${worker.status_class || "neutral"} ${worker.key === currentKey ? "active" : ""} ${loading ? "loading" : ""}"
+              class="agency-status-pill ${worker.status_class || "neutral"} data-${escapeHtml(dataState)} ${worker.key === currentKey ? "active" : ""} ${loading || worker.loading ? "loading" : ""}"
               data-agent-view="${escapeHtml(worker.view || "overview")}"
-              title="${escapeHtml(worker.detail || "")}"
+              title="${escapeHtml(title)}"
             >
               <span>${String(worker.step || 0).padStart(2, "0")}</span>
               <strong>${escapeHtml(worker.label || prettyLabel(worker.key))}</strong>
-              <small>${escapeHtml(prettyLabel(worker.status || "loading"))}</small>
+              <small>${escapeHtml(prettyLabel(dataState))} - ${escapeHtml(worker.progress_label || prettyLabel(worker.status || "loading"))}</small>
+              <div class="agency-status-progress" aria-hidden="true"><i style="width: ${pct}%"></i></div>
             </button>
-          `
+          `;
+          }
         )
         .join("")}
     </div>
@@ -2113,6 +2133,7 @@ function renderAgencyCyclePanel(cycle) {
   }
 
   const currentWorker = cycle.workers.find((worker) => worker.key === cycle.current_worker_key) || cycle.workers[0];
+  const dataProgress = cycle.data_progress || {};
 
   return `
     <section class="agency-cycle-panel panel">
@@ -2122,14 +2143,28 @@ function renderAgencyCyclePanel(cycle) {
           <h2>${escapeHtml(currentWorker?.label || "Agency")} is the current stage</h2>
           <p>${escapeHtml(cycle.summary || "")}</p>
         </div>
-        <span class="sentiment-badge ${cycle.status_class || "neutral"}">${escapeHtml(prettyLabel(cycle.mode_label || cycle.status || "observing"))}</span>
+        <div class="agency-cycle-head-status">
+          <span class="sentiment-badge ${cycle.status_class || "neutral"}">${escapeHtml(prettyLabel(cycle.mode_label || cycle.status || "observing"))}</span>
+          <small>${escapeHtml(dataProgress.label || "Worker readiness is loading.")}</small>
+          <div class="agency-cycle-progress"><span style="width:${Math.min(100, Math.max(0, Number(dataProgress.pct || 0)))}%"></span></div>
+        </div>
       </div>
       ${renderAgencyStatusStrip(cycle.workers, cycle.current_worker_key)}
       <div class="agency-cycle-focus">
-        <div class="agency-cycle-current ${currentWorker?.status_class || "neutral"}">
+        <div class="agency-cycle-current ${currentWorker?.status_class || "neutral"} data-${escapeHtml(currentWorker?.data_state || "observing")}">
           <span>Step ${String(cycle.current_worker_step || currentWorker?.step || 1).padStart(2, "0")}</span>
           <strong>${escapeHtml(currentWorker?.label || "Current Worker")}</strong>
+          <div class="agency-current-readiness">
+            <b>${escapeHtml(prettyLabel(currentWorker?.data_state || "observing"))}</b>
+            <small>${escapeHtml(currentWorker?.progress_label || "")}</small>
+            <div class="agency-status-progress"><i style="width:${Math.min(100, Math.max(0, Number(currentWorker?.progress_pct || 0)))}%"></i></div>
+          </div>
           <p>${escapeHtml(currentWorker?.detail || "Waiting for telemetry.")}</p>
+          ${
+            currentWorker?.remaining?.length
+              ? `<ul class="agency-remaining-list">${currentWorker.remaining.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+              : ""
+          }
           <small>${escapeHtml(cycle.supervision || "")}</small>
         </div>
         <div class="agency-cycle-actions">
@@ -2163,11 +2198,12 @@ function renderAgencyCyclePanel(cycle) {
         ${cycle.workers
           .map(
             (worker) => `
-              <button type="button" class="agency-cycle-step ${worker.status_class || "neutral"} ${worker.key === cycle.current_worker_key ? "active" : ""}" data-agent-view="${escapeHtml(worker.view || "overview")}">
+              <button type="button" class="agency-cycle-step ${worker.status_class || "neutral"} data-${escapeHtml(worker.data_state || "observing")} ${worker.key === cycle.current_worker_key ? "active" : ""}" data-agent-view="${escapeHtml(worker.view || "overview")}">
                 <span>${String(worker.step).padStart(2, "0")}</span>
                 <strong>${escapeHtml(worker.label)}</strong>
-                <small>${escapeHtml(prettyLabel(worker.status))} - ${escapeHtml(worker.metric || "")}</small>
+                <small>${escapeHtml(prettyLabel(worker.data_state || worker.status))} - ${escapeHtml(worker.progress_label || worker.metric || "")}</small>
                 <em>${escapeHtml(worker.automation_label || "automatic")}</em>
+                <div class="agency-status-progress" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, Number(worker.progress_pct || 0)))}%"></i></div>
               </button>
             `
           )

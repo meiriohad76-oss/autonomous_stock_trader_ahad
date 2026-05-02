@@ -334,6 +334,15 @@ export function buildSystemDoctorSnapshot({
       worker_count: agencyCycle?.workers?.length || 0,
       current_worker: agencyCycle?.current_worker_label || null,
       agency_mode: agencyCycle?.mode || null,
+      data_progress: agencyCycle?.data_progress || null,
+      worker_readiness: (agencyCycle?.workers || []).map((worker) => ({
+        key: worker.key,
+        label: worker.label,
+        data_state: worker.data_state || null,
+        progress_pct: worker.progress_pct ?? null,
+        progress_label: worker.progress_label || null,
+        remaining: worker.remaining || []
+      })),
       final_selection: counts,
       risk_status: riskSnapshot?.status || positionMonitor?.risk_status || "unknown",
       broker_status: executionStatus?.status || broker.blocked_reason || "unknown"

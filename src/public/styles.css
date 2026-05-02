@@ -383,6 +383,43 @@ input:focus-visible {
   align-items: flex-start;
 }
 
+.agency-cycle-head-status {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-width: 190px;
+}
+
+.agency-cycle-head-status small {
+  max-width: 220px;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.agency-cycle-progress,
+.agency-status-progress {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.agency-cycle-progress {
+  width: 180px;
+  height: 7px;
+}
+
+.agency-cycle-progress span,
+.agency-status-progress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), var(--green));
+}
+
 .agency-cycle-head h2 {
   margin: 6px 0 6px;
   color: var(--text);
@@ -430,7 +467,7 @@ input:focus-visible {
   border-color: rgba(255, 84, 75, 0.24);
 }
 
-.agency-cycle-current span,
+.agency-cycle-current > span,
 .agency-cycle-actions > strong {
   color: var(--text-muted);
   font-size: 11px;
@@ -443,6 +480,42 @@ input:focus-visible {
   color: var(--text);
   font-size: 1.2rem;
   line-height: 1.2;
+}
+
+.agency-current-readiness {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.agency-current-readiness b {
+  color: var(--green);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agency-current-readiness small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agency-current-readiness .agency-status-progress {
+  grid-column: 1 / -1;
+}
+
+.agency-remaining-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .agency-cycle-actions ul {
@@ -462,10 +535,10 @@ input:focus-visible {
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   gap: 2px 8px;
   min-width: 0;
-  min-height: 58px;
+  min-height: 66px;
   padding: 9px 10px;
   border-radius: 10px;
   border: 1px solid rgba(173, 198, 255, 0.14);
@@ -497,6 +570,23 @@ input:focus-visible {
   background: var(--red);
 }
 
+.agency-status-pill.data-loading::before,
+.agency-cycle-step.data-loading {
+  border-color: rgba(255, 211, 106, 0.28);
+}
+
+.agency-status-pill.data-loading::before {
+  background: var(--yellow);
+}
+
+.agency-status-pill.data-gated::before {
+  background: #adc6ff;
+}
+
+.agency-status-pill.data-blocked::before {
+  background: var(--red);
+}
+
 .agency-status-pill.loading {
   opacity: 0.78;
 }
@@ -510,7 +600,7 @@ input:focus-visible {
   animation: status-scan 1.8s ease-in-out infinite;
 }
 
-.agency-status-pill span {
+.agency-status-pill > span {
   grid-row: span 2;
   display: inline-grid;
   place-items: center;
@@ -544,6 +634,28 @@ input:focus-visible {
   color: var(--text-muted);
   font-size: 10px;
   line-height: 1.2;
+}
+
+.agency-status-pill .agency-status-progress {
+  grid-column: 2;
+  width: 100%;
+  height: 4px;
+  margin-top: 4px;
+}
+
+.agency-status-pill.data-loading .agency-status-progress i,
+.agency-cycle-step.data-loading .agency-status-progress i {
+  background: linear-gradient(90deg, var(--yellow), var(--green));
+}
+
+.agency-status-pill.data-blocked .agency-status-progress i,
+.agency-cycle-step.data-blocked .agency-status-progress i {
+  background: linear-gradient(90deg, var(--red), var(--yellow));
+}
+
+.agency-status-pill.data-gated .agency-status-progress i,
+.agency-cycle-step.data-gated .agency-status-progress i {
+  background: linear-gradient(90deg, #adc6ff, var(--blue));
 }
 
 @keyframes status-scan {
@@ -592,7 +704,7 @@ input:focus-visible {
 }
 
 .agency-cycle-step > span {
-  grid-row: span 3;
+  grid-row: span 4;
   display: inline-grid;
   place-items: center;
   width: 28px;
@@ -615,6 +727,13 @@ input:focus-visible {
 .agency-cycle-step em {
   font-style: normal;
   color: var(--text-muted);
+}
+
+.agency-cycle-step .agency-status-progress {
+  grid-column: 2;
+  width: 100%;
+  height: 4px;
+  margin-top: 3px;
 }
 
 .primary-cycle-action {

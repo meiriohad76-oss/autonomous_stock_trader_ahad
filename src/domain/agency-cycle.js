@@ -145,8 +145,51 @@ function sourceIsFresh(source) {
   return source?.status === "fresh" && !source?.fallback_mode;
 }
 
-function workerStatus(status, detail) {
-  return { status, detail };
+function sourceIsPolling(source) {
+  return Boolean(source?.polling);
+}
+
+function sourceLabel(source, fallback) {
+  return source?.label || fallback;
+}
+
+function clampProgress(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+function defaultDataState(status) {
+  if (["complete", "ready", "reviewing", "paper_ready"].includes(status)) {
+    return "ready";
+  }
+  if (status === "review") {
+    return "review";
+  }
+  if (["blocked", "failed"].includes(status)) {
+    return "blocked";
+  }
+  if (status === "gated") {
+    return "gated";
+  }
+  if (status === "waiting") {
+    return "loading";
+  }
+  return "observing";
+}
+
+function dataStateLabel(value) {
+  return String(value || "observing").replace(/_/g, " ");
+}
+
+function dataReadyForState(value) {
+  return ["ready", "review", "gated"].includes(value);
+}
+
+function workerStatus(status, detail, data = {}) {
+  return { status, detail, data };
 }
 
 function statusClass(status) {
@@ -172,7 +215,11 @@ function automationLabel(value) {
   return String(value || "automatic").replace(/_/g, " ");
 }
 
-function buildWorker(base, index, status, detail, metric, action = base.action) {
+function buildWorker(base, index, status, detail, metric, action = base.action, data = {}) {
+  const dataState = data.data_state || defaultDataState(status);
+  const progressPct = clampProgress(data.progress_pct ?? (dataReadyForState(dataState) ? 100 : 0));
+  const remaining = Array.isArray(data.remaining) ? data.remaining.filter(Boolean) : [];
+
   return {
     step: index + 1,
     key: base.key,
@@ -185,7 +232,81 @@ function buildWorker(base, index, status, detail, metric, action = base.action) 
     status_class: statusClass(status),
     detail,
     metric,
+    data_state: dataState,
+    data_state_label: dataStateLabel(dataState),
+    data_ready: data.data_ready ?? dataReadyForState(dataState),
+    loading: Boolean(data.loading || dataState === "loading"),
+    progress_pct: progressPct,
+    progress_label: data.progress_label || `${progressPct}%`,
+    progress_current: data.progress_current ?? null,
+    progress_target: data.progress_target ?? null,
+    remaining,
     primary_action: action || null
+  };
+}
+
+function sourceProgress(keys, sources) {
+  const expected = keys
+    .map((key) => sources[key] ? { key, source: sources[key] } : null)
+    .filter(Boolean)
+    .filter(({ source }) => source.enabled !== false);
+  const completed = expected.filter(({ source }) => sourceIsFresh(source));
+  const polling = expected.some(({ source }) => sourceIsPolling(source));
+  const remaining = expected
+    .filter(({ source }) => !sourceIsFresh(source))
+    .map(({ key, source }) => sourceLabel(source, prettyKey(key)));
+
+  return {
+    current: completed.length,
+    target: expected.length,
+    pct: expected.length ? clampProgress((completed.length / expected.length) * 100) : 0,
+    polling,
+    remaining
+  };
+}
+
+function prettyKey(value) {
+  return String(value || "").replace(/_/g, " ");
+}
+
+function aggregateDataProgress(workers) {
+  const total = workers.length || 1;
+  const average = Math.round(workers.reduce((sum, worker) => sum + Number(worker.progress_pct || 0), 0) / total);
+  const counts = workers.reduce(
+    (acc, worker) => {
+      acc[worker.data_state] = (acc[worker.data_state] || 0) + 1;
+      if (worker.data_ready) {
+        acc.ready_total += 1;
+      }
+      if (worker.loading) {
+        acc.loading_total += 1;
+      }
+      return acc;
+    },
+    { ready_total: 0, loading_total: 0 }
+  );
+  const blocked = counts.blocked || 0;
+  const loading = counts.loading_total || 0;
+  const gated = counts.gated || 0;
+  const review = counts.review || 0;
+
+  return {
+    pct: clampProgress(average),
+    ready_count: counts.ready_total || 0,
+    loading_count: loading,
+    blocked_count: blocked,
+    gated_count: gated,
+    review_count: review,
+    worker_count: workers.length,
+    finished: loading === 0 && blocked === 0,
+    label:
+      loading > 0
+        ? `${loading} worker(s) still loading data`
+        : blocked > 0
+          ? `${blocked} worker(s) blocked`
+          : gated > 0
+            ? "Data loaded; execution gates remain supervised"
+            : "All worker data is ready"
   };
 }
 
@@ -375,56 +496,284 @@ export function buildAgencyCycleStatus({
   const pendingSec = secQueue?.pending_bootstrap_companies || 0;
   const freshDecisionEvidence = workflowStatus?.live_data?.fresh_decision_evidence_count || 0;
   const livePricingReady = Boolean(workflowStatus?.live_data?.live_pricing_ready);
+  const secLiveCount = Math.max(0, trackedCount - pendingSec);
+  const marketSourceProgress = sourceProgress(["market_data", "fundamental_market_data", "market_flow"], sources);
+  const signalSourceProgress = sourceProgress(
+    [
+      "live_news",
+      "marketaux_news",
+      "sec_form4",
+      "earnings_calendar",
+      "stocktwits_stream",
+      "trade_prints",
+      "market_flow",
+      "sec_13f"
+    ],
+    sources
+  );
+  const pricingProgress = livePricingReady ? 65 : marketSourceProgress.pct >= 67 ? 55 : marketSourceProgress.pct >= 34 ? 35 : 0;
+  const marketProgressPct = clampProgress(Math.max(marketSourceProgress.pct, pricingProgress));
+  const signalProgressPct = freshDecisionEvidence > 0
+    ? Math.max(75, signalSourceProgress.target ? signalSourceProgress.pct : 100)
+    : signalSourceProgress.pct;
+  const fundamentalsProgressPct = trackedCount ? secCoveragePct : 0;
+  const upstreamSelectionProgress = clampProgress((fundamentalsProgressPct + marketProgressPct + signalProgressPct) / 3);
+  const selectionProgressPct = tradableCount
+    ? 100
+    : setupCounts.watch
+      ? Math.max(85, upstreamSelectionProgress)
+      : upstreamSelectionProgress;
+  const llmProgressPct = llmSelection?.recommendations?.length ? 100 : Math.max(0, selectionProgressPct - 20);
+  const finalSelectionProgressPct = finalCounts.executable
+    ? 100
+    : finalCounts.review || finalCounts.watch
+      ? 90
+      : Math.max(0, Math.min(selectionProgressPct, llmProgressPct) - 10);
+  const executionCanPreview = Boolean(workflowStatus?.can_preview_orders) && (!finalSelection || finalCounts.executable > 0);
+  const executionProgressPct = broker.ready_for_order_submission
+    ? 100
+    : broker.configured
+      ? 80
+      : executionCanPreview
+        ? 70
+        : 40;
+  const portfolioProgressPct = broker.configured ? 100 : 45;
+  const learningProgressPct = clampProgress((Math.min(outcomeSample, 10) / 10) * 100);
 
   const statuses = {
     universe: trackedCount
-      ? workerStatus("complete", `${trackedCount} allowed names loaded.`)
-      : workerStatus("blocked", "Allowed universe is not loaded yet."),
+      ? workerStatus("complete", `${trackedCount} allowed names loaded.`, {
+          data_state: "ready",
+          progress_pct: 100,
+          progress_current: trackedCount,
+          progress_target: trackedCount,
+          progress_label: `${trackedCount}/${trackedCount} names loaded`
+        })
+      : workerStatus("blocked", "Allowed universe is not loaded yet.", {
+          data_state: "blocked",
+          progress_pct: 0,
+          progress_current: 0,
+          progress_target: 168,
+          progress_label: "0/168 names loaded",
+          remaining: ["S&P 100 + QQQ universe"]
+        }),
     fundamentals: trackedCount
       ? pendingSec
-        ? workerStatus("review", `${pendingSec} bootstrap rows still need SEC confirmation.`)
-        : workerStatus("complete", "SEC-backed fundamentals coverage is complete.")
-      : workerStatus("waiting", "Waiting for the Universe Agent."),
+        ? workerStatus("review", `${pendingSec} bootstrap rows still need SEC confirmation.`, {
+            data_state: "loading",
+            loading: true,
+            data_ready: false,
+            progress_pct: fundamentalsProgressPct,
+            progress_current: secLiveCount,
+            progress_target: trackedCount,
+            progress_label: `${secLiveCount}/${trackedCount} SEC-backed`,
+            remaining: [`${pendingSec} bootstrap fundamentals rows`]
+          })
+        : workerStatus("complete", "SEC-backed fundamentals coverage is complete.", {
+            data_state: "ready",
+            progress_pct: 100,
+            progress_current: trackedCount,
+            progress_target: trackedCount,
+            progress_label: `${trackedCount}/${trackedCount} SEC-backed`
+          })
+      : workerStatus("waiting", "Waiting for the Universe Agent.", {
+          data_state: "loading",
+          loading: true,
+          progress_pct: 0,
+          progress_label: "waiting for universe",
+          remaining: ["Universe Agent"]
+        }),
     market: livePricingReady || sourceIsFresh(sources.market_flow) || sourceIsFresh(sources.market_data) || sourceIsFresh(sources.fundamental_market_data)
-      ? workerStatus("complete", "Market and pricing context is available.")
-      : workerStatus("waiting", "Market context needs a pricing or flow refresh."),
+      ? workerStatus("complete", "Market and pricing context is available.", {
+          data_state: marketSourceProgress.remaining.length ? "loading" : "ready",
+          loading: marketSourceProgress.remaining.length > 0 || marketSourceProgress.polling,
+          data_ready: marketSourceProgress.remaining.length === 0,
+          progress_pct: marketProgressPct,
+          progress_current: marketSourceProgress.current,
+          progress_target: marketSourceProgress.target,
+          progress_label: `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh`,
+          remaining: marketSourceProgress.remaining
+        })
+      : workerStatus("waiting", "Market context needs a pricing or flow refresh.", {
+          data_state: "loading",
+          loading: true,
+          progress_pct: marketProgressPct,
+          progress_current: marketSourceProgress.current,
+          progress_target: marketSourceProgress.target,
+          progress_label: `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh`,
+          remaining: marketSourceProgress.remaining.length ? marketSourceProgress.remaining : ["live pricing", "market flow"]
+        }),
     signals: freshDecisionEvidence > 0
-      ? workerStatus("complete", `${freshDecisionEvidence} fresh decision evidence item(s) are available.`)
-      : workerStatus("blocked", "Fresh alerts/watch evidence is missing."),
+      ? workerStatus("complete", `${freshDecisionEvidence} fresh decision evidence item(s) are available.`, {
+          data_state: signalSourceProgress.remaining.length ? "loading" : "ready",
+          loading: signalSourceProgress.remaining.length > 0 || signalSourceProgress.polling,
+          data_ready: signalSourceProgress.remaining.length === 0,
+          progress_pct: signalProgressPct,
+          progress_current: signalSourceProgress.current,
+          progress_target: signalSourceProgress.target,
+          progress_label: `${freshDecisionEvidence} fresh evidence; ${signalSourceProgress.current}/${signalSourceProgress.target || 1} signal sources fresh`,
+          remaining: signalSourceProgress.remaining
+        })
+      : workerStatus("blocked", "Fresh alerts/watch evidence is missing.", {
+          data_state: "blocked",
+          progress_pct: signalProgressPct,
+          progress_current: signalSourceProgress.current,
+          progress_target: signalSourceProgress.target,
+          progress_label: `${signalSourceProgress.current}/${signalSourceProgress.target || 1} signal sources fresh`,
+          remaining: signalSourceProgress.remaining.length ? signalSourceProgress.remaining : ["fresh live news, filings, or money flow"]
+        }),
     policy: policyBlocked
-      ? workerStatus("blocked", portfolioPolicy?.summary || "Portfolio policy is blocking new selections.")
+      ? workerStatus("blocked", portfolioPolicy?.summary || "Portfolio policy is blocking new selections.", {
+          data_state: "blocked",
+          progress_pct: 0,
+          progress_label: "policy blocked",
+          remaining: portfolioPolicy?.hard_blocks || ["portfolio policy block"]
+        })
       : portfolioPolicy?.status === "caution"
-        ? workerStatus("review", portfolioPolicy.summary || "Portfolio policy has caution flags.")
-        : workerStatus("complete", portfolioPolicy?.summary || "Portfolio policy is available."),
+        ? workerStatus("review", portfolioPolicy.summary || "Portfolio policy has caution flags.", {
+            data_state: "review",
+            progress_pct: 90,
+            progress_label: "policy loaded with cautions"
+          })
+        : workerStatus("complete", portfolioPolicy?.summary || "Portfolio policy is available.", {
+            data_state: "ready",
+            progress_pct: 100,
+            progress_label: "policy loaded"
+          }),
     deterministic_selection: tradableCount
-      ? workerStatus("complete", `${tradableCount} deterministic buy/sell setup(s) can be reviewed.`)
+      ? workerStatus("complete", `${tradableCount} deterministic buy/sell setup(s) can be reviewed.`, {
+          data_state: "ready",
+          progress_pct: 100,
+          progress_current: tradableCount,
+          progress_target: Math.max(1, tradableCount),
+          progress_label: `${tradableCount} buy/sell setup(s)`
+        })
       : setupCounts.watch
-        ? workerStatus("review", `${setupCounts.watch} deterministic watch setup(s), no buy/sell candidate yet.`)
-        : workerStatus("waiting", "No deterministic setup clears the trade threshold."),
+        ? workerStatus("review", `${setupCounts.watch} deterministic watch setup(s), no buy/sell candidate yet.`, {
+            data_state: "review",
+            progress_pct: selectionProgressPct,
+            progress_current: setupCounts.watch,
+            progress_target: Math.max(1, setupCounts.watch),
+            progress_label: `${setupCounts.watch} watch setup(s)`,
+            remaining: ["buy/sell threshold"]
+          })
+        : workerStatus("waiting", "No deterministic setup clears the trade threshold.", {
+            data_state: upstreamSelectionProgress >= 75 ? "review" : "loading",
+            loading: upstreamSelectionProgress < 75,
+            data_ready: upstreamSelectionProgress >= 75,
+            progress_pct: selectionProgressPct,
+            progress_label: `inputs ${upstreamSelectionProgress}% ready`,
+            remaining: ["stronger aligned fundamentals, market, and signal inputs"]
+          }),
     llm_selection: llmSelection?.recommendations?.length
-      ? workerStatus(["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status) ? "review" : "complete", `${llmSelection.recommendations.length} LLM-lane review(s); mode ${automationLabel(llmSelection.mode)}.`)
-      : workerStatus("waiting", "LLM selection has not reviewed current candidates yet."),
+      ? workerStatus(["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status) ? "review" : "complete", `${llmSelection.recommendations.length} LLM-lane review(s); mode ${automationLabel(llmSelection.mode)}.`, {
+          data_state: ["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status) ? "review" : "ready",
+          progress_pct: 100,
+          progress_current: llmSelection.recommendations.length,
+          progress_target: llmSelection.recommendations.length,
+          progress_label: `${llmSelection.recommendations.length} reviews complete`,
+          remaining: ["external LLM provider"]?.filter(() => ["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status))
+        })
+      : workerStatus("waiting", "LLM selection has not reviewed current candidates yet.", {
+          data_state: "loading",
+          loading: true,
+          progress_pct: llmProgressPct,
+          progress_label: "waiting for selection candidates",
+          remaining: ["deterministic candidate pack"]
+        }),
     final_selection: policyBlocked
-      ? workerStatus("blocked", "Final Selection is blocked by Portfolio Policy.")
+      ? workerStatus("blocked", "Final Selection is blocked by Portfolio Policy.", {
+          data_state: "blocked",
+          progress_pct: 0,
+          progress_label: "policy blocked",
+          remaining: ["Portfolio Policy Agent"]
+        })
       : finalCounts.executable
-        ? workerStatus("ready", `${finalCounts.executable} final executable candidate(s) passed dual-selector and policy gates.`)
+        ? workerStatus("ready", `${finalCounts.executable} final executable candidate(s) passed dual-selector and policy gates.`, {
+            data_state: "ready",
+            progress_pct: 100,
+            progress_current: finalCounts.executable,
+            progress_target: Math.max(1, finalCounts.visible || finalCounts.executable),
+            progress_label: `${finalCounts.executable} executable final candidate(s)`
+          })
         : finalCounts.review || finalCounts.watch
-          ? workerStatus("review", `${finalCounts.review} review and ${finalCounts.watch} watch candidate(s), no final executable candidate.`)
-          : workerStatus("waiting", "No final selection candidate is available."),
+          ? workerStatus("review", `${finalCounts.review} review and ${finalCounts.watch} watch candidate(s), no final executable candidate.`, {
+              data_state: "review",
+              progress_pct: finalSelectionProgressPct,
+              progress_current: finalCounts.review + finalCounts.watch,
+              progress_target: Math.max(1, finalCounts.visible || finalCounts.review + finalCounts.watch),
+              progress_label: `${finalCounts.review + finalCounts.watch} review/watch candidate(s)`,
+              remaining: ["executable buy/sell candidate"]
+            })
+          : workerStatus("waiting", "No final selection candidate is available.", {
+              data_state: "loading",
+              loading: true,
+              progress_pct: finalSelectionProgressPct,
+              progress_label: "waiting for selector output",
+              remaining: ["deterministic and LLM selection output"]
+            }),
     risk: riskBlocked
-      ? workerStatus("blocked", riskSnapshot?.blocked_reason || "Portfolio risk hard block is active.")
-      : workerStatus("ready", `Risk status is ${riskSnapshot?.status || positionMonitor?.risk_status || "available"}.`),
+      ? workerStatus("blocked", riskSnapshot?.blocked_reason || "Portfolio risk hard block is active.", {
+          data_state: "blocked",
+          progress_pct: 0,
+          progress_label: "risk blocked",
+          remaining: riskSnapshot?.hard_blocks || [riskSnapshot?.blocked_reason || "risk hard block"]
+        })
+      : workerStatus("ready", `Risk status is ${riskSnapshot?.status || positionMonitor?.risk_status || "available"}.`, {
+          data_state: "ready",
+          progress_pct: 100,
+          progress_label: "risk checks complete"
+        }),
     execution: broker.ready_for_order_submission
-      ? workerStatus("paper_ready", "Alpaca paper submission is available behind confirmation gates.")
+      ? workerStatus("paper_ready", "Alpaca paper submission is available behind confirmation gates.", {
+          data_state: "ready",
+          progress_pct: 100,
+          progress_label: "paper submit gate ready"
+        })
       : broker.configured
-        ? workerStatus("gated", "Broker is configured, but paper submission is still guarded.")
-        : workerStatus("gated", "Broker credentials are not configured; previews only."),
+        ? workerStatus("gated", "Broker is configured, but paper submission is still guarded.", {
+            data_state: "gated",
+            progress_pct: executionProgressPct,
+            progress_label: "broker configured; submit guarded",
+            remaining: ["BROKER_SUBMIT_ENABLED=true"]
+          })
+        : workerStatus("gated", "Broker credentials are not configured; previews only.", {
+            data_state: "gated",
+            progress_pct: executionProgressPct,
+            progress_label: "broker credentials missing",
+            remaining: ["Alpaca paper credentials"]
+          }),
     portfolio: positionCount || openOrderCount
-      ? workerStatus("reviewing", `${positionCount} position(s), ${openOrderCount} open order(s).`)
-      : workerStatus("waiting", "No broker positions or open orders to monitor yet."),
+      ? workerStatus("reviewing", `${positionCount} position(s), ${openOrderCount} open order(s).`, {
+          data_state: "ready",
+          progress_pct: 100,
+          progress_current: positionCount + openOrderCount,
+          progress_target: positionCount + openOrderCount,
+          progress_label: `${positionCount} position(s), ${openOrderCount} order(s)`
+        })
+      : workerStatus("waiting", "No broker positions or open orders to monitor yet.", {
+          data_state: broker.configured ? "ready" : "gated",
+          progress_pct: portfolioProgressPct,
+          progress_label: broker.configured ? "broker monitor ready; no positions" : "broker monitor waiting for credentials",
+          remaining: broker.configured ? [] : ["broker account access"]
+        }),
     learning: outcomeSample >= 10
-      ? workerStatus("reviewing", `${outcomeSample} decisions/positions are available for learning.`)
-      : workerStatus("waiting", `Collecting baseline paper outcomes: ${outcomeSample}/10.`)
+      ? workerStatus("reviewing", `${outcomeSample} decisions/positions are available for learning.`, {
+          data_state: "ready",
+          progress_pct: 100,
+          progress_current: outcomeSample,
+          progress_target: 10,
+          progress_label: `${outcomeSample}/10 outcomes collected`
+        })
+      : workerStatus("waiting", `Collecting baseline paper outcomes: ${outcomeSample}/10.`, {
+          data_state: "loading",
+          loading: true,
+          progress_pct: learningProgressPct,
+          progress_current: outcomeSample,
+          progress_target: 10,
+          progress_label: `${outcomeSample}/10 outcomes collected`,
+          remaining: [`${Math.max(0, 10 - outcomeSample)} more paper outcomes`]
+        })
   };
 
   const workers = WORKERS.map((worker, index) => {
@@ -443,8 +792,10 @@ export function buildAgencyCycleStatus({
       portfolio: `${positionCount} pos / ${openOrderCount} ord`,
       learning: `${outcomeSample}/10 sample`
     }[worker.key];
-    return buildWorker(worker, index, status.status, status.detail, metric);
+    return buildWorker(worker, index, status.status, status.detail, metric, worker.action, status.data);
   });
+
+  const dataProgress = aggregateDataProgress(workers);
 
   const hasFinalSelection = Boolean(finalSelection);
   const canPreview = Boolean(workflowStatus?.can_preview_orders) && (!hasFinalSelection || finalCounts.executable > 0);
@@ -483,6 +834,7 @@ export function buildAgencyCycleStatus({
     can_use_for_decisions: canUseForDecisions,
     can_preview_orders: canPreview,
     can_submit_orders: canSubmit,
+    data_progress: dataProgress,
     workers,
     blockers: workflowStatus?.blockers || [],
     warnings: workflowStatus?.warnings || [],
