@@ -443,6 +443,151 @@ CREATE TABLE IF NOT EXISTS trade_setup_states (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (ticker, as_of, window)
 );
+CREATE TABLE IF NOT EXISTS llm_selection_reviews (
+  review_id TEXT PRIMARY KEY,
+  as_of TEXT NOT NULL,
+  window TEXT,
+  ticker TEXT NOT NULL,
+  company_name TEXT,
+  sector TEXT,
+  action TEXT NOT NULL,
+  confidence REAL,
+  selected INTEGER NOT NULL DEFAULT 0,
+  deterministic_action TEXT,
+  deterministic_conviction REAL,
+  disagreement_with_deterministic TEXT,
+  reviewer TEXT,
+  provider TEXT,
+  model TEXT,
+  mode TEXT,
+  status TEXT,
+  prompt_version TEXT,
+  rationale TEXT,
+  supporting_factors TEXT NOT NULL DEFAULT '[]',
+  concerns TEXT NOT NULL DEFAULT '[]',
+  missing_data TEXT NOT NULL DEFAULT '[]',
+  evidence_alignment TEXT,
+  risk_assessment TEXT,
+  confidence_reason TEXT,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (as_of, ticker)
+);
+CREATE TABLE IF NOT EXISTS final_selection_candidates (
+  candidate_id TEXT PRIMARY KEY,
+  as_of TEXT NOT NULL,
+  window TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  company_name TEXT,
+  sector TEXT,
+  deterministic_action TEXT,
+  deterministic_conviction REAL,
+  llm_action TEXT,
+  llm_confidence REAL,
+  agreement TEXT,
+  final_action TEXT NOT NULL,
+  final_conviction REAL,
+  required_final_conviction REAL,
+  final_conviction_gap REAL,
+  execution_allowed INTEGER NOT NULL DEFAULT 0,
+  position_size_pct REAL,
+  current_price REAL,
+  stop_loss REAL,
+  take_profit REAL,
+  reason_codes TEXT NOT NULL DEFAULT '[]',
+  policy_gates TEXT NOT NULL DEFAULT '[]',
+  score_components TEXT NOT NULL DEFAULT '{}',
+  selection_report_json TEXT NOT NULL DEFAULT '{}',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (as_of, window, ticker)
+);
+CREATE TABLE IF NOT EXISTS trading_selection_passes (
+  pass_id TEXT PRIMARY KEY,
+  as_of TEXT NOT NULL,
+  window TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  company_name TEXT,
+  sector TEXT,
+  final_action TEXT NOT NULL,
+  side TEXT,
+  final_conviction REAL,
+  position_size_pct REAL,
+  current_price REAL,
+  stop_loss REAL,
+  take_profit REAL,
+  estimated_notional_usd REAL,
+  report_status TEXT,
+  final_reason TEXT,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (as_of, window, ticker, final_action)
+);
+CREATE TABLE IF NOT EXISTS risk_snapshots (
+  snapshot_id TEXT PRIMARY KEY,
+  as_of TEXT NOT NULL,
+  status TEXT NOT NULL,
+  equity REAL,
+  buying_power REAL,
+  gross_exposure_pct REAL,
+  open_orders INTEGER,
+  position_count INTEGER,
+  hard_blocks TEXT NOT NULL DEFAULT '[]',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (as_of)
+);
+CREATE TABLE IF NOT EXISTS position_monitor_snapshots (
+  snapshot_id TEXT PRIMARY KEY,
+  as_of TEXT NOT NULL,
+  status TEXT,
+  risk_status TEXT,
+  position_count INTEGER,
+  open_order_count INTEGER,
+  review_count INTEGER,
+  close_candidate_count INTEGER,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (as_of)
+);
+CREATE TABLE IF NOT EXISTS execution_intents (
+  intent_id TEXT PRIMARY KEY,
+  as_of TEXT NOT NULL,
+  ticker TEXT,
+  action TEXT,
+  side TEXT,
+  allowed INTEGER NOT NULL DEFAULT 0,
+  execution_allowed INTEGER NOT NULL DEFAULT 0,
+  broker_ready INTEGER NOT NULL DEFAULT 0,
+  dry_run INTEGER NOT NULL DEFAULT 1,
+  estimated_notional_usd REAL,
+  estimated_quantity REAL,
+  current_price REAL,
+  blocked_reason TEXT,
+  risk_allowed INTEGER,
+  risk_blocked_reason TEXT,
+  order_json TEXT NOT NULL DEFAULT '{}',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (as_of, ticker, action)
+);
+CREATE TABLE IF NOT EXISTS agency_cycle_states (
+  cycle_id TEXT PRIMARY KEY,
+  as_of TEXT NOT NULL,
+  mode TEXT,
+  status TEXT,
+  baseline_ready INTEGER NOT NULL DEFAULT 0,
+  data_progress_pct REAL,
+  current_worker_key TEXT,
+  can_use_for_decisions INTEGER NOT NULL DEFAULT 0,
+  can_preview_orders INTEGER NOT NULL DEFAULT 0,
+  can_submit_orders INTEGER NOT NULL DEFAULT 0,
+  worker_count INTEGER,
+  executable_count INTEGER,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (as_of)
+);
 `;
 
 const POSTGRES_FUNDAMENTALS_SCHEMA_SQL = `
@@ -646,6 +791,151 @@ CREATE TABLE IF NOT EXISTS trade_setup_states (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (ticker, as_of, window)
 );
+CREATE TABLE IF NOT EXISTS llm_selection_reviews (
+  review_id TEXT PRIMARY KEY,
+  as_of TIMESTAMPTZ NOT NULL,
+  window TEXT,
+  ticker TEXT NOT NULL,
+  company_name TEXT,
+  sector TEXT,
+  action TEXT NOT NULL,
+  confidence NUMERIC(10,6),
+  selected BOOLEAN NOT NULL DEFAULT FALSE,
+  deterministic_action TEXT,
+  deterministic_conviction NUMERIC(10,6),
+  disagreement_with_deterministic TEXT,
+  reviewer TEXT,
+  provider TEXT,
+  model TEXT,
+  mode TEXT,
+  status TEXT,
+  prompt_version TEXT,
+  rationale TEXT,
+  supporting_factors TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  concerns TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  missing_data TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  evidence_alignment TEXT,
+  risk_assessment TEXT,
+  confidence_reason TEXT,
+  payload_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (as_of, ticker)
+);
+CREATE TABLE IF NOT EXISTS final_selection_candidates (
+  candidate_id TEXT PRIMARY KEY,
+  as_of TIMESTAMPTZ NOT NULL,
+  window TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  company_name TEXT,
+  sector TEXT,
+  deterministic_action TEXT,
+  deterministic_conviction NUMERIC(10,6),
+  llm_action TEXT,
+  llm_confidence NUMERIC(10,6),
+  agreement TEXT,
+  final_action TEXT NOT NULL,
+  final_conviction NUMERIC(10,6),
+  required_final_conviction NUMERIC(10,6),
+  final_conviction_gap NUMERIC(10,6),
+  execution_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+  position_size_pct NUMERIC(10,6),
+  current_price NUMERIC(18,6),
+  stop_loss NUMERIC(18,6),
+  take_profit NUMERIC(18,6),
+  reason_codes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  policy_gates JSONB NOT NULL DEFAULT '[]'::JSONB,
+  score_components JSONB NOT NULL DEFAULT '{}'::JSONB,
+  selection_report_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  payload_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (as_of, window, ticker)
+);
+CREATE TABLE IF NOT EXISTS trading_selection_passes (
+  pass_id TEXT PRIMARY KEY,
+  as_of TIMESTAMPTZ NOT NULL,
+  window TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  company_name TEXT,
+  sector TEXT,
+  final_action TEXT NOT NULL,
+  side TEXT,
+  final_conviction NUMERIC(10,6),
+  position_size_pct NUMERIC(10,6),
+  current_price NUMERIC(18,6),
+  stop_loss NUMERIC(18,6),
+  take_profit NUMERIC(18,6),
+  estimated_notional_usd NUMERIC(18,2),
+  report_status TEXT,
+  final_reason TEXT,
+  payload_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (as_of, window, ticker, final_action)
+);
+CREATE TABLE IF NOT EXISTS risk_snapshots (
+  snapshot_id TEXT PRIMARY KEY,
+  as_of TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL,
+  equity NUMERIC(18,2),
+  buying_power NUMERIC(18,2),
+  gross_exposure_pct NUMERIC(10,6),
+  open_orders INTEGER,
+  position_count INTEGER,
+  hard_blocks TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  payload_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (as_of)
+);
+CREATE TABLE IF NOT EXISTS position_monitor_snapshots (
+  snapshot_id TEXT PRIMARY KEY,
+  as_of TIMESTAMPTZ NOT NULL,
+  status TEXT,
+  risk_status TEXT,
+  position_count INTEGER,
+  open_order_count INTEGER,
+  review_count INTEGER,
+  close_candidate_count INTEGER,
+  payload_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (as_of)
+);
+CREATE TABLE IF NOT EXISTS execution_intents (
+  intent_id TEXT PRIMARY KEY,
+  as_of TIMESTAMPTZ NOT NULL,
+  ticker TEXT,
+  action TEXT,
+  side TEXT,
+  allowed BOOLEAN NOT NULL DEFAULT FALSE,
+  execution_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+  broker_ready BOOLEAN NOT NULL DEFAULT FALSE,
+  dry_run BOOLEAN NOT NULL DEFAULT TRUE,
+  estimated_notional_usd NUMERIC(18,2),
+  estimated_quantity NUMERIC(18,6),
+  current_price NUMERIC(18,6),
+  blocked_reason TEXT,
+  risk_allowed BOOLEAN,
+  risk_blocked_reason TEXT,
+  order_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  payload_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (as_of, ticker, action)
+);
+CREATE TABLE IF NOT EXISTS agency_cycle_states (
+  cycle_id TEXT PRIMARY KEY,
+  as_of TIMESTAMPTZ NOT NULL,
+  mode TEXT,
+  status TEXT,
+  baseline_ready BOOLEAN NOT NULL DEFAULT FALSE,
+  data_progress_pct NUMERIC(10,6),
+  current_worker_key TEXT,
+  can_use_for_decisions BOOLEAN NOT NULL DEFAULT FALSE,
+  can_preview_orders BOOLEAN NOT NULL DEFAULT FALSE,
+  can_submit_orders BOOLEAN NOT NULL DEFAULT FALSE,
+  worker_count INTEGER,
+  executable_count INTEGER,
+  payload_json JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (as_of)
+);
 `;
 
 const FUNDAMENTAL_ROW_SELECTS = {
@@ -661,7 +951,14 @@ const FUNDAMENTAL_ROW_SELECTS = {
 
 const AGENT_ROW_SELECTS = {
   macroRegimeStates: "SELECT * FROM macro_regime_states ORDER BY as_of DESC, window ASC",
-  tradeSetupStates: "SELECT * FROM trade_setup_states ORDER BY as_of DESC, conviction DESC, ticker ASC"
+  tradeSetupStates: "SELECT * FROM trade_setup_states ORDER BY as_of DESC, conviction DESC, ticker ASC",
+  llmSelectionReviews: "SELECT * FROM llm_selection_reviews ORDER BY as_of DESC, confidence DESC, ticker ASC",
+  finalSelectionCandidates: "SELECT * FROM final_selection_candidates ORDER BY as_of DESC, execution_allowed DESC, final_conviction DESC, ticker ASC",
+  tradingSelectionPasses: "SELECT * FROM trading_selection_passes ORDER BY as_of DESC, final_conviction DESC, ticker ASC",
+  riskSnapshots: "SELECT * FROM risk_snapshots ORDER BY as_of DESC",
+  positionMonitorSnapshots: "SELECT * FROM position_monitor_snapshots ORDER BY as_of DESC",
+  executionIntents: "SELECT * FROM execution_intents ORDER BY as_of DESC",
+  agencyCycleStates: "SELECT * FROM agency_cycle_states ORDER BY as_of DESC"
 };
 
 function reviveFundamentals(snapshot) {
@@ -810,6 +1107,311 @@ function buildFundamentalWarehouseRows(store) {
   };
 }
 
+function finiteOrNull(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function integerOrNull(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+}
+
+function boolInt(value) {
+  return value ? 1 : 0;
+}
+
+function dbBool(value) {
+  return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
+}
+
+function cleanPayload(value, fallback = {}) {
+  return scrubLegacyPlaceholderMetadata(value || fallback) || fallback;
+}
+
+function historyRows(store, key, limit = 500) {
+  return (Array.isArray(store[key]) ? store[key] : []).slice(0, limit);
+}
+
+function snapshotStamp(snapshot) {
+  return snapshot?.as_of || snapshot?.asOf || snapshot?.generated_at || snapshot?.at || new Date().toISOString();
+}
+
+function candidatePricePlan(candidate = {}) {
+  const setup = candidate.setup_for_execution || candidate.setup || {};
+  return {
+    current_price: finiteOrNull(setup.current_price ?? candidate.selection_report?.trade_plan?.current_price),
+    stop_loss: finiteOrNull(setup.stop_loss ?? candidate.selection_report?.trade_plan?.stop_loss),
+    take_profit: finiteOrNull(setup.take_profit ?? candidate.selection_report?.trade_plan?.take_profit),
+    estimated_notional_usd: finiteOrNull(candidate.selection_report?.trade_plan?.estimated_notional_usd)
+  };
+}
+
+function buildLlmSelectionRows(store) {
+  const rows = [];
+  for (const snapshot of historyRows(store, "llmSelectionHistory")) {
+    const asOf = snapshotStamp(snapshot);
+    const recommendations = snapshot.recommendations || (snapshot.recommendation ? [snapshot.recommendation] : []);
+    for (const recommendation of recommendations) {
+      if (!recommendation?.ticker) {
+        continue;
+      }
+      rows.push({
+        review_id: `${asOf}:${recommendation.ticker}`,
+        as_of: asOf,
+        window: snapshot.window || null,
+        ticker: recommendation.ticker,
+        company_name: recommendation.company_name || null,
+        sector: recommendation.sector || null,
+        action: recommendation.action || "watch",
+        confidence: finiteOrNull(recommendation.confidence),
+        selected: Boolean(recommendation.selected),
+        deterministic_action: recommendation.deterministic_action || null,
+        deterministic_conviction: finiteOrNull(recommendation.deterministic_conviction),
+        disagreement_with_deterministic: recommendation.disagreement_with_deterministic || null,
+        reviewer: recommendation.reviewer || null,
+        provider: snapshot.provider || null,
+        model: snapshot.model || null,
+        mode: snapshot.mode || null,
+        status: snapshot.status || null,
+        prompt_version: snapshot.prompt_version || null,
+        rationale: recommendation.rationale || null,
+        supporting_factors: recommendation.supporting_factors || [],
+        concerns: recommendation.concerns || [],
+        missing_data: recommendation.missing_data || [],
+        evidence_alignment: recommendation.evidence_alignment || null,
+        risk_assessment: recommendation.risk_assessment || null,
+        confidence_reason: recommendation.confidence_reason || null,
+        payload_json: cleanPayload({
+          snapshot: {
+            as_of: asOf,
+            enabled: snapshot.enabled,
+            configured: snapshot.configured,
+            provider: snapshot.provider,
+            model: snapshot.model,
+            mode: snapshot.mode,
+            status: snapshot.status,
+            prompt_version: snapshot.prompt_version,
+            algorithm: snapshot.algorithm
+          },
+          recommendation
+        })
+      });
+    }
+  }
+  return rows;
+}
+
+function buildFinalSelectionRows(store) {
+  const rows = [];
+  for (const snapshot of historyRows(store, "finalSelectionHistory")) {
+    const asOf = snapshotStamp(snapshot);
+    const window = snapshot.window || "default";
+    const candidates = snapshot.candidates || (snapshot.candidate ? [snapshot.candidate] : []);
+    for (const candidate of candidates) {
+      if (!candidate?.ticker) {
+        continue;
+      }
+      const plan = candidatePricePlan(candidate);
+      rows.push({
+        candidate_id: `${asOf}:${window}:${candidate.ticker}`,
+        as_of: asOf,
+        window,
+        ticker: candidate.ticker,
+        company_name: candidate.company_name || null,
+        sector: candidate.sector || null,
+        deterministic_action: candidate.deterministic_action || null,
+        deterministic_conviction: finiteOrNull(candidate.deterministic_conviction),
+        llm_action: candidate.llm_action || null,
+        llm_confidence: finiteOrNull(candidate.llm_confidence),
+        agreement: candidate.agreement || null,
+        final_action: candidate.final_action || "watch",
+        final_conviction: finiteOrNull(candidate.final_conviction),
+        required_final_conviction: finiteOrNull(candidate.required_final_conviction),
+        final_conviction_gap: finiteOrNull(candidate.final_conviction_gap),
+        execution_allowed: Boolean(candidate.execution_allowed),
+        position_size_pct: finiteOrNull(candidate.position_size_pct),
+        current_price: plan.current_price,
+        stop_loss: plan.stop_loss,
+        take_profit: plan.take_profit,
+        reason_codes: candidate.reason_codes || [],
+        policy_gates: candidate.policy_gates || [],
+        score_components: candidate.final_score_components || {},
+        selection_report_json: candidate.selection_report || {},
+        payload_json: cleanPayload({
+          snapshot: {
+            as_of: asOf,
+            window,
+            counts: snapshot.counts || {},
+            algorithm: snapshot.algorithm || null,
+            llm_agent: snapshot.llm_agent || null,
+            portfolio_policy: snapshot.portfolio_policy || null
+          },
+          candidate
+        })
+      });
+    }
+  }
+  return rows;
+}
+
+function buildTradingSelectionPassRows(store) {
+  const rowsById = new Map();
+  for (const snapshot of historyRows(store, "finalSelectionHistory")) {
+    const asOf = snapshotStamp(snapshot);
+    const window = snapshot.window || "default";
+    const candidates = snapshot.candidates || (snapshot.candidate ? [snapshot.candidate] : []);
+    for (const candidate of candidates) {
+      if (!candidate?.ticker || !candidate.execution_allowed) {
+        continue;
+      }
+      const plan = candidatePricePlan(candidate);
+      const reportPlan = candidate.selection_report?.trade_plan || {};
+      const row = {
+        pass_id: `${asOf}:${window}:${candidate.ticker}:${candidate.final_action}`,
+        as_of: asOf,
+        window,
+        ticker: candidate.ticker,
+        company_name: candidate.company_name || null,
+        sector: candidate.sector || null,
+        final_action: candidate.final_action,
+        side: reportPlan.side || (candidate.final_action === "long" ? "buy" : candidate.final_action === "short" ? "sell_short" : null),
+        final_conviction: finiteOrNull(candidate.final_conviction),
+        position_size_pct: finiteOrNull(candidate.position_size_pct),
+        current_price: plan.current_price,
+        stop_loss: plan.stop_loss,
+        take_profit: plan.take_profit,
+        estimated_notional_usd: plan.estimated_notional_usd,
+        report_status: candidate.selection_report?.status || null,
+        final_reason: candidate.final_reason || null,
+        payload_json: cleanPayload({
+          snapshot: {
+            as_of: asOf,
+            window,
+            counts: snapshot.counts || {}
+          },
+          candidate
+        })
+      };
+      rowsById.set(row.pass_id, row);
+    }
+  }
+  for (const pass of historyRows(store, "tradingSelectionPassHistory")) {
+    const candidate = pass.candidate || {};
+    if (!candidate.ticker) {
+      continue;
+    }
+    const asOf = pass.as_of || snapshotStamp(candidate);
+    const window = pass.window || "default";
+    const plan = candidatePricePlan(candidate);
+    const row = {
+      pass_id: pass.id || `${asOf}:${window}:${candidate.ticker}:${candidate.final_action}`,
+      as_of: asOf,
+      window,
+      ticker: candidate.ticker,
+      company_name: candidate.company_name || null,
+      sector: candidate.sector || null,
+      final_action: candidate.final_action || "long",
+      side: candidate.selection_report?.trade_plan?.side || null,
+      final_conviction: finiteOrNull(candidate.final_conviction),
+      position_size_pct: finiteOrNull(candidate.position_size_pct),
+      current_price: plan.current_price,
+      stop_loss: plan.stop_loss,
+      take_profit: plan.take_profit,
+      estimated_notional_usd: plan.estimated_notional_usd,
+      report_status: candidate.selection_report?.status || null,
+      final_reason: candidate.final_reason || null,
+      payload_json: cleanPayload(pass)
+    };
+    rowsById.set(row.pass_id, row);
+  }
+  return [...rowsById.values()];
+}
+
+function buildRiskSnapshotRows(store) {
+  return historyRows(store, "riskSnapshotHistory").map((snapshot) => {
+    const asOf = snapshotStamp(snapshot);
+    return {
+      snapshot_id: `risk:${asOf}`,
+      as_of: asOf,
+      status: snapshot.status || "unknown",
+      equity: finiteOrNull(snapshot.equity),
+      buying_power: finiteOrNull(snapshot.buying_power),
+      gross_exposure_pct: finiteOrNull(snapshot.gross_exposure_pct),
+      open_orders: integerOrNull(snapshot.open_orders),
+      position_count: Array.isArray(snapshot.positions) ? snapshot.positions.length : integerOrNull(snapshot.position_count),
+      hard_blocks: snapshot.hard_blocks || [],
+      payload_json: cleanPayload(snapshot)
+    };
+  });
+}
+
+function buildPositionMonitorRows(store) {
+  return historyRows(store, "positionMonitorHistory").map((snapshot) => {
+    const asOf = snapshotStamp(snapshot);
+    return {
+      snapshot_id: `position:${asOf}`,
+      as_of: asOf,
+      status: snapshot.status || null,
+      risk_status: snapshot.risk_status || null,
+      position_count: integerOrNull(snapshot.position_count),
+      open_order_count: integerOrNull(snapshot.open_order_count),
+      review_count: integerOrNull(snapshot.review_count),
+      close_candidate_count: integerOrNull(snapshot.close_candidate_count),
+      payload_json: cleanPayload(snapshot)
+    };
+  });
+}
+
+function buildExecutionIntentRows(store) {
+  return historyRows(store, "executionIntentHistory").map((row) => {
+    const preview = row.preview || row;
+    const intent = preview.intent || preview.preview?.intent || {};
+    const risk = preview.risk || preview.preview?.risk || null;
+    const asOf = row.as_of || snapshotStamp(preview);
+    return {
+      intent_id: row.id || `${asOf}:${intent.ticker || row.ticker || "unknown"}:${intent.action || row.action || "unknown"}`,
+      as_of: asOf,
+      ticker: intent.ticker || row.ticker || null,
+      action: intent.action || row.action || null,
+      side: intent.side || null,
+      allowed: Boolean(intent.allowed),
+      execution_allowed: Boolean(preview.execution_allowed ?? preview.submitted),
+      broker_ready: Boolean(preview.broker_ready || preview.broker?.ready_for_order_submission),
+      dry_run: preview.dry_run !== false,
+      estimated_notional_usd: finiteOrNull(intent.estimated_notional_usd),
+      estimated_quantity: finiteOrNull(intent.estimated_quantity),
+      current_price: finiteOrNull(intent.current_price),
+      blocked_reason: intent.blocked_reason || null,
+      risk_allowed: risk ? Boolean(risk.allowed) : null,
+      risk_blocked_reason: risk?.blocked_reason || null,
+      order_json: intent.order || preview.order || {},
+      payload_json: cleanPayload(row)
+    };
+  });
+}
+
+function buildAgencyCycleRows(store) {
+  return historyRows(store, "agencyCycleHistory").map((snapshot) => {
+    const asOf = snapshotStamp(snapshot);
+    return {
+      cycle_id: `agency:${asOf}`,
+      as_of: asOf,
+      mode: snapshot.mode || null,
+      status: snapshot.status || null,
+      baseline_ready: Boolean(snapshot.baseline_ready),
+      data_progress_pct: finiteOrNull(snapshot.data_progress?.pct ?? snapshot.data_progress_pct),
+      current_worker_key: snapshot.current_worker_key || null,
+      can_use_for_decisions: Boolean(snapshot.can_use_for_decisions),
+      can_preview_orders: Boolean(snapshot.can_preview_orders),
+      can_submit_orders: Boolean(snapshot.can_submit_orders),
+      worker_count: Array.isArray(snapshot.workers) ? snapshot.workers.length : integerOrNull(snapshot.worker_count),
+      executable_count: integerOrNull(snapshot.final_selection?.counts?.executable ?? snapshot.counts?.executable),
+      payload_json: cleanPayload(snapshot)
+    };
+  });
+}
+
 function buildAgentRows(store, config) {
   const macroSnapshot = buildMacroRegimeSnapshot(store, {
     window: config.defaultWindow || "1h"
@@ -885,7 +1487,14 @@ function buildAgentRows(store, config) {
 
   return {
     macroRegimeStates,
-    tradeSetupStates
+    tradeSetupStates,
+    llmSelectionReviews: buildLlmSelectionRows(store),
+    finalSelectionCandidates: buildFinalSelectionRows(store),
+    tradingSelectionPasses: buildTradingSelectionPassRows(store),
+    riskSnapshots: buildRiskSnapshotRows(store),
+    positionMonitorSnapshots: buildPositionMonitorRows(store),
+    executionIntents: buildExecutionIntentRows(store),
+    agencyCycleStates: buildAgencyCycleRows(store)
   };
 }
 
@@ -920,6 +1529,119 @@ function reviveAgentRows(rows = {}) {
       evidence_positive: parseTextArray(row.evidence_positive),
       evidence_negative: parseTextArray(row.evidence_negative),
       score_metadata: parsePayload(row.score_metadata, {})
+    })),
+    llmSelectionHistory: (rows.llmSelectionReviews || []).map((row) => ({
+      ...parsePayload(row.payload_json, {}),
+      as_of: row.as_of,
+      recommendation: {
+        ticker: row.ticker,
+        company_name: row.company_name,
+        sector: row.sector,
+        action: row.action,
+        confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence),
+        selected: dbBool(row.selected),
+        deterministic_action: row.deterministic_action,
+        deterministic_conviction:
+          row.deterministic_conviction === null || row.deterministic_conviction === undefined
+            ? null
+            : Number(row.deterministic_conviction),
+        disagreement_with_deterministic: row.disagreement_with_deterministic,
+        reviewer: row.reviewer,
+        rationale: row.rationale,
+        supporting_factors: parseTextArray(row.supporting_factors),
+        concerns: parseTextArray(row.concerns),
+        missing_data: parseTextArray(row.missing_data),
+        evidence_alignment: row.evidence_alignment,
+        risk_assessment: row.risk_assessment,
+        confidence_reason: row.confidence_reason
+      }
+    })),
+    finalSelectionHistory: (rows.finalSelectionCandidates || []).map((row) => ({
+      as_of: row.as_of,
+      window: row.window,
+      candidate: {
+        ...parsePayload(row.payload_json, {})?.candidate,
+        ticker: row.ticker,
+        company_name: row.company_name,
+        sector: row.sector,
+        deterministic_action: row.deterministic_action,
+        deterministic_conviction:
+          row.deterministic_conviction === null || row.deterministic_conviction === undefined
+            ? null
+            : Number(row.deterministic_conviction),
+        llm_action: row.llm_action,
+        llm_confidence: row.llm_confidence === null || row.llm_confidence === undefined ? null : Number(row.llm_confidence),
+        agreement: row.agreement,
+        final_action: row.final_action,
+        final_conviction: row.final_conviction === null || row.final_conviction === undefined ? null : Number(row.final_conviction),
+        required_final_conviction:
+          row.required_final_conviction === null || row.required_final_conviction === undefined
+            ? null
+            : Number(row.required_final_conviction),
+        final_conviction_gap:
+          row.final_conviction_gap === null || row.final_conviction_gap === undefined ? null : Number(row.final_conviction_gap),
+        execution_allowed: dbBool(row.execution_allowed),
+        position_size_pct: row.position_size_pct === null || row.position_size_pct === undefined ? null : Number(row.position_size_pct),
+        reason_codes: parseTextArray(row.reason_codes),
+        policy_gates: parsePayload(row.policy_gates, []),
+        final_score_components: parsePayload(row.score_components, {}),
+        selection_report: parsePayload(row.selection_report_json, {})
+      }
+    })),
+    tradingSelectionPassHistory: (rows.tradingSelectionPasses || []).map((row) => ({
+      id: row.pass_id,
+      as_of: row.as_of,
+      window: row.window,
+      candidate: parsePayload(row.payload_json, {})?.candidate || {
+        ticker: row.ticker,
+        company_name: row.company_name,
+        sector: row.sector,
+        final_action: row.final_action,
+        final_conviction: row.final_conviction === null || row.final_conviction === undefined ? null : Number(row.final_conviction),
+        position_size_pct: row.position_size_pct === null || row.position_size_pct === undefined ? null : Number(row.position_size_pct),
+        execution_allowed: true
+      }
+    })),
+    riskSnapshotHistory: (rows.riskSnapshots || []).map((row) => ({
+      ...parsePayload(row.payload_json, {}),
+      as_of: row.as_of,
+      status: row.status,
+      equity: row.equity === null || row.equity === undefined ? null : Number(row.equity),
+      buying_power: row.buying_power === null || row.buying_power === undefined ? null : Number(row.buying_power),
+      gross_exposure_pct:
+        row.gross_exposure_pct === null || row.gross_exposure_pct === undefined ? null : Number(row.gross_exposure_pct),
+      open_orders: row.open_orders === null || row.open_orders === undefined ? null : Number(row.open_orders),
+      hard_blocks: parseTextArray(row.hard_blocks)
+    })),
+    positionMonitorHistory: (rows.positionMonitorSnapshots || []).map((row) => ({
+      ...parsePayload(row.payload_json, {}),
+      as_of: row.as_of,
+      status: row.status,
+      risk_status: row.risk_status,
+      position_count: row.position_count === null || row.position_count === undefined ? null : Number(row.position_count),
+      open_order_count: row.open_order_count === null || row.open_order_count === undefined ? null : Number(row.open_order_count),
+      review_count: row.review_count === null || row.review_count === undefined ? null : Number(row.review_count),
+      close_candidate_count:
+        row.close_candidate_count === null || row.close_candidate_count === undefined ? null : Number(row.close_candidate_count)
+    })),
+    executionIntentHistory: (rows.executionIntents || []).map((row) => ({
+      id: row.intent_id,
+      as_of: row.as_of,
+      ticker: row.ticker,
+      action: row.action,
+      preview: parsePayload(row.payload_json, {})?.preview || parsePayload(row.payload_json, {})
+    })),
+    agencyCycleHistory: (rows.agencyCycleStates || []).map((row) => ({
+      ...parsePayload(row.payload_json, {}),
+      as_of: row.as_of,
+      mode: row.mode,
+      status: row.status,
+      baseline_ready: dbBool(row.baseline_ready),
+      data_progress_pct: row.data_progress_pct === null || row.data_progress_pct === undefined ? null : Number(row.data_progress_pct),
+      current_worker_key: row.current_worker_key,
+      can_use_for_decisions: dbBool(row.can_use_for_decisions),
+      can_preview_orders: dbBool(row.can_preview_orders),
+      can_submit_orders: dbBool(row.can_submit_orders)
     }))
   };
 }
@@ -1074,6 +1796,13 @@ function hydrateStoreFromRows(store, rows) {
   const revivedAgents = reviveAgentRows(rows.agents);
   store.macroRegimeHistory = revivedAgents.macroRegimeHistory;
   store.tradeSetupHistory = revivedAgents.tradeSetupHistory;
+  store.llmSelectionHistory = revivedAgents.llmSelectionHistory;
+  store.finalSelectionHistory = revivedAgents.finalSelectionHistory;
+  store.tradingSelectionPassHistory = revivedAgents.tradingSelectionPassHistory;
+  store.riskSnapshotHistory = revivedAgents.riskSnapshotHistory;
+  store.positionMonitorHistory = revivedAgents.positionMonitorHistory;
+  store.executionIntentHistory = revivedAgents.executionIntentHistory;
+  store.agencyCycleHistory = revivedAgents.agencyCycleHistory;
 }
 
 function loadSqliteFundamentalRows(db) {
@@ -1092,7 +1821,14 @@ function loadSqliteFundamentalRows(db) {
 function loadSqliteAgentRows(db) {
   return {
     macroRegimeStates: db.prepare(AGENT_ROW_SELECTS.macroRegimeStates).all(),
-    tradeSetupStates: db.prepare(AGENT_ROW_SELECTS.tradeSetupStates).all()
+    tradeSetupStates: db.prepare(AGENT_ROW_SELECTS.tradeSetupStates).all(),
+    llmSelectionReviews: db.prepare(AGENT_ROW_SELECTS.llmSelectionReviews).all(),
+    finalSelectionCandidates: db.prepare(AGENT_ROW_SELECTS.finalSelectionCandidates).all(),
+    tradingSelectionPasses: db.prepare(AGENT_ROW_SELECTS.tradingSelectionPasses).all(),
+    riskSnapshots: db.prepare(AGENT_ROW_SELECTS.riskSnapshots).all(),
+    positionMonitorSnapshots: db.prepare(AGENT_ROW_SELECTS.positionMonitorSnapshots).all(),
+    executionIntents: db.prepare(AGENT_ROW_SELECTS.executionIntents).all(),
+    agencyCycleStates: db.prepare(AGENT_ROW_SELECTS.agencyCycleStates).all()
   };
 }
 
@@ -1130,14 +1866,38 @@ async function loadPostgresFundamentalRows(pool) {
 }
 
 async function loadPostgresAgentRows(pool) {
-  const [macroRegimeStates, tradeSetupStates] = await Promise.all([
+  const [
+    macroRegimeStates,
+    tradeSetupStates,
+    llmSelectionReviews,
+    finalSelectionCandidates,
+    tradingSelectionPasses,
+    riskSnapshots,
+    positionMonitorSnapshots,
+    executionIntents,
+    agencyCycleStates
+  ] = await Promise.all([
     pool.query(AGENT_ROW_SELECTS.macroRegimeStates),
-    pool.query(AGENT_ROW_SELECTS.tradeSetupStates)
+    pool.query(AGENT_ROW_SELECTS.tradeSetupStates),
+    pool.query(AGENT_ROW_SELECTS.llmSelectionReviews),
+    pool.query(AGENT_ROW_SELECTS.finalSelectionCandidates),
+    pool.query(AGENT_ROW_SELECTS.tradingSelectionPasses),
+    pool.query(AGENT_ROW_SELECTS.riskSnapshots),
+    pool.query(AGENT_ROW_SELECTS.positionMonitorSnapshots),
+    pool.query(AGENT_ROW_SELECTS.executionIntents),
+    pool.query(AGENT_ROW_SELECTS.agencyCycleStates)
   ]);
 
   return {
     macroRegimeStates: macroRegimeStates.rows,
-    tradeSetupStates: tradeSetupStates.rows
+    tradeSetupStates: tradeSetupStates.rows,
+    llmSelectionReviews: llmSelectionReviews.rows,
+    finalSelectionCandidates: finalSelectionCandidates.rows,
+    tradingSelectionPasses: tradingSelectionPasses.rows,
+    riskSnapshots: riskSnapshots.rows,
+    positionMonitorSnapshots: positionMonitorSnapshots.rows,
+    executionIntents: executionIntents.rows,
+    agencyCycleStates: agencyCycleStates.rows
   };
 }
 
@@ -1580,6 +2340,151 @@ function saveSqliteAgentRows(db, store, config) {
       evidence_negative = excluded.evidence_negative,
       score_metadata = excluded.score_metadata
   `);
+  const insertLlmReview = db.prepare(`
+    INSERT INTO llm_selection_reviews (review_id, as_of, window, ticker, company_name, sector, action, confidence, selected, deterministic_action, deterministic_conviction, disagreement_with_deterministic, reviewer, provider, model, mode, status, prompt_version, rationale, supporting_factors, concerns, missing_data, evidence_alignment, risk_assessment, confidence_reason, payload_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(review_id) DO UPDATE SET
+      as_of = excluded.as_of,
+      window = excluded.window,
+      ticker = excluded.ticker,
+      company_name = excluded.company_name,
+      sector = excluded.sector,
+      action = excluded.action,
+      confidence = excluded.confidence,
+      selected = excluded.selected,
+      deterministic_action = excluded.deterministic_action,
+      deterministic_conviction = excluded.deterministic_conviction,
+      disagreement_with_deterministic = excluded.disagreement_with_deterministic,
+      reviewer = excluded.reviewer,
+      provider = excluded.provider,
+      model = excluded.model,
+      mode = excluded.mode,
+      status = excluded.status,
+      prompt_version = excluded.prompt_version,
+      rationale = excluded.rationale,
+      supporting_factors = excluded.supporting_factors,
+      concerns = excluded.concerns,
+      missing_data = excluded.missing_data,
+      evidence_alignment = excluded.evidence_alignment,
+      risk_assessment = excluded.risk_assessment,
+      confidence_reason = excluded.confidence_reason,
+      payload_json = excluded.payload_json
+  `);
+  const insertFinalCandidate = db.prepare(`
+    INSERT INTO final_selection_candidates (candidate_id, as_of, window, ticker, company_name, sector, deterministic_action, deterministic_conviction, llm_action, llm_confidence, agreement, final_action, final_conviction, required_final_conviction, final_conviction_gap, execution_allowed, position_size_pct, current_price, stop_loss, take_profit, reason_codes, policy_gates, score_components, selection_report_json, payload_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(candidate_id) DO UPDATE SET
+      as_of = excluded.as_of,
+      window = excluded.window,
+      ticker = excluded.ticker,
+      company_name = excluded.company_name,
+      sector = excluded.sector,
+      deterministic_action = excluded.deterministic_action,
+      deterministic_conviction = excluded.deterministic_conviction,
+      llm_action = excluded.llm_action,
+      llm_confidence = excluded.llm_confidence,
+      agreement = excluded.agreement,
+      final_action = excluded.final_action,
+      final_conviction = excluded.final_conviction,
+      required_final_conviction = excluded.required_final_conviction,
+      final_conviction_gap = excluded.final_conviction_gap,
+      execution_allowed = excluded.execution_allowed,
+      position_size_pct = excluded.position_size_pct,
+      current_price = excluded.current_price,
+      stop_loss = excluded.stop_loss,
+      take_profit = excluded.take_profit,
+      reason_codes = excluded.reason_codes,
+      policy_gates = excluded.policy_gates,
+      score_components = excluded.score_components,
+      selection_report_json = excluded.selection_report_json,
+      payload_json = excluded.payload_json
+  `);
+  const insertTradingPass = db.prepare(`
+    INSERT INTO trading_selection_passes (pass_id, as_of, window, ticker, company_name, sector, final_action, side, final_conviction, position_size_pct, current_price, stop_loss, take_profit, estimated_notional_usd, report_status, final_reason, payload_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(pass_id) DO UPDATE SET
+      as_of = excluded.as_of,
+      window = excluded.window,
+      ticker = excluded.ticker,
+      company_name = excluded.company_name,
+      sector = excluded.sector,
+      final_action = excluded.final_action,
+      side = excluded.side,
+      final_conviction = excluded.final_conviction,
+      position_size_pct = excluded.position_size_pct,
+      current_price = excluded.current_price,
+      stop_loss = excluded.stop_loss,
+      take_profit = excluded.take_profit,
+      estimated_notional_usd = excluded.estimated_notional_usd,
+      report_status = excluded.report_status,
+      final_reason = excluded.final_reason,
+      payload_json = excluded.payload_json
+  `);
+  const insertRiskSnapshot = db.prepare(`
+    INSERT INTO risk_snapshots (snapshot_id, as_of, status, equity, buying_power, gross_exposure_pct, open_orders, position_count, hard_blocks, payload_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+      as_of = excluded.as_of,
+      status = excluded.status,
+      equity = excluded.equity,
+      buying_power = excluded.buying_power,
+      gross_exposure_pct = excluded.gross_exposure_pct,
+      open_orders = excluded.open_orders,
+      position_count = excluded.position_count,
+      hard_blocks = excluded.hard_blocks,
+      payload_json = excluded.payload_json
+  `);
+  const insertPositionMonitor = db.prepare(`
+    INSERT INTO position_monitor_snapshots (snapshot_id, as_of, status, risk_status, position_count, open_order_count, review_count, close_candidate_count, payload_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+      as_of = excluded.as_of,
+      status = excluded.status,
+      risk_status = excluded.risk_status,
+      position_count = excluded.position_count,
+      open_order_count = excluded.open_order_count,
+      review_count = excluded.review_count,
+      close_candidate_count = excluded.close_candidate_count,
+      payload_json = excluded.payload_json
+  `);
+  const insertExecutionIntent = db.prepare(`
+    INSERT INTO execution_intents (intent_id, as_of, ticker, action, side, allowed, execution_allowed, broker_ready, dry_run, estimated_notional_usd, estimated_quantity, current_price, blocked_reason, risk_allowed, risk_blocked_reason, order_json, payload_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(intent_id) DO UPDATE SET
+      as_of = excluded.as_of,
+      ticker = excluded.ticker,
+      action = excluded.action,
+      side = excluded.side,
+      allowed = excluded.allowed,
+      execution_allowed = excluded.execution_allowed,
+      broker_ready = excluded.broker_ready,
+      dry_run = excluded.dry_run,
+      estimated_notional_usd = excluded.estimated_notional_usd,
+      estimated_quantity = excluded.estimated_quantity,
+      current_price = excluded.current_price,
+      blocked_reason = excluded.blocked_reason,
+      risk_allowed = excluded.risk_allowed,
+      risk_blocked_reason = excluded.risk_blocked_reason,
+      order_json = excluded.order_json,
+      payload_json = excluded.payload_json
+  `);
+  const insertAgencyCycle = db.prepare(`
+    INSERT INTO agency_cycle_states (cycle_id, as_of, mode, status, baseline_ready, data_progress_pct, current_worker_key, can_use_for_decisions, can_preview_orders, can_submit_orders, worker_count, executable_count, payload_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(cycle_id) DO UPDATE SET
+      as_of = excluded.as_of,
+      mode = excluded.mode,
+      status = excluded.status,
+      baseline_ready = excluded.baseline_ready,
+      data_progress_pct = excluded.data_progress_pct,
+      current_worker_key = excluded.current_worker_key,
+      can_use_for_decisions = excluded.can_use_for_decisions,
+      can_preview_orders = excluded.can_preview_orders,
+      can_submit_orders = excluded.can_submit_orders,
+      worker_count = excluded.worker_count,
+      executable_count = excluded.executable_count,
+      payload_json = excluded.payload_json
+  `);
 
   for (const row of rows.macroRegimeStates) {
     insertMacroRegime.run(
@@ -1629,6 +2534,158 @@ function saveSqliteAgentRows(db, store, config) {
       JSON.stringify(row.evidence_positive || []),
       JSON.stringify(row.evidence_negative || []),
       JSON.stringify(row.score_metadata || {})
+    );
+  }
+
+  for (const row of rows.llmSelectionReviews) {
+    insertLlmReview.run(
+      row.review_id,
+      row.as_of,
+      row.window,
+      row.ticker,
+      row.company_name,
+      row.sector,
+      row.action,
+      row.confidence,
+      boolInt(row.selected),
+      row.deterministic_action,
+      row.deterministic_conviction,
+      row.disagreement_with_deterministic,
+      row.reviewer,
+      row.provider,
+      row.model,
+      row.mode,
+      row.status,
+      row.prompt_version,
+      row.rationale,
+      JSON.stringify(row.supporting_factors || []),
+      JSON.stringify(row.concerns || []),
+      JSON.stringify(row.missing_data || []),
+      row.evidence_alignment,
+      row.risk_assessment,
+      row.confidence_reason,
+      JSON.stringify(row.payload_json || {})
+    );
+  }
+
+  for (const row of rows.finalSelectionCandidates) {
+    insertFinalCandidate.run(
+      row.candidate_id,
+      row.as_of,
+      row.window,
+      row.ticker,
+      row.company_name,
+      row.sector,
+      row.deterministic_action,
+      row.deterministic_conviction,
+      row.llm_action,
+      row.llm_confidence,
+      row.agreement,
+      row.final_action,
+      row.final_conviction,
+      row.required_final_conviction,
+      row.final_conviction_gap,
+      boolInt(row.execution_allowed),
+      row.position_size_pct,
+      row.current_price,
+      row.stop_loss,
+      row.take_profit,
+      JSON.stringify(row.reason_codes || []),
+      JSON.stringify(row.policy_gates || []),
+      JSON.stringify(row.score_components || {}),
+      JSON.stringify(row.selection_report_json || {}),
+      JSON.stringify(row.payload_json || {})
+    );
+  }
+
+  for (const row of rows.tradingSelectionPasses) {
+    insertTradingPass.run(
+      row.pass_id,
+      row.as_of,
+      row.window,
+      row.ticker,
+      row.company_name,
+      row.sector,
+      row.final_action,
+      row.side,
+      row.final_conviction,
+      row.position_size_pct,
+      row.current_price,
+      row.stop_loss,
+      row.take_profit,
+      row.estimated_notional_usd,
+      row.report_status,
+      row.final_reason,
+      JSON.stringify(row.payload_json || {})
+    );
+  }
+
+  for (const row of rows.riskSnapshots) {
+    insertRiskSnapshot.run(
+      row.snapshot_id,
+      row.as_of,
+      row.status,
+      row.equity,
+      row.buying_power,
+      row.gross_exposure_pct,
+      row.open_orders,
+      row.position_count,
+      JSON.stringify(row.hard_blocks || []),
+      JSON.stringify(row.payload_json || {})
+    );
+  }
+
+  for (const row of rows.positionMonitorSnapshots) {
+    insertPositionMonitor.run(
+      row.snapshot_id,
+      row.as_of,
+      row.status,
+      row.risk_status,
+      row.position_count,
+      row.open_order_count,
+      row.review_count,
+      row.close_candidate_count,
+      JSON.stringify(row.payload_json || {})
+    );
+  }
+
+  for (const row of rows.executionIntents) {
+    insertExecutionIntent.run(
+      row.intent_id,
+      row.as_of,
+      row.ticker,
+      row.action,
+      row.side,
+      boolInt(row.allowed),
+      boolInt(row.execution_allowed),
+      boolInt(row.broker_ready),
+      boolInt(row.dry_run),
+      row.estimated_notional_usd,
+      row.estimated_quantity,
+      row.current_price,
+      row.blocked_reason,
+      row.risk_allowed === null ? null : boolInt(row.risk_allowed),
+      row.risk_blocked_reason,
+      JSON.stringify(row.order_json || {}),
+      JSON.stringify(row.payload_json || {})
+    );
+  }
+
+  for (const row of rows.agencyCycleStates) {
+    insertAgencyCycle.run(
+      row.cycle_id,
+      row.as_of,
+      row.mode,
+      row.status,
+      boolInt(row.baseline_ready),
+      row.data_progress_pct,
+      row.current_worker_key,
+      boolInt(row.can_use_for_decisions),
+      boolInt(row.can_preview_orders),
+      boolInt(row.can_submit_orders),
+      row.worker_count,
+      row.executable_count,
+      JSON.stringify(row.payload_json || {})
     );
   }
 
@@ -1734,6 +2791,303 @@ async function savePostgresAgentRows(client, store, config) {
         row.evidence_positive || [],
         row.evidence_negative || [],
         JSON.stringify(row.score_metadata || {})
+      ]
+    );
+  }
+
+  for (const row of rows.llmSelectionReviews) {
+    await client.query(
+      `INSERT INTO llm_selection_reviews (review_id, as_of, window, ticker, company_name, sector, action, confidence, selected, deterministic_action, deterministic_conviction, disagreement_with_deterministic, reviewer, provider, model, mode, status, prompt_version, rationale, supporting_factors, concerns, missing_data, evidence_alignment, risk_assessment, confidence_reason, payload_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::text[], $21::text[], $22::text[], $23, $24, $25, $26::jsonb)
+       ON CONFLICT (review_id) DO UPDATE SET
+         as_of = EXCLUDED.as_of,
+         window = EXCLUDED.window,
+         ticker = EXCLUDED.ticker,
+         company_name = EXCLUDED.company_name,
+         sector = EXCLUDED.sector,
+         action = EXCLUDED.action,
+         confidence = EXCLUDED.confidence,
+         selected = EXCLUDED.selected,
+         deterministic_action = EXCLUDED.deterministic_action,
+         deterministic_conviction = EXCLUDED.deterministic_conviction,
+         disagreement_with_deterministic = EXCLUDED.disagreement_with_deterministic,
+         reviewer = EXCLUDED.reviewer,
+         provider = EXCLUDED.provider,
+         model = EXCLUDED.model,
+         mode = EXCLUDED.mode,
+         status = EXCLUDED.status,
+         prompt_version = EXCLUDED.prompt_version,
+         rationale = EXCLUDED.rationale,
+         supporting_factors = EXCLUDED.supporting_factors,
+         concerns = EXCLUDED.concerns,
+         missing_data = EXCLUDED.missing_data,
+         evidence_alignment = EXCLUDED.evidence_alignment,
+         risk_assessment = EXCLUDED.risk_assessment,
+         confidence_reason = EXCLUDED.confidence_reason,
+         payload_json = EXCLUDED.payload_json`,
+      [
+        row.review_id,
+        row.as_of,
+        row.window,
+        row.ticker,
+        row.company_name,
+        row.sector,
+        row.action,
+        row.confidence,
+        Boolean(row.selected),
+        row.deterministic_action,
+        row.deterministic_conviction,
+        row.disagreement_with_deterministic,
+        row.reviewer,
+        row.provider,
+        row.model,
+        row.mode,
+        row.status,
+        row.prompt_version,
+        row.rationale,
+        row.supporting_factors || [],
+        row.concerns || [],
+        row.missing_data || [],
+        row.evidence_alignment,
+        row.risk_assessment,
+        row.confidence_reason,
+        JSON.stringify(row.payload_json || {})
+      ]
+    );
+  }
+
+  for (const row of rows.finalSelectionCandidates) {
+    await client.query(
+      `INSERT INTO final_selection_candidates (candidate_id, as_of, window, ticker, company_name, sector, deterministic_action, deterministic_conviction, llm_action, llm_confidence, agreement, final_action, final_conviction, required_final_conviction, final_conviction_gap, execution_allowed, position_size_pct, current_price, stop_loss, take_profit, reason_codes, policy_gates, score_components, selection_report_json, payload_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::text[], $22::jsonb, $23::jsonb, $24::jsonb, $25::jsonb)
+       ON CONFLICT (candidate_id) DO UPDATE SET
+         as_of = EXCLUDED.as_of,
+         window = EXCLUDED.window,
+         ticker = EXCLUDED.ticker,
+         company_name = EXCLUDED.company_name,
+         sector = EXCLUDED.sector,
+         deterministic_action = EXCLUDED.deterministic_action,
+         deterministic_conviction = EXCLUDED.deterministic_conviction,
+         llm_action = EXCLUDED.llm_action,
+         llm_confidence = EXCLUDED.llm_confidence,
+         agreement = EXCLUDED.agreement,
+         final_action = EXCLUDED.final_action,
+         final_conviction = EXCLUDED.final_conviction,
+         required_final_conviction = EXCLUDED.required_final_conviction,
+         final_conviction_gap = EXCLUDED.final_conviction_gap,
+         execution_allowed = EXCLUDED.execution_allowed,
+         position_size_pct = EXCLUDED.position_size_pct,
+         current_price = EXCLUDED.current_price,
+         stop_loss = EXCLUDED.stop_loss,
+         take_profit = EXCLUDED.take_profit,
+         reason_codes = EXCLUDED.reason_codes,
+         policy_gates = EXCLUDED.policy_gates,
+         score_components = EXCLUDED.score_components,
+         selection_report_json = EXCLUDED.selection_report_json,
+         payload_json = EXCLUDED.payload_json`,
+      [
+        row.candidate_id,
+        row.as_of,
+        row.window,
+        row.ticker,
+        row.company_name,
+        row.sector,
+        row.deterministic_action,
+        row.deterministic_conviction,
+        row.llm_action,
+        row.llm_confidence,
+        row.agreement,
+        row.final_action,
+        row.final_conviction,
+        row.required_final_conviction,
+        row.final_conviction_gap,
+        Boolean(row.execution_allowed),
+        row.position_size_pct,
+        row.current_price,
+        row.stop_loss,
+        row.take_profit,
+        row.reason_codes || [],
+        JSON.stringify(row.policy_gates || []),
+        JSON.stringify(row.score_components || {}),
+        JSON.stringify(row.selection_report_json || {}),
+        JSON.stringify(row.payload_json || {})
+      ]
+    );
+  }
+
+  for (const row of rows.tradingSelectionPasses) {
+    await client.query(
+      `INSERT INTO trading_selection_passes (pass_id, as_of, window, ticker, company_name, sector, final_action, side, final_conviction, position_size_pct, current_price, stop_loss, take_profit, estimated_notional_usd, report_status, final_reason, payload_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)
+       ON CONFLICT (pass_id) DO UPDATE SET
+         as_of = EXCLUDED.as_of,
+         window = EXCLUDED.window,
+         ticker = EXCLUDED.ticker,
+         company_name = EXCLUDED.company_name,
+         sector = EXCLUDED.sector,
+         final_action = EXCLUDED.final_action,
+         side = EXCLUDED.side,
+         final_conviction = EXCLUDED.final_conviction,
+         position_size_pct = EXCLUDED.position_size_pct,
+         current_price = EXCLUDED.current_price,
+         stop_loss = EXCLUDED.stop_loss,
+         take_profit = EXCLUDED.take_profit,
+         estimated_notional_usd = EXCLUDED.estimated_notional_usd,
+         report_status = EXCLUDED.report_status,
+         final_reason = EXCLUDED.final_reason,
+         payload_json = EXCLUDED.payload_json`,
+      [
+        row.pass_id,
+        row.as_of,
+        row.window,
+        row.ticker,
+        row.company_name,
+        row.sector,
+        row.final_action,
+        row.side,
+        row.final_conviction,
+        row.position_size_pct,
+        row.current_price,
+        row.stop_loss,
+        row.take_profit,
+        row.estimated_notional_usd,
+        row.report_status,
+        row.final_reason,
+        JSON.stringify(row.payload_json || {})
+      ]
+    );
+  }
+
+  for (const row of rows.riskSnapshots) {
+    await client.query(
+      `INSERT INTO risk_snapshots (snapshot_id, as_of, status, equity, buying_power, gross_exposure_pct, open_orders, position_count, hard_blocks, payload_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10::jsonb)
+       ON CONFLICT (snapshot_id) DO UPDATE SET
+         as_of = EXCLUDED.as_of,
+         status = EXCLUDED.status,
+         equity = EXCLUDED.equity,
+         buying_power = EXCLUDED.buying_power,
+         gross_exposure_pct = EXCLUDED.gross_exposure_pct,
+         open_orders = EXCLUDED.open_orders,
+         position_count = EXCLUDED.position_count,
+         hard_blocks = EXCLUDED.hard_blocks,
+         payload_json = EXCLUDED.payload_json`,
+      [
+        row.snapshot_id,
+        row.as_of,
+        row.status,
+        row.equity,
+        row.buying_power,
+        row.gross_exposure_pct,
+        row.open_orders,
+        row.position_count,
+        row.hard_blocks || [],
+        JSON.stringify(row.payload_json || {})
+      ]
+    );
+  }
+
+  for (const row of rows.positionMonitorSnapshots) {
+    await client.query(
+      `INSERT INTO position_monitor_snapshots (snapshot_id, as_of, status, risk_status, position_count, open_order_count, review_count, close_candidate_count, payload_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+       ON CONFLICT (snapshot_id) DO UPDATE SET
+         as_of = EXCLUDED.as_of,
+         status = EXCLUDED.status,
+         risk_status = EXCLUDED.risk_status,
+         position_count = EXCLUDED.position_count,
+         open_order_count = EXCLUDED.open_order_count,
+         review_count = EXCLUDED.review_count,
+         close_candidate_count = EXCLUDED.close_candidate_count,
+         payload_json = EXCLUDED.payload_json`,
+      [
+        row.snapshot_id,
+        row.as_of,
+        row.status,
+        row.risk_status,
+        row.position_count,
+        row.open_order_count,
+        row.review_count,
+        row.close_candidate_count,
+        JSON.stringify(row.payload_json || {})
+      ]
+    );
+  }
+
+  for (const row of rows.executionIntents) {
+    await client.query(
+      `INSERT INTO execution_intents (intent_id, as_of, ticker, action, side, allowed, execution_allowed, broker_ready, dry_run, estimated_notional_usd, estimated_quantity, current_price, blocked_reason, risk_allowed, risk_blocked_reason, order_json, payload_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb)
+       ON CONFLICT (intent_id) DO UPDATE SET
+         as_of = EXCLUDED.as_of,
+         ticker = EXCLUDED.ticker,
+         action = EXCLUDED.action,
+         side = EXCLUDED.side,
+         allowed = EXCLUDED.allowed,
+         execution_allowed = EXCLUDED.execution_allowed,
+         broker_ready = EXCLUDED.broker_ready,
+         dry_run = EXCLUDED.dry_run,
+         estimated_notional_usd = EXCLUDED.estimated_notional_usd,
+         estimated_quantity = EXCLUDED.estimated_quantity,
+         current_price = EXCLUDED.current_price,
+         blocked_reason = EXCLUDED.blocked_reason,
+         risk_allowed = EXCLUDED.risk_allowed,
+         risk_blocked_reason = EXCLUDED.risk_blocked_reason,
+         order_json = EXCLUDED.order_json,
+         payload_json = EXCLUDED.payload_json`,
+      [
+        row.intent_id,
+        row.as_of,
+        row.ticker,
+        row.action,
+        row.side,
+        Boolean(row.allowed),
+        Boolean(row.execution_allowed),
+        Boolean(row.broker_ready),
+        Boolean(row.dry_run),
+        row.estimated_notional_usd,
+        row.estimated_quantity,
+        row.current_price,
+        row.blocked_reason,
+        row.risk_allowed === null ? null : Boolean(row.risk_allowed),
+        row.risk_blocked_reason,
+        JSON.stringify(row.order_json || {}),
+        JSON.stringify(row.payload_json || {})
+      ]
+    );
+  }
+
+  for (const row of rows.agencyCycleStates) {
+    await client.query(
+      `INSERT INTO agency_cycle_states (cycle_id, as_of, mode, status, baseline_ready, data_progress_pct, current_worker_key, can_use_for_decisions, can_preview_orders, can_submit_orders, worker_count, executable_count, payload_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+       ON CONFLICT (cycle_id) DO UPDATE SET
+         as_of = EXCLUDED.as_of,
+         mode = EXCLUDED.mode,
+         status = EXCLUDED.status,
+         baseline_ready = EXCLUDED.baseline_ready,
+         data_progress_pct = EXCLUDED.data_progress_pct,
+         current_worker_key = EXCLUDED.current_worker_key,
+         can_use_for_decisions = EXCLUDED.can_use_for_decisions,
+         can_preview_orders = EXCLUDED.can_preview_orders,
+         can_submit_orders = EXCLUDED.can_submit_orders,
+         worker_count = EXCLUDED.worker_count,
+         executable_count = EXCLUDED.executable_count,
+         payload_json = EXCLUDED.payload_json`,
+      [
+        row.cycle_id,
+        row.as_of,
+        row.mode,
+        row.status,
+        Boolean(row.baseline_ready),
+        row.data_progress_pct,
+        row.current_worker_key,
+        Boolean(row.can_use_for_decisions),
+        Boolean(row.can_preview_orders),
+        Boolean(row.can_submit_orders),
+        row.worker_count,
+        row.executable_count,
+        JSON.stringify(row.payload_json || {})
       ]
     );
   }
@@ -1949,6 +3303,13 @@ function createSqlitePersistence(config) {
         DELETE FROM fundamental_scores;
         DELETE FROM fundamental_features;
         DELETE FROM market_reference;
+        DELETE FROM agency_cycle_states;
+        DELETE FROM execution_intents;
+        DELETE FROM position_monitor_snapshots;
+        DELETE FROM risk_snapshots;
+        DELETE FROM trading_selection_passes;
+        DELETE FROM final_selection_candidates;
+        DELETE FROM llm_selection_reviews;
         DELETE FROM trade_setup_states;
         DELETE FROM macro_regime_states;
         DELETE FROM coverage_universe;
@@ -2091,8 +3452,16 @@ function createSqlitePersistence(config) {
         }
         saveSqliteFundamentalWarehouse(db, store, now);
         const agentRows = saveSqliteAgentRows(db, store, config);
-        store.macroRegimeHistory = reviveAgentRows({ macroRegimeStates: agentRows.macroRegimeStates }).macroRegimeHistory;
-        store.tradeSetupHistory = reviveAgentRows({ tradeSetupStates: agentRows.tradeSetupStates }).tradeSetupHistory;
+        const revivedAgentRows = reviveAgentRows(agentRows);
+        store.macroRegimeHistory = revivedAgentRows.macroRegimeHistory;
+        store.tradeSetupHistory = revivedAgentRows.tradeSetupHistory;
+        store.llmSelectionHistory = revivedAgentRows.llmSelectionHistory;
+        store.finalSelectionHistory = revivedAgentRows.finalSelectionHistory;
+        store.tradingSelectionPassHistory = revivedAgentRows.tradingSelectionPassHistory;
+        store.riskSnapshotHistory = revivedAgentRows.riskSnapshotHistory;
+        store.positionMonitorHistory = revivedAgentRows.positionMonitorHistory;
+        store.executionIntentHistory = revivedAgentRows.executionIntentHistory;
+        store.agencyCycleHistory = revivedAgentRows.agencyCycleHistory;
         insertRuntime.run("health", now, JSON.stringify(scrubLegacyPlaceholderMetadata(store.health)));
         insertRuntime.run("fundamentals", now, JSON.stringify(buildRuntimeFundamentals(store)));
         insertRuntime.run("fundamentalUniverse", now, JSON.stringify(reviveFundamentalUniverse(store.fundamentalUniverse)));
@@ -2132,6 +3501,13 @@ function createPostgresPersistence(config) {
           fundamental_scores,
           fundamental_features,
           market_reference,
+          agency_cycle_states,
+          execution_intents,
+          position_monitor_snapshots,
+          risk_snapshots,
+          trading_selection_passes,
+          final_selection_candidates,
+          llm_selection_reviews,
           trade_setup_states,
           macro_regime_states,
           coverage_universe,
@@ -2328,8 +3704,16 @@ function createPostgresPersistence(config) {
         }
         await savePostgresFundamentalWarehouse(client, store, now);
         const agentRows = await savePostgresAgentRows(client, store, config);
-        store.macroRegimeHistory = reviveAgentRows({ macroRegimeStates: agentRows.macroRegimeStates }).macroRegimeHistory;
-        store.tradeSetupHistory = reviveAgentRows({ tradeSetupStates: agentRows.tradeSetupStates }).tradeSetupHistory;
+        const revivedAgentRows = reviveAgentRows(agentRows);
+        store.macroRegimeHistory = revivedAgentRows.macroRegimeHistory;
+        store.tradeSetupHistory = revivedAgentRows.tradeSetupHistory;
+        store.llmSelectionHistory = revivedAgentRows.llmSelectionHistory;
+        store.finalSelectionHistory = revivedAgentRows.finalSelectionHistory;
+        store.tradingSelectionPassHistory = revivedAgentRows.tradingSelectionPassHistory;
+        store.riskSnapshotHistory = revivedAgentRows.riskSnapshotHistory;
+        store.positionMonitorHistory = revivedAgentRows.positionMonitorHistory;
+        store.executionIntentHistory = revivedAgentRows.executionIntentHistory;
+        store.agencyCycleHistory = revivedAgentRows.agencyCycleHistory;
 
         await client.query(
           `INSERT INTO runtime_state (state_key, updated_at, payload_json)

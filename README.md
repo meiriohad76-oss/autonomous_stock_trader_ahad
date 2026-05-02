@@ -49,7 +49,7 @@ For the new fundamentals view, open `http://127.0.0.1:3000/fundamentals.html`.
 - The Fundamental Analyst now exposes a real stage-one initial screener before the full ranking model, with `eligible`, `watch`, and `reject` states.
 - The dashboard now also includes a Macro Regime Agent that scores top-down conditions and adjusts long/short thresholds and exposure.
 - The dashboard now also includes a Trade Setup Agent that turns sentiment, money flow, alerts, and fundamentals into ranked `long`, `short`, `watch`, and `no_trade` ideas.
-- Macro-regime snapshots and trade-setup decisions are now persisted in dedicated audit tables, so the system can inspect prior recommendations after restart.
+- Macro-regime snapshots, deterministic trade setups, LLM reviews, final-selection candidates, passed trading selections, risk snapshots, portfolio monitor snapshots, execution intents, and agency-cycle states are now persisted in dedicated SQLite/Postgres audit tables.
 - The runtime now includes an Evidence Quality Agent that scores every document after classification and before aggregation, so dashboards and downstream agents share one trust layer for freshness, duplication, corroboration, source quality, and display tier.
 - The runtime now includes a Runtime Reliability Agent that evaluates Pi/system pressure, source freshness, fallback mode, collector errors, and auto-start policy before heavier live-source load is enabled.
 - The runtime now includes an Execution Agent with a guarded Alpaca broker adapter. It can preview paper-trading orders from Trade Setup Agent output, while real submission stays disabled until explicit broker safety flags are configured.
@@ -371,7 +371,20 @@ GET /api/macro-regime/history
 
 ## Agent audit trail
 
-Macro regime and trade setup outputs are written into dedicated relational audit tables in the configured persistence provider. This makes the system easier to inspect, backtest, and debug after restart.
+Agent outputs are written into dedicated relational audit tables in the configured persistence provider. This makes the system easier to inspect, backtest, and debug after restart.
+
+Core audit tables:
+
+- `fundamental_scores`: factor-level Fundamentals Agent scores
+- `macro_regime_states`: Market Agent regime, thresholds, and exposure posture
+- `trade_setup_states`: Deterministic Selection Agent setup scores and price plan
+- `llm_selection_reviews`: LLM Selection Agent action, confidence, concerns, missing data, and prompt metadata
+- `final_selection_candidates`: Final Selection Agent arbitration result, score components, policy gates, and selection report
+- `trading_selection_passes`: only candidates that passed Final Selection for supervised Alpaca preview
+- `risk_snapshots`: Risk Manager portfolio/risk state
+- `position_monitor_snapshots`: Portfolio Monitor state
+- `execution_intents`: Execution Agent preview/submission intent records
+- `agency_cycle_states`: Command-center cycle/readiness state
 
 Useful inspection endpoints:
 
@@ -379,6 +392,13 @@ Useful inspection endpoints:
 GET /api/macro-regime/history
 GET /api/trade-setups/storage/summary
 GET /api/trade-setups/storage/ticker/NVDA
+```
+
+Useful audit checks:
+
+```bash
+npm run sqlite:health
+npm run check:sqlite-agent-audit
 ```
 
 ## Live news collector

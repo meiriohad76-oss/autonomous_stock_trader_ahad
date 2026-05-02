@@ -70,6 +70,98 @@ const MONEY_FLOW_EVENT_TYPES = new Set([
   ...EVENT_TAXONOMY.money_flow
 ]);
 
+const AGENCY_AUDIT_HISTORY_LIMIT = 250;
+
+function cloneForAudit(value) {
+  if (!value) {
+    return null;
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return null;
+  }
+}
+
+function rememberAuditSnapshot(store, key, value, { limit = AGENCY_AUDIT_HISTORY_LIMIT, identity = null } = {}) {
+  const snapshot = cloneForAudit(value);
+  if (!snapshot) {
+    return null;
+  }
+  const stamp = snapshot.as_of || snapshot.asOf || snapshot.generated_at || snapshot.at || new Date().toISOString();
+  if (!snapshot.as_of) {
+    snapshot.as_of = stamp;
+  }
+  const rowIdentity = identity || snapshot.id || `${key}:${stamp}`;
+  const history = Array.isArray(store[key]) ? store[key] : [];
+  store[key] = [
+    snapshot,
+    ...history.filter((item) => {
+      const itemStamp = item?.as_of || item?.asOf || item?.generated_at || item?.at || null;
+      const itemIdentity = item?.id || `${key}:${itemStamp}`;
+      return itemIdentity !== rowIdentity;
+    })
+  ].slice(0, limit);
+  return snapshot;
+}
+
+function rememberFinalSelectionAudit(store, finalSelection) {
+  const snapshot = rememberAuditSnapshot(store, "finalSelectionHistory", finalSelection);
+  if (!snapshot) {
+    return null;
+  }
+
+  const passes = (snapshot.candidates || [])
+    .filter((candidate) => candidate.execution_allowed)
+    .map((candidate) => ({
+      id: `${snapshot.as_of}:${snapshot.window || "default"}:${candidate.ticker}:${candidate.final_action}`,
+      as_of: snapshot.as_of,
+      window: snapshot.window || null,
+      candidate
+    }));
+  for (const pass of passes.reverse()) {
+    rememberAuditSnapshot(store, "tradingSelectionPassHistory", pass, { identity: pass.id });
+  }
+  return snapshot;
+}
+
+function rememberAgencyAudit(store, snapshots = {}) {
+  if (snapshots.llmSelection) {
+    rememberAuditSnapshot(store, "llmSelectionHistory", snapshots.llmSelection);
+  }
+  if (snapshots.finalSelection) {
+    rememberFinalSelectionAudit(store, snapshots.finalSelection);
+  }
+  if (snapshots.riskSnapshot) {
+    rememberAuditSnapshot(store, "riskSnapshotHistory", snapshots.riskSnapshot);
+  }
+  if (snapshots.positionMonitor) {
+    rememberAuditSnapshot(store, "positionMonitorHistory", snapshots.positionMonitor);
+  }
+  if (snapshots.agencyCycle) {
+    rememberAuditSnapshot(store, "agencyCycleHistory", snapshots.agencyCycle);
+  }
+}
+
+function rememberExecutionAudit(store, previewOrResult) {
+  const payload = cloneForAudit(previewOrResult);
+  if (!payload) {
+    return null;
+  }
+  const intent = payload.intent || payload.preview?.intent || null;
+  const ticker = intent?.ticker || payload.ticker || null;
+  const action = intent?.action || payload.action || null;
+  const asOf = payload.as_of || new Date().toISOString();
+  const row = {
+    id: `${asOf}:${ticker || "unknown"}:${action || "unknown"}`,
+    as_of: asOf,
+    ticker,
+    action,
+    preview: payload
+  };
+  return rememberAuditSnapshot(store, "executionIntentHistory", row, { identity: row.id });
+}
+
 const FUNDAMENTAL_SCREENER_FIELDS = {
   screenerRequireLiveSecForEligible: {
     env: "SCREENER_REQUIRE_LIVE_SEC_FOR_ELIGIBLE",
@@ -1812,7 +1904,7 @@ export function createSentimentApp() {
         positionMonitor
       });
 
-      return buildFinalSelectionSnapshot({
+      const finalSelection = buildFinalSelectionSnapshot({
         config,
         tradeSetups,
         llmSelection,
@@ -1822,6 +1914,8 @@ export function createSentimentApp() {
         window,
         limit
       });
+      rememberAgencyAudit(store, { llmSelection, finalSelection, riskSnapshot, positionMonitor });
+      return finalSelection;
     },
     async getFinalSelectionTicker(ticker, options = {}) {
       const finalSelection = await this.getFinalSelection({
@@ -1846,7 +1940,7 @@ export function createSentimentApp() {
         limit: options.positionLimit ? Number(options.positionLimit) : 25
       });
 
-      return buildTradingWorkflowStatus({
+      const workflowStatus = buildTradingWorkflowStatus({
         config,
         store,
         readiness: getReadiness(),
@@ -1856,6 +1950,8 @@ export function createSentimentApp() {
         riskSnapshot,
         positionMonitor
       });
+      rememberAgencyAudit(store, { riskSnapshot, positionMonitor });
+      return workflowStatus;
     },
     async getAgencyCycleStatus(options = {}) {
       refreshSecFundamentalsHealthPreview(store, config);
@@ -1908,7 +2004,7 @@ export function createSentimentApp() {
         limit: options.limit ? Number(options.limit) : 25
       });
 
-      return buildAgencyCycleStatus({
+      const agencyCycle = buildAgencyCycleStatus({
         config,
         readiness: getReadiness(),
         runtimeReliability,
@@ -1924,6 +2020,8 @@ export function createSentimentApp() {
         executionLog: store.executionLog,
         advanceLog: store.agencyCycleLog || []
       });
+      rememberAgencyAudit(store, { llmSelection, finalSelection, riskSnapshot, positionMonitor, agencyCycle });
+      return agencyCycle;
     },
     async getSystemDoctor(options = {}) {
       refreshSecFundamentalsHealthPreview(store, config);
@@ -2018,6 +2116,7 @@ export function createSentimentApp() {
             window,
             setup: topSetup
           });
+          rememberExecutionAudit(store, preview);
           result = {
             ticker: topSetup.ticker,
             final_selection_reason: topFinalCandidate.final_reason,
@@ -2248,10 +2347,14 @@ export function createSentimentApp() {
       return executionAgent.getStatus();
     },
     async previewExecutionOrder(payload = {}) {
-      return executionAgent.previewOrder(payload);
+      const preview = await executionAgent.previewOrder(payload);
+      rememberExecutionAudit(store, preview);
+      return preview;
     },
     async submitExecutionOrder(payload = {}) {
-      return executionAgent.submitOrder(payload);
+      const result = await executionAgent.submitOrder(payload);
+      rememberExecutionAudit(store, result);
+      return result;
     },
     async getBrokerAccount() {
       return broker.getAccount();
@@ -2263,7 +2366,9 @@ export function createSentimentApp() {
       return broker.getOrders(options);
     },
     async getRiskSnapshot() {
-      return riskAgent.getSnapshot();
+      const riskSnapshot = await riskAgent.getSnapshot();
+      rememberAgencyAudit(store, { riskSnapshot });
+      return riskSnapshot;
     },
     async evaluateExecutionRisk(payload = {}) {
       const preview = await executionAgent.previewOrder(payload);
@@ -2275,7 +2380,9 @@ export function createSentimentApp() {
       };
     },
     async getPositionMonitor(options = {}) {
-      return positionMonitorAgent.getSnapshot(options);
+      const positionMonitor = await positionMonitorAgent.getSnapshot(options);
+      rememberAgencyAudit(store, { positionMonitor });
+      return positionMonitor;
     },
     getExecutionState() {
       return {

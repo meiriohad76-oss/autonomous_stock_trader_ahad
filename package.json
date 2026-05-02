@@ -18,6 +18,7 @@
     "check:portfolio-policy": "node scripts/check-portfolio-policy.js",
     "check:final-selection": "node scripts/check-final-selection.js",
     "check:scoring-selection-deep": "node scripts/check-scoring-selection-deep.js",
+    "check:sqlite-agent-audit": "node scripts/check-sqlite-agent-audit.js",
     "check:backtest": "node scripts/check-backtest.js",
     "check:live-data-failover": "node scripts/check-live-data-failover.js",
     "check:end-to-end": "node scripts/check-end-to-end-product.js",

@@ -42,6 +42,27 @@ function readPragmaRows(db, pragma) {
   return db.prepare(`PRAGMA ${pragma};`).all().map((row) => Object.values(row)[0]);
 }
 
+const AGENCY_AUDIT_TABLES = [
+  "llm_selection_reviews",
+  "final_selection_candidates",
+  "trading_selection_passes",
+  "risk_snapshots",
+  "position_monitor_snapshots",
+  "execution_intents",
+  "agency_cycle_states"
+];
+
+function tableExists(db, tableName) {
+  return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
+}
+
+function countRows(db, tableName) {
+  if (!tableExists(db, tableName)) {
+    return null;
+  }
+  return Number(db.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get().count || 0);
+}
+
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\"'\"'")}'`;
 }
@@ -101,6 +122,7 @@ function checkSqliteDatabase() {
     backup_dir: config.sqliteBackupDir || null,
     backup_count: backups.length,
     message_count: 0,
+    agency_audit_tables: Object.fromEntries(AGENCY_AUDIT_TABLES.map((table) => [table, null])),
     newest_backup: newestBackup
       ? {
           path: newestBackup.path,
@@ -131,6 +153,7 @@ function checkSqliteDatabase() {
     result.message_count = rows.flatMap((message) => String(message).split(/\r?\n/)).filter(Boolean).length;
     result.messages = normalizeMessages(rows);
     result.status = rows.length === 1 && rows[0] === "ok" ? "ok" : "malformed";
+    result.agency_audit_tables = Object.fromEntries(AGENCY_AUDIT_TABLES.map((table) => [table, countRows(db, table)]));
   } catch (error) {
     result.status = /malformed|corrupt|not a database/i.test(error.message) ? "malformed" : "error";
     result.messages.push(error.message);

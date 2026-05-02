@@ -38,6 +38,13 @@ export function createStore(config) {
     orders: new Map(),
     fundamentalUniverse: null,
     agencyCycleLog: [],
+    agencyCycleHistory: [],
+    llmSelectionHistory: [],
+    finalSelectionHistory: [],
+    tradingSelectionPassHistory: [],
+    riskSnapshotHistory: [],
+    positionMonitorHistory: [],
+    executionIntentHistory: [],
     executionState: {
       enabled: false,
       killSwitch: false,
@@ -97,6 +104,13 @@ export function resetStore(store) {
   store.orders = new Map();
   store.fundamentalUniverse = null;
   store.agencyCycleLog = [];
+  store.agencyCycleHistory = [];
+  store.llmSelectionHistory = [];
+  store.finalSelectionHistory = [];
+  store.tradingSelectionPassHistory = [];
+  store.riskSnapshotHistory = [];
+  store.positionMonitorHistory = [];
+  store.executionIntentHistory = [];
   store.executionState = {
     enabled: false,
     killSwitch: false,

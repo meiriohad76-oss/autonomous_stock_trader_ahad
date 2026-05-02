@@ -411,6 +411,18 @@ Run the deep scoring and selection audit:
 npm run check:scoring-selection-deep
 ```
 
+Check that SQLite is healthy and that the agent audit tables exist:
+
+```bash
+npm run sqlite:health
+```
+
+Check that SQLite can store LLM reviews, final candidates, passed selections, risk snapshots, portfolio monitor snapshots, execution intents, and agency-cycle states:
+
+```bash
+npm run check:sqlite-agent-audit
+```
+
 Run all agent diagnostics:
 
 ```bash
@@ -453,4 +465,3 @@ Warnings are not always bad. For example, Execution should often be `gated` unti
 The safest operating rule is:
 
 Do not approve an Alpaca paper trade unless Command, Final Selection, Risk, and Execution all agree that the candidate is ready, and the selection report makes sense to you.
-
