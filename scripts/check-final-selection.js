@@ -191,6 +191,15 @@ if (
   throw new Error("Final selector should expose a per-stock approval report for executable candidates.");
 }
 
+if (
+  llmSelection.prompt_version !== "llm_selection_committee_v2" ||
+  !llmSelection.instructions_summary ||
+  !apple.llm_explanation?.evidence_alignment ||
+  !apple.llm_explanation?.confidence_reason
+) {
+  throw new Error("LLM selector should expose the committee prompt version and richer review fields.");
+}
+
 console.log(
   JSON.stringify(
     {
@@ -199,6 +208,7 @@ console.log(
       final_buy: finalSelection.counts.final_buy,
       review: finalSelection.counts.review,
       llm_mode: finalSelection.llm_agent.mode,
+      llm_prompt_version: llmSelection.prompt_version,
       top_candidate: apple.ticker,
       report_status: apple.selection_report.status,
       microsoft_reason: microsoft.reason_codes[0]

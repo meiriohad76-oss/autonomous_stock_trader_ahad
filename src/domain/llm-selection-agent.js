@@ -1,5 +1,48 @@
 import { clamp, round } from "../utils/helpers.js";
 
+const LLM_SELECTION_PROMPT_VERSION = "llm_selection_committee_v2";
+
+const LLM_SELECTION_INSTRUCTIONS = `
+You are the LLM Selection Agent inside a supervised multi-agent paper-trading agency.
+
+Your job is investment-committee review, not trade execution. You review the deterministic selector's candidate pack, the portfolio policy, and the supplied evidence only. You must produce strict JSON matching the schema. Never place trades, never imply that an order was submitted, and never claim certainty or guaranteed return.
+
+Non-negotiable rules:
+1. Use only the JSON input data. Do not invent news, prices, filings, catalysts, analyst ratings, institutional activity, or source links that are not in the candidate pack.
+2. Review every supplied candidate by ticker. Do not add tickers that are not present in candidates.
+3. Treat the deterministic selector as the primary safety engine. You can agree, demote, or flag disagreement. A pure LLM promotion from watch/no_trade must be conservative because Final Selection will keep it on watch.
+4. The weekly return target is a portfolio objective and risk-budget input, not a promise and not a reason to force trades.
+5. If live data, source quality, runtime reliability, recent evidence, or fundamentals are thin, stale, missing, or conflicted, prefer watch/no_trade and explain the missing data.
+6. Penalize candidates with earnings-window risk, source reliability issues, weak fundamentals, crowded/stretched valuation, negative money flow, poor evidence quality, or small directional score gap.
+7. Long/short recommendations require aligned evidence across enough lanes: deterministic score, fundamentals, market regime, signals/money flow, and risk policy. If those lanes do not align, choose watch or no_trade.
+8. Short recommendations are especially conservative and must respect whether short trading is allowed by the supplied policy/config context.
+
+Decision protocol for each candidate:
+1. Confirm the deterministic action and conviction.
+2. Check whether fundamentals support, merely tolerate, or contradict the direction.
+3. Check market regime and sector context for tailwind/headwind.
+4. Check signal evidence: alerts, insider/institutional evidence, unusual volume, money flow, news, sentiment, and recency.
+5. Check evidence quality and runtime reliability. Treat degraded data as a reason to lower confidence.
+6. Check decision blockers, risk flags, policy constraints, score gap, stop/target plan, and proposed position size.
+7. Decide action: long, short, watch, or no_trade.
+8. Calibrate confidence from 0 to 1 for your chosen action. It is a review confidence, not a probability of profit.
+
+Confidence calibration:
+- 0.80-0.95: rare; strong agreement, fresh evidence, strong fundamentals, clear regime support, clean risk.
+- 0.65-0.79: actionable but still supervised; most lanes align and concerns are manageable.
+- 0.50-0.64: monitoring/review; evidence exists but is incomplete, mixed, stale, or near threshold.
+- 0.00-0.49: no_trade or weak watch; insufficient alignment or material blockers.
+
+Output discipline:
+- rationale must explain the core reason for the chosen action in plain language.
+- supporting_factors must reference supplied evidence or fields, not outside facts.
+- concerns must include the main reason not to increase size or submit blindly.
+- evidence_alignment should summarize whether the agent lanes agree or conflict.
+- risk_assessment should summarize the biggest execution/risk issue.
+- confidence_reason should explain why the confidence number is calibrated at that level.
+- missing_data should list missing or weak inputs that would improve the decision.
+`.trim();
+
 function isTradable(action) {
   return action === "long" || action === "short";
 }
@@ -151,6 +194,13 @@ function localRecommendation(setup, config, portfolioPolicy = null) {
     supporting_factors: summarizeSupport(setup),
     concerns: summarizeConcerns(setup, recommendation.action),
     recommended_policy_notes: policyNotes(config, portfolioPolicy),
+    evidence_alignment:
+      recommendation.action === setup.action
+        ? "Local qualitative review agrees with the deterministic action after checking fundamentals, evidence, and runtime guardrails."
+        : "Local qualitative review does not fully agree with the deterministic action and keeps the candidate away from automatic execution.",
+    risk_assessment: summarizeConcerns(setup, recommendation.action)[0] || "No major local qualitative risk flag was detected.",
+    confidence_reason: `Local confidence is calibrated from deterministic conviction plus evidence, fundamentals, risk flags, and runtime reliability adjustments.`,
+    missing_data: setup.recent_documents?.length ? [] : ["limited recent ticker-level evidence"],
     reviewer: "local_shadow"
   };
 }
@@ -176,6 +226,13 @@ function compactSetup(setup) {
     sentiment: setup.sentiment,
     evidence: setup.evidence,
     evidence_quality: setup.evidence_quality,
+    runtime_reliability: setup.runtime_reliability,
+    position_size_pct: setup.position_size_pct,
+    timeframe: setup.timeframe,
+    current_price: setup.current_price,
+    entry_zone: setup.entry_zone,
+    stop_loss: setup.stop_loss,
+    take_profit: setup.take_profit,
     risk_flags: (setup.risk_flags || []).slice(0, 8),
     recent_documents: (setup.recent_documents || []).slice(0, 3).map((item) => ({
       headline: item.headline,
@@ -183,28 +240,80 @@ function compactSetup(setup) {
       published_at: item.published_at,
       event_type: item.event_type,
       label: item.label,
-      confidence: item.confidence
+      confidence: item.confidence,
+      display_tier: item.display_tier,
+      downstream_weight: item.downstream_weight,
+      url: item.url
     }))
   };
 }
 
 function buildPromptPack({ setups, portfolioPolicy, config }) {
   return {
+    prompt_version: LLM_SELECTION_PROMPT_VERSION,
     mission:
       "Review deterministic stock-selection candidates for a supervised Alpaca paper-trading system. Return JSON only. Do not submit or imply submission of orders.",
+    role:
+      "Parallel LLM Selection Agent: an investment-committee reviewer that challenges, confirms, or demotes deterministic trade ideas before Final Selection and Risk.",
     constraints: [
       "The deterministic selector remains the primary safety engine.",
       "You may agree, demote, or disagree with a deterministic long/short.",
       "You may mark watch/no_trade names as long/short if the evidence is compelling, but Final Selection will keep LLM-only promotions on watch.",
       "Be conservative when evidence quality is thin, earnings are near, runtime data is degraded, or thresholds are barely cleared.",
-      "Confidence must be a calibrated 0..1 value for your chosen action, not a price target or probability guarantee."
+      "Confidence must be a calibrated 0..1 value for your chosen action, not a price target or probability guarantee.",
+      "Use only fields in this JSON pack; do not use memory or outside market knowledge.",
+      "Review every candidate exactly once and do not add tickers."
+    ],
+    decision_protocol: [
+      "Read deterministic_action, deterministic_conviction, score_components, decision_thresholds, and blockers.",
+      "Check fundamentals: screen stage, direction label, factor score, valuation/quality/risk notes.",
+      "Check market regime, sector context, sentiment, and money-flow/signal evidence.",
+      "Check evidence quality, recent documents, source freshness, and runtime reliability.",
+      "Apply portfolio policy context: execution minimum, max position, stop, target, and weekly target as a risk target only.",
+      "Choose long/short only when evidence is aligned and risk is acceptable; otherwise choose watch/no_trade.",
+      "Explain support, concerns, alignment, missing data, and confidence calibration."
+    ],
+    review_rubric: {
+      deterministic_selector: "Primary safety signal. Agreement matters; disagreement requires review.",
+      fundamentals: "Prefer eligible, high-confidence, fresh, cash-generative, profitable, reasonably valued names.",
+      market_agent: "Risk-on can support longs; risk-off can support shorts or reduce long confidence; balanced regimes require stronger stock-specific evidence.",
+      signals_agent: "Fresh money flow, insider/institutional activity, unusual volume, news, and alerts can support timing; stale or context-only evidence lowers confidence.",
+      risk_manager: "Runtime degradation, earnings windows, thin evidence, weak score gap, and policy limits should demote confidence.",
+      execution_agent: "Only recommend actions that can be converted into a supervised paper-trade preview; no automatic submission."
+    },
+    confidence_scale: {
+      "0.80_to_0.95": "Rare, strong multi-agent alignment with fresh evidence and clean risk.",
+      "0.65_to_0.79": "Potentially actionable, most lanes align, concerns manageable.",
+      "0.50_to_0.64": "Watch/review, evidence exists but alignment or freshness is incomplete.",
+      "0.00_to_0.49": "No trade or weak watch due to missing/conflicting evidence or blockers."
+    },
+    output_contract: [
+      "Return strict JSON matching the schema.",
+      "Each recommendation ticker must match a supplied candidate ticker.",
+      "supporting_factors and concerns must be concise and grounded in supplied fields.",
+      "missing_data should name absent or weak inputs instead of inventing them."
     ],
     policy: {
       weekly_target_pct: portfolioPolicy?.portfolioWeeklyTargetPct ?? config.portfolioWeeklyTargetPct ?? 0.03,
+      weekly_target_note: "Portfolio objective only; do not force trades to chase this target.",
       execution_min_conviction: portfolioPolicy?.portfolioExecutionMinConviction ?? config.portfolioExecutionMinConviction ?? config.executionMinConviction ?? 0.62,
       max_position_pct: portfolioPolicy?.portfolioMaxPositionPct ?? config.portfolioMaxPositionPct ?? 0.03,
       default_stop_loss_pct: portfolioPolicy?.portfolioDefaultStopLossPct ?? config.portfolioDefaultStopLossPct ?? 0.06,
-      default_take_profit_pct: portfolioPolicy?.portfolioDefaultTakeProfitPct ?? config.portfolioDefaultTakeProfitPct ?? 0.09
+      default_take_profit_pct: portfolioPolicy?.portfolioDefaultTakeProfitPct ?? config.portfolioDefaultTakeProfitPct ?? 0.09,
+      short_trading_allowed: Boolean(config.executionAllowShorts)
+    },
+    candidate_field_guide: {
+      deterministic_action: "Rules-engine action before LLM review.",
+      deterministic_conviction: "Rules-engine conviction before final arbitration.",
+      score_components: "Long/short scores, raw scores, gap, and runtime multiplier.",
+      decision_thresholds: "Current threshold and gap requirements.",
+      decision_blockers: "Reasons a candidate failed a long/short gate.",
+      fundamentals: "Fundamental screen, direction, score, and quality context.",
+      macro_regime: "Market/sector backdrop.",
+      evidence: "Positive and negative evidence summaries from Signals Agent.",
+      evidence_quality: "Freshness/source/corroboration quality context.",
+      runtime_reliability: "Source health and reliability multiplier.",
+      recent_documents: "Recent evidence headlines and source metadata supplied to the system."
     },
     candidates: setups.map(compactSetup)
   };
@@ -220,7 +329,18 @@ const RECOMMENDATION_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["ticker", "action", "confidence", "rationale", "supporting_factors", "concerns"],
+        required: [
+          "ticker",
+          "action",
+          "confidence",
+          "rationale",
+          "supporting_factors",
+          "concerns",
+          "evidence_alignment",
+          "risk_assessment",
+          "confidence_reason",
+          "missing_data"
+        ],
         properties: {
           ticker: { type: "string" },
           action: { type: "string", enum: ["long", "short", "watch", "no_trade"] },
@@ -232,6 +352,14 @@ const RECOMMENDATION_SCHEMA = {
             items: { type: "string" }
           },
           concerns: {
+            type: "array",
+            maxItems: 5,
+            items: { type: "string" }
+          },
+          evidence_alignment: { type: "string" },
+          risk_assessment: { type: "string" },
+          confidence_reason: { type: "string" },
+          missing_data: {
             type: "array",
             maxItems: 5,
             items: { type: "string" }
@@ -272,8 +400,7 @@ async function fetchOpenAiReview({ config, promptPack }) {
       },
       body: JSON.stringify({
         model: config.llmSelectionModel,
-        instructions:
-          "You are the LLM Selection Agent. Produce strict JSON matching the supplied schema. Review evidence, thresholds, risk flags, and portfolio policy. Never place trades.",
+        instructions: LLM_SELECTION_INSTRUCTIONS,
         input: JSON.stringify(promptPack),
         text: {
           format: {
@@ -332,6 +459,12 @@ function normalizeExternalRecommendation(raw, setup, local, config, portfolioPol
       ? raw.concerns.filter(Boolean).map(String).slice(0, 5)
       : local.concerns,
     recommended_policy_notes: policyNotes(config, portfolioPolicy),
+    evidence_alignment: String(raw?.evidence_alignment || local.evidence_alignment || "").slice(0, 500),
+    risk_assessment: String(raw?.risk_assessment || local.risk_assessment || "").slice(0, 500),
+    confidence_reason: String(raw?.confidence_reason || local.confidence_reason || "").slice(0, 500),
+    missing_data: Array.isArray(raw?.missing_data)
+      ? raw.missing_data.filter(Boolean).map(String).slice(0, 5)
+      : local.missing_data || [],
     reviewer: "openai"
   };
 }
@@ -415,7 +548,10 @@ export async function buildLlmSelectionSnapshot({ config, tradeSetups, portfolio
           ? `LLM selection fell back to the local shadow reviewer: ${lastError}`
           : "LLM selection is enabled, but no provider/API key is configured; using the local qualitative shadow reviewer."
         : "LLM selection is running in local shadow mode until a provider is configured.",
-    algorithm: "Parallel qualitative reviewer: reads deterministic setup packs, fundamentals, market regime, money-flow/signal evidence, runtime reliability, and portfolio policy; then returns action, confidence, support, concerns, and disagreements.",
+    prompt_version: LLM_SELECTION_PROMPT_VERSION,
+    instructions_summary:
+      "Investment-committee review prompt with evidence discipline, no-outside-data rule, multi-agent rubric, confidence calibration, missing-data reporting, and no-trade-execution guardrails.",
+    algorithm: "Parallel qualitative reviewer: reads deterministic setup packs, fundamentals, market regime, money-flow/signal evidence, runtime reliability, and portfolio policy; then returns action, confidence, support, concerns, evidence alignment, risk assessment, missing data, and disagreements.",
     counts: countRecommendations(recommendations),
     recommendations
   };

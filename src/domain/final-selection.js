@@ -171,6 +171,8 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
       setup.fundamentals?.screen_stage ? `Fundamentals stage: ${setup.fundamentals.screen_stage}.` : null,
       setup.macro_regime?.regime_label ? `Market regime: ${setup.macro_regime.regime_label}.` : null,
       setup.summary,
+      llm.evidence_alignment,
+      llm.confidence_reason,
       ...(deterministic.thesis || []),
       ...(llm.supporting_factors || [])
     ],
@@ -182,6 +184,8 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
       ...(deterministic.risk_flags || []),
       ...(deterministic.negative_evidence || []),
       ...(llm.concerns || []),
+      llm.risk_assessment,
+      ...(llm.missing_data || []).map((item) => `Missing/weak data: ${item}`),
       ...failedGates.map((gate) => gate.detail),
       candidate.final_conviction_gap ? `Final conviction is short by ${round(candidate.final_conviction_gap * 100, 1)} percentage points.` : null
     ],
