@@ -134,7 +134,7 @@ const alpacaApiSecretKey = firstCredential("ALPACA_API_SECRET_KEY", "ALPACA_SECR
 const llmSelectionApiKey = firstCredential("LLM_SELECTION_API_KEY", "OPENAI_API_KEY");
 const llmSelectionProvider = String(process.env.LLM_SELECTION_PROVIDER || (llmSelectionApiKey ? "openai" : "shadow")).toLowerCase();
 const llmSelectionModel =
-  process.env.LLM_SELECTION_MODEL || (llmSelectionProvider === "openai" ? "gpt-5-mini" : "policy-aware-shadow-reviewer");
+  process.env.LLM_SELECTION_MODEL || (llmSelectionProvider === "openai" ? "gpt-5.4-mini" : "policy-aware-shadow-reviewer");
 const llmSelectionApiUrl =
   process.env.LLM_SELECTION_API_URL || (llmSelectionProvider === "openai" ? "https://api.openai.com/v1/responses" : "");
 const earningsApiKey = firstCredential("EARNINGS_API_KEY", "TWELVE_DATA_API_KEY");
