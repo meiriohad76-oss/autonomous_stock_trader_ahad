@@ -28,7 +28,7 @@ Recommended cadence:
 
 - initial baseline cycle: every 5 minutes until all required workers are baseline-ready
 - ongoing agency cycle: every 15 minutes during market hours
-- SEC fundamentals first-load catch-up: one bounded batch every 15 minutes, then the normal SEC refresh interval after coverage is complete
+- SEC fundamentals first-load catch-up: several bounded batches per initial-baseline run, then the normal SEC refresh interval after coverage is complete
 - market/news/signals: use the configured source intervals, with paper execution gated whenever live pricing is fallback, synthetic, or unconfirmed
 
 The Command dashboard exposes `Initial Baseline`, `Ongoing Updates`, `Recommended Cadence`, and `Next Scheduled` cards so a worker no longer looks stuck when it is either waiting for a scheduled catch-up batch or blocked by missing live data.
@@ -83,7 +83,7 @@ The bounded run refreshes:
 - SEC Form 4 insider flow
 - selection, final selection, risk, portfolio, and learning snapshots
 
-Heavy actions such as SEC fundamentals and SEC 13F are skipped unless `includeHeavy` is `true`.
+During `initial_baseline`, SEC fundamentals catch-up is included automatically and may run several bounded batches, controlled by `AGENCY_BASELINE_SEC_BATCHES_PER_RUN`. Other heavy actions such as SEC 13F are skipped unless `includeHeavy` is `true`.
 
 ## Advance One Stage
 

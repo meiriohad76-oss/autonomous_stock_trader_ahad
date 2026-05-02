@@ -11,7 +11,10 @@ const cycle = buildAgencyCycleStatus({
     live_data: {
       fresh_decision_evidence_count: 0,
       live_pricing_ready: true,
-      sources: [{ key: "market_data", status: "fresh", fallback_mode: false }]
+      sources: [
+        { key: "market_data", status: "fresh", fallback_mode: false },
+        { key: "market_flow", status: "fresh", fallback_mode: false }
+      ]
     },
     blockers: ["Collect fresh live evidence before compiling actionable trades."],
     warnings: ["Runtime is constrained; keep heavy collectors manual."],
@@ -99,7 +102,10 @@ const readyCycle = buildAgencyCycleStatus({
     live_data: {
       fresh_decision_evidence_count: 4,
       live_pricing_ready: true,
-      sources: [{ key: "market_flow", status: "fresh", fallback_mode: false }]
+      sources: [
+        { key: "market_data", status: "fresh", fallback_mode: false },
+        { key: "market_flow", status: "fresh", fallback_mode: false }
+      ]
     },
     blockers: [],
     warnings: [],

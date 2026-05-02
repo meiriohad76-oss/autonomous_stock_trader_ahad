@@ -21,7 +21,7 @@ const WORKERS = [
     view: "markets",
     automation: "automatic_snapshot_plus_one_shot_refresh",
     mission: "Read market regime, sector breadth, and market-flow pressure.",
-    action: { kind: "runtime", action: "poll_once", source: "market_flow", label: "Poll Flow", icon: "monitoring" }
+    action: { kind: "runtime", action: "poll_once", source: "fundamental_market_data", label: "Refresh Pricing", icon: "query_stats", limit: 25 }
   },
   {
     key: "signals",
@@ -248,6 +248,33 @@ function nextAtFrom(source = {}, intervalMs = 0, override = null) {
     return null;
   }
   return new Date(lastTime + interval).toISOString();
+}
+
+function sourceReady(source) {
+  return sourceIsFresh(source);
+}
+
+function marketProgress(sources) {
+  const pricingReady = sourceReady(sources.market_data) || sourceReady(sources.fundamental_market_data);
+  const flowEnabled = sources.market_flow?.enabled !== false;
+  const flowReady = !flowEnabled || sourceReady(sources.market_flow);
+  const polling = [sources.market_data, sources.fundamental_market_data, sources.market_flow].some((source) => sourceIsPolling(source));
+  const target = flowEnabled ? 2 : 1;
+  const current = (pricingReady ? 1 : 0) + (flowEnabled && flowReady ? 1 : 0);
+  const remaining = [
+    !pricingReady && "Live pricing/reference",
+    flowEnabled && !flowReady && "Market Flow"
+  ].filter(Boolean);
+
+  return {
+    current,
+    target,
+    pct: target ? clampProgress((current / target) * 100) : 0,
+    polling,
+    remaining,
+    pricing_ready: pricingReady,
+    flow_ready: flowReady
+  };
 }
 
 function refreshStateFor({ sources = [], baselineReady = true, intervalMs = 0, nextRefreshAt = null }) {
@@ -642,6 +669,7 @@ export function buildAgencyCycleStatus({
     fundamentalMarketDataRefreshMs: 900_000,
     fundamentalSecBaselinePollMs: 900_000,
     fundamentalSecPollMs: 21_600_000,
+    agencyBaselineSecBatchesPerRun: 4,
     secForm4PollMs: 600_000,
     sec13fPollMs: 43_200_000,
     earningsPollMs: 14_400_000,
@@ -673,7 +701,7 @@ export function buildAgencyCycleStatus({
     setupCounts.visible > 0 ||
     setupCounts.long + setupCounts.short + setupCounts.watch + setupCounts.noTrade > 0;
   const runtimeSources = runtimeSourceByKey(runtimeReliability);
-  const marketSourceProgress = sourceProgress(["market_data", "fundamental_market_data", "market_flow"], sources);
+  const marketSourceProgress = marketProgress(sources);
   const signalSourceProgress = sourceProgress(
     [
       "live_news",
@@ -741,7 +769,7 @@ export function buildAgencyCycleStatus({
       (!cfg.agencyBaselineRequireFullSec && Number(secQueue?.coverage_ratio || 0) >= minSecCoveragePct)
     )
   );
-  const marketBaselineReady = Boolean(livePricingReady && marketSourceProgress.target && marketSourceProgress.remaining.length === 0);
+  const marketBaselineReady = Boolean(livePricingReady && marketSourceProgress.pricing_ready && marketSourceProgress.flow_ready);
   const signalsBaselineReady = Boolean(freshDecisionEvidence > 0 && signalSourceProgress.current >= signalBaselineTarget);
   const policyBaselineReady = Boolean(portfolioPolicy);
   const upstreamBaselineReady =
@@ -789,6 +817,12 @@ export function buildAgencyCycleStatus({
     fundamentalsBaselineReady ? cfg.fundamentalSecPollMs : cfg.fundamentalSecBaselinePollMs,
     fundamentalsBaselineReady ? 21_600_000 : 900_000
   );
+  const secBatchSize = Math.max(1, Number(secQueue?.next_batch_size || secQueue?.refresh_limit || 1));
+  const secRemainingBatches = pendingSec ? Math.ceil(pendingSec / secBatchSize) : 0;
+  const secBatchesPerRun = Math.max(1, Number(cfg.agencyBaselineSecBatchesPerRun || 1));
+  const secRunEstimate = pendingSec
+    ? `${secRemainingBatches} batch(es), about ${Math.ceil(secRemainingBatches / secBatchesPerRun)} baseline run(s)`
+    : null;
   const workerTiming = {
     universe: {
       refresh_cadence_ms: 86_400_000,
@@ -911,7 +945,11 @@ export function buildAgencyCycleStatus({
             progress_current: secLiveCount,
             progress_target: trackedCount,
             progress_label: `${secLiveCount}/${trackedCount} SEC-backed${secPolling ? "; polling now" : "; background catch-up"}`,
-            remaining: [`${pendingSec} bootstrap fundamentals rows`, secQueue?.next_poll_at ? `next auto SEC batch ${secQueue.next_poll_at}` : "run SEC Batch to continue now"]
+            remaining: [
+              `${pendingSec} bootstrap fundamentals rows`,
+              secRunEstimate,
+              secQueue?.next_poll_at ? `next auto SEC batch ${secQueue.next_poll_at}` : "run initial baseline to continue now"
+            ]
           })
         : workerStatus("complete", "SEC-backed fundamentals coverage is complete.", {
             data_state: "ready",
@@ -936,8 +974,8 @@ export function buildAgencyCycleStatus({
           progress_current: marketSourceProgress.current,
           progress_target: marketSourceProgress.target,
           progress_label: livePricingReady
-            ? `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh`
-            : `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh; live pricing not confirmed`,
+            ? `${marketSourceProgress.current}/${marketSourceProgress.target || 2} required market inputs fresh`
+            : `${marketSourceProgress.current}/${marketSourceProgress.target || 2} required market inputs fresh; live pricing not confirmed`,
           remaining: marketSourceProgress.remaining
         })
       : workerStatus("waiting", "Market context needs a pricing or flow refresh.", {
@@ -947,7 +985,7 @@ export function buildAgencyCycleStatus({
           progress_pct: marketProgressPct,
           progress_current: marketSourceProgress.current,
           progress_target: marketSourceProgress.target,
-          progress_label: `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh; live pricing not confirmed`,
+          progress_label: `${marketSourceProgress.current}/${marketSourceProgress.target || 2} required market inputs fresh; live pricing not confirmed`,
           remaining: marketSourceProgress.remaining.length ? marketSourceProgress.remaining : ["live pricing", "market flow"]
         }),
     signals: freshDecisionEvidence > 0
@@ -1200,12 +1238,13 @@ export function buildAgencyCycleStatus({
     baseline_ready: baselineReady,
     initial_baseline: dataProgress.baseline,
     ongoing_refresh: dataProgress.ongoing_refresh,
-    refresh_cadence: {
-      initial_baseline_cycle_ms: cfg.agencyInitialBaselineCycleMs,
-      ongoing_cycle_ms: cfg.agencyOngoingCycleMs,
-      recommendation:
-        "Run a bounded initial baseline cycle every 5 minutes until all required workers are baseline-ready; after that, run the agency cycle every 15 minutes during market hours, with source collectors following their own safer API-specific intervals."
-    },
+      refresh_cadence: {
+        initial_baseline_cycle_ms: cfg.agencyInitialBaselineCycleMs,
+        ongoing_cycle_ms: cfg.agencyOngoingCycleMs,
+        baseline_sec_batches_per_run: cfg.agencyBaselineSecBatchesPerRun,
+        recommendation:
+        "Run a bounded initial baseline cycle every 5 minutes until all required workers are baseline-ready; each baseline run may process several SEC fundamentals batches. After that, run the agency cycle every 15 minutes during market hours, with source collectors following their own safer API-specific intervals."
+      },
     data_progress: dataProgress,
     workers,
     blockers: workflowStatus?.blockers || [],

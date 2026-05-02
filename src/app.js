@@ -288,6 +288,7 @@ function buildPerformanceSnapshot(currentConfig, store) {
       live_news_max_items_per_ticker: currentConfig.liveNewsMaxItemsPerTicker,
       agency_initial_baseline_cycle_ms: currentConfig.agencyInitialBaselineCycleMs,
       agency_ongoing_cycle_ms: currentConfig.agencyOngoingCycleMs,
+      agency_baseline_sec_batches_per_run: currentConfig.agencyBaselineSecBatchesPerRun,
       market_data_refresh_ms: currentConfig.marketDataRefreshMs,
       market_flow_poll_ms: currentConfig.marketFlowPollMs,
       auto_start_market_flow: currentConfig.autoStartMarketFlow,
@@ -1255,10 +1256,11 @@ export function createSentimentApp() {
           baseline_require_full_sec: config.agencyBaselineRequireFullSec,
           baseline_min_sec_coverage_pct: config.agencyBaselineMinSecCoveragePct,
           baseline_min_signal_sources: config.agencyBaselineMinSignalSources,
+          baseline_sec_batches_per_run: config.agencyBaselineSecBatchesPerRun,
           recommended: [
             "Initial baseline cycle: every 5 minutes until all required agents are baseline-ready.",
             "Ongoing agency cycle: every 15 minutes during market hours.",
-            "SEC fundamentals baseline catch-up: one bounded batch every 15 minutes, then every 6 hours after coverage is complete.",
+            "SEC fundamentals baseline catch-up: several bounded batches per baseline run, then every 6 hours after coverage is complete.",
             "Market/news/signals: refresh on their configured source intervals, with paper execution gated when live pricing is not confirmed."
           ]
         },
@@ -2051,24 +2053,30 @@ export function createSentimentApp() {
     async runAgencyCycle(options = {}) {
       const window = options.window || config.defaultWindow;
       const limit = options.limit ? Number(options.limit) : 25;
-      const includeHeavy = Boolean(options.includeHeavy || options.include_heavy);
+      const requestedIncludeHeavy = Boolean(options.includeHeavy || options.include_heavy);
       const requestedPriceLimit = Math.max(1, Math.floor(Number(options.priceLimit || options.price_limit || config.fundamentalMarketDataMaxCompaniesPerPoll || 25)));
       const priceLimit = Math.max(1, boundedFundamentalMarketDataLimit(requestedPriceLimit) || requestedPriceLimit);
       const before = await this.getAgencyCycleStatus({ ...options, window, limit });
+      const baselineMode = before.baseline_ready === false || before.mode === "initial_baseline";
+      const includeHeavy = requestedIncludeHeavy || baselineMode;
       const actionResults = [];
+      const baselineSecBatches = baselineMode
+        ? Math.max(1, Math.floor(Number(config.agencyBaselineSecBatchesPerRun || 1)))
+        : 1;
       const runtimeActions = [
         { label: "Refresh Universe", payload: { action: "refresh_universe" } },
         { label: "Refresh Pricing Sample", payload: { action: "poll_once", source: "fundamental_market_data", limit: priceLimit } },
         { label: "Poll Market Flow", payload: { action: "poll_once", source: "market_flow" } },
         { label: "Poll Live News", payload: { action: "poll_once", source: "live_news" } },
         { label: "Poll SEC Form 4", payload: { action: "poll_once", source: "sec_form4" } },
-        { label: "Run SEC Fundamentals Batch", payload: { action: "poll_once", source: "sec_fundamentals" }, heavy: true },
+        { label: "Run SEC Fundamentals Batch", payload: { action: "poll_once", source: "sec_fundamentals" }, heavy: true, baseline: true, repeat: baselineSecBatches },
         { label: "Poll Trade Prints", payload: { action: "poll_once", source: "trade_prints" }, optional: true },
         { label: "Poll SEC 13F", payload: { action: "poll_once", source: "sec_13f" }, optional: true, heavy: true }
       ];
 
       for (const item of runtimeActions) {
-        if (item.heavy && !includeHeavy) {
+        const allowedByBaseline = baselineMode && item.baseline;
+        if (item.heavy && !requestedIncludeHeavy && !allowedByBaseline) {
           actionResults.push({
             ok: null,
             skipped: true,
@@ -2080,37 +2088,51 @@ export function createSentimentApp() {
           continue;
         }
 
-        try {
-          const response = await this.runRuntimeReliabilityAction(item.payload);
-          const sourceStatus = item.payload.source
-            ? response.runtime_reliability?.sources?.find((source) => source.key === item.payload.source)
-            : null;
-          actionResults.push({
-            ok: true,
-            skipped: false,
-            label: item.label,
-            action: item.payload.action,
-            source: item.payload.source || null,
-            result: summarizeRuntimeActionResult(response.result) || null,
-            source_status: sourceStatus
-              ? {
-                  status: sourceStatus.status,
-                  provider: sourceStatus.provider,
-                  last_success_at: sourceStatus.last_success_at,
-                  last_error: sourceStatus.last_error
-                }
-              : null
-          });
-        } catch (error) {
-          const skipped = /disabled by configuration/i.test(error.message);
-          actionResults.push({
-            ok: skipped ? null : false,
-            skipped,
-            label: item.label,
-            action: item.payload.action,
-            source: item.payload.source || null,
-            error: error.message
-          });
+        const repeat = Math.max(1, Math.floor(Number(item.repeat || 1)));
+        for (let iteration = 0; iteration < repeat; iteration += 1) {
+          try {
+            const response = await this.runRuntimeReliabilityAction(item.payload);
+            const sourceStatus = item.payload.source
+              ? response.runtime_reliability?.sources?.find((source) => source.key === item.payload.source)
+              : null;
+            actionResults.push({
+              ok: true,
+              skipped: false,
+              label: repeat > 1 ? `${item.label} ${iteration + 1}/${repeat}` : item.label,
+              action: item.payload.action,
+              source: item.payload.source || null,
+              result: summarizeRuntimeActionResult(response.result) || null,
+              source_status: sourceStatus
+                ? {
+                    status: sourceStatus.status,
+                    provider: sourceStatus.provider,
+                    last_success_at: sourceStatus.last_success_at,
+                    last_error: sourceStatus.last_error
+                  }
+                : null
+            });
+
+            if (
+              item.payload.source === "sec_fundamentals" &&
+              Number(response.result?.trackedCompanies || 0) > 0 &&
+              Number(response.result?.pendingBootstrapCompanies || 0) === 0
+            ) {
+              break;
+            }
+          } catch (error) {
+            const skipped = /disabled by configuration/i.test(error.message);
+            actionResults.push({
+              ok: skipped ? null : false,
+              skipped,
+              label: repeat > 1 ? `${item.label} ${iteration + 1}/${repeat}` : item.label,
+              action: item.payload.action,
+              source: item.payload.source || null,
+              error: error.message
+            });
+            if (!skipped) {
+              break;
+            }
+          }
         }
       }
 
@@ -2161,6 +2183,8 @@ export function createSentimentApp() {
           failed_count: failedCount,
           skipped_count: skippedCount,
           include_heavy: includeHeavy,
+          baseline_mode: baselineMode,
+          baseline_sec_batches: baselineMode ? baselineSecBatches : 0,
           price_limit: priceLimit,
           requested_price_limit: requestedPriceLimit,
           provider_price_cap: config.fundamentalMarketDataMaxCompaniesPerPoll || null,

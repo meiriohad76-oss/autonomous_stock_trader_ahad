@@ -450,7 +450,7 @@ function runtimeActionSummary(action, result = {}) {
   return `${prettyLabel(action)} completed.`;
 }
 
-function runtimeActionButton(action, source, label, icon = "play_arrow") {
+function runtimeActionButton(action, source, label, icon = "play_arrow", options = {}) {
   const runtimeAction = getRuntimeAction(action, source);
   const disabled = !runtimeAction?.enabled || state.runtimeActionState === "running";
   return `
@@ -459,6 +459,7 @@ function runtimeActionButton(action, source, label, icon = "play_arrow") {
       class="panel-action runtime-action-button"
       data-runtime-action="${action}"
       data-runtime-source="${source || ""}"
+      ${options.limit ? `data-runtime-limit="${escapeHtml(options.limit)}"` : ""}
       ${disabled ? "disabled" : ""}
       title="${runtimeAction?.disabled_reason || runtimeAction?.description || ""}"
     >
@@ -473,7 +474,9 @@ function agencyActionButton(action, className = "panel-action runtime-action-but
     return "";
   }
   if (action.kind === "runtime") {
-    return runtimeActionButton(action.action, action.source || null, action.label || "Run", action.icon || "play_arrow");
+    return runtimeActionButton(action.action, action.source || null, action.label || "Run", action.icon || "play_arrow", {
+      limit: action.limit || null
+    });
   }
   if (action.kind === "view") {
     return `
@@ -484,6 +487,12 @@ function agencyActionButton(action, className = "panel-action runtime-action-but
     `;
   }
   return "";
+}
+
+function runtimeOptionsFromButton(button) {
+  return {
+    limit: button?.dataset?.runtimeLimit ? Number(button.dataset.runtimeLimit) : undefined
+  };
 }
 
 function advanceCycleButton(label = "Advance Cycle") {
@@ -504,16 +513,18 @@ function advanceCycleButton(label = "Advance Cycle") {
 
 function runAgencyCycleButton(label = "Run Agency Cycle") {
   const disabled = state.agencyRunState === "running" || state.agencyAdvanceState === "running" || state.runtimeActionState === "running";
+  const baselineMode = state.agencyCycle?.baseline_ready === false || state.agencyCycle?.mode === "initial_baseline";
+  const buttonLabel = baselineMode && label === "Run Agency Cycle" ? "Run Initial Baseline" : label;
   return `
     <button
       type="button"
       class="panel-action runtime-action-button agency-run-action"
       data-agency-run="true"
       ${disabled ? "disabled" : ""}
-      title="Run a bounded agency cycle: refresh data workers, recompute selection, refresh risk and portfolio snapshots. This never submits an Alpaca order."
+      title="${escapeHtml(baselineMode ? "Run the first-load baseline, including bounded SEC fundamentals catch-up. This never submits an Alpaca order." : "Run a bounded agency cycle: refresh data workers, recompute selection, refresh risk and portfolio snapshots. This never submits an Alpaca order.")}"
     >
       <span class="material-symbols-outlined">${disabled ? "progress_activity" : "play_circle"}</span>
-      ${escapeHtml(disabled ? "Running Cycle..." : label)}
+      ${escapeHtml(disabled ? "Running Cycle..." : buttonLabel)}
     </button>
   `;
 }
@@ -6044,7 +6055,7 @@ async function handleAgencyPanelClick(event) {
       await runRuntimeProfilePreview(runtimeButton.dataset.runtimeProfile);
       return true;
     }
-    await runRuntimeAction(runtimeButton.dataset.runtimeAction, runtimeButton.dataset.runtimeSource || null);
+    await runRuntimeAction(runtimeButton.dataset.runtimeAction, runtimeButton.dataset.runtimeSource || null, runtimeOptionsFromButton(runtimeButton));
     return true;
   }
 
@@ -6102,7 +6113,7 @@ function setActiveView(view) {
   }
 }
 
-async function runRuntimeAction(action, source) {
+async function runRuntimeAction(action, source, options = {}) {
   state.runtimeActionState = "running";
   state.runtimeActionResult = null;
   render();
@@ -6111,7 +6122,7 @@ async function runRuntimeAction(action, source) {
     const response = await fetch("/api/runtime-reliability/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, source })
+      body: JSON.stringify({ action, source, ...options })
     });
     const payload = await response.json();
     if (!response.ok || !payload.ok) {
@@ -6183,9 +6194,10 @@ function agencyRunSummary(payload) {
     `${run.ok_count || 0} worker action${(run.ok_count || 0) === 1 ? "" : "s"} completed`,
     `${run.skipped_count || 0} skipped`,
     `${run.failed_count || 0} failed`,
+    run.baseline_mode ? `${run.baseline_sec_batches || 0} SEC baseline batch cap` : null,
     `${run.final_buy || 0}/${run.final_sell || 0} final buy/sell`,
     run.live_pricing_ready ? "live pricing ready" : "live pricing still not confirmed"
-  ];
+  ].filter(Boolean);
   const next = (run.next_actions || []).slice(0, 1)[0];
   return `Agency cycle run complete: ${pieces.join(", ")}.${next ? ` Next: ${next}` : ""}`;
 }
@@ -6199,7 +6211,8 @@ async function runAgencyCycle() {
     const payload = await postJson("/api/agency/cycle/run", {
       window: state.activeWindow,
       priceLimit: 25,
-      includeHeavy: false
+      includeHeavy: false,
+      baselineMode: state.agencyCycle?.baseline_ready === false || state.agencyCycle?.mode === "initial_baseline"
     });
     state.agencyRunResult = payload;
     state.agencyRunState = agencyRunSummary(payload);
@@ -6318,7 +6331,7 @@ function attachEvents() {
       return;
     }
 
-    await runRuntimeAction(button.dataset.runtimeAction, button.dataset.runtimeSource || null);
+    await runRuntimeAction(button.dataset.runtimeAction, button.dataset.runtimeSource || null, runtimeOptionsFromButton(button));
   });
 
   [
@@ -6372,7 +6385,7 @@ function attachEvents() {
       return;
     }
 
-    await runRuntimeAction(button.dataset.runtimeAction, button.dataset.runtimeSource || null);
+    await runRuntimeAction(button.dataset.runtimeAction, button.dataset.runtimeSource || null, runtimeOptionsFromButton(button));
   });
 
   elements.signalBackdrop?.addEventListener("click", closeSignalDrawer);
