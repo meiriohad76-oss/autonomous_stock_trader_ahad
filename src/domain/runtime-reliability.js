@@ -335,6 +335,8 @@ function sourceSpecs(config) {
       enabled: true,
       autoStart: true,
       intervalMs: config.marketDataRefreshMs,
+      staleAfterHours: 36,
+      softErrorsWhenFresh: true,
       criticality: "high",
       configured: isLiveMarketProviderConfigured(config, config.marketDataProvider),
       missingConfigReason: marketProviderMissingConfigReason(config.marketDataProvider, "Live pricing"),
@@ -348,6 +350,8 @@ function sourceSpecs(config) {
       enabled: config.marketFlowEnabled,
       autoStart: dataAutoStart(config, config.marketFlowEnabled, config.autoStartMarketFlow),
       intervalMs: config.marketFlowPollMs,
+      staleAfterHours: 36,
+      softErrorsWhenFresh: true,
       criticality: "medium",
       configured: config.marketDataProvider !== "synthetic" && isLiveMarketProviderConfigured(config, config.marketDataProvider),
       missingConfigReason: marketProviderMissingConfigReason(config.marketDataProvider, "Market Flow") || "Market Flow needs MARKET_DATA_PROVIDER=alpaca or twelvedata.",
@@ -399,6 +403,8 @@ function sourceSpecs(config) {
       enabled: true,
       autoStart: dataAutoStart(config, true, config.autoStartFundamentalMarketData),
       intervalMs: config.fundamentalMarketDataRefreshMs,
+      staleAfterHours: 48,
+      softErrorsWhenFresh: true,
       criticality: "medium",
       configured: isLiveMarketProviderConfigured(config, config.fundamentalMarketDataProvider),
       missingConfigReason: marketProviderMissingConfigReason(config.fundamentalMarketDataProvider, "Live fundamental market reference"),
@@ -470,7 +476,7 @@ function classifySource(spec, health, pressure) {
   const lastPollAt = health?.last_poll_at || null;
   const lastError = errorMessage(health);
   const ageHours = lastSuccessAt ? differenceInHours(lastSuccessAt) : null;
-  const staleAfterHours = Math.max(1, round(((spec.intervalMs || HOUR_MS) * 2.5) / HOUR_MS, 2));
+  const staleAfterHours = spec.staleAfterHours || Math.max(1, round(((spec.intervalMs || HOUR_MS) * 2.5) / HOUR_MS, 2));
   const providerName = String(health?.provider || spec.provider || "");
   const hasLiveProvider =
     !["market_data", "market_flow", "fundamental_market_data"].includes(spec.key) ||
@@ -536,6 +542,15 @@ function classifySource(spec, health, pressure) {
       action: pressure.isConstrained ? "manual_refresh_when_needed" : "refresh",
       severity: spec.criticality === "critical" ? "warning" : "info",
       reason: `${spec.label} has not refreshed within ${staleAfterHours} hours.`
+    };
+  }
+
+  if (lastError && spec.softErrorsWhenFresh && ageHours !== null && ageHours <= staleAfterHours) {
+    return {
+      status: "healthy",
+      action: "keep_running",
+      severity: "info",
+      reason: `${spec.label} has usable recent data. Latest provider warning is shown in details.`
     };
   }
 
@@ -897,6 +912,10 @@ export function createRuntimeReliabilityAgent({ config, store }) {
         reason: classification.reason,
         notes: spec.notes,
         provider: health.provider || spec.provider || null,
+        feed: health.feed || null,
+        fallback_mode: Boolean(health.fallback_mode),
+        configured: health.configured === undefined ? null : Boolean(health.configured),
+        last_empty_at: health.last_empty_at || null,
         polling: Boolean(health.polling),
         last_poll_at: health.last_poll_at || null,
         last_success_at: lastSuccessAt,

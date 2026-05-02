@@ -86,6 +86,7 @@ const state = {
   alertFilter: "all",
   marketFlowSettings: {},
   marketFlowSaveState: "",
+  selectedMoneyFlowTicker: null,
   runtimeActionState: "",
   runtimeActionResult: null,
   agencyAdvanceState: "",
@@ -674,6 +675,37 @@ function collectMoneyFlowSignals() {
   }
 
   return deduped.sort((a, b) => new Date(signalTimestamp(b) || 0) - new Date(signalTimestamp(a) || 0));
+}
+
+function filterMoneyFlowSignalsByTicker(signals, ticker) {
+  if (!ticker) {
+    return signals;
+  }
+  return signals.filter((item) => item.ticker === ticker);
+}
+
+function moneyFlowDiagnostics(signals, limit = 6) {
+  return signals.slice(0, limit).map((item) => {
+    const timestamp = signalTimestamp(item);
+    const sourceName = signalSourceName(item, "Money Flow");
+    const metadata = item.source_metadata || {};
+    const volumeSpike = metadata.volume_spike ?? metadata.dollar_volume_spike ?? null;
+    const direction = metadata.flow_direction || (String(item.event_type || "").includes("selling") ? "sell" : String(item.event_type || "").includes("buying") ? "buy" : null);
+    const sourceLink = signalSourceUrl(item);
+    const facts = [
+      moneyFlowBucket(item.event_type),
+      sourceName,
+      timestamp ? relativeTime(timestamp) : "time n/a",
+      direction ? `direction ${direction}` : null,
+      volumeSpike ? `spike ${formatNumber(volumeSpike, 2)}x` : null,
+      sourceLink ? "source link ready" : "no source link"
+    ].filter(Boolean);
+    return {
+      item,
+      label: `${item.ticker || "MKT"} - ${eventTypeLabel(item.event_type)}`,
+      facts
+    };
+  });
 }
 
 function findTickerRow(ticker) {
@@ -3888,8 +3920,13 @@ function renderAlertsView() {
   const positiveCount = state.alerts.filter((alert) => alert.alert_type === "high_confidence_positive").length;
   const negativeCount = state.alerts.filter((alert) => alert.alert_type === "high_confidence_negative").length;
   const reversalCount = state.alerts.filter((alert) => alert.alert_type === "polarity_reversal").length;
-  const moneyFlowSignals = collectMoneyFlowSignals();
+  const allMoneyFlowSignals = collectMoneyFlowSignals();
+  if (state.selectedMoneyFlowTicker && !allMoneyFlowSignals.some((item) => item.ticker === state.selectedMoneyFlowTicker)) {
+    state.selectedMoneyFlowTicker = null;
+  }
+  const moneyFlowSignals = filterMoneyFlowSignalsByTicker(allMoneyFlowSignals, state.selectedMoneyFlowTicker);
   const groupedMoneyFlow = moneyFlowGroups(moneyFlowSignals);
+  const diagnosticRows = moneyFlowDiagnostics(moneyFlowSignals);
   const insiderCount = moneyFlowSignals.filter((item) => INSIDER_FLOW_EVENT_TYPES.has(item.event_type)).length;
   const institutionalCount = moneyFlowSignals.filter((item) => INSTITUTIONAL_FLOW_EVENT_TYPES.has(item.event_type)).length;
   const tapeFlowCount = moneyFlowSignals.filter((item) => TAPE_FLOW_EVENT_TYPES.has(item.event_type)).length;
@@ -3969,7 +4006,7 @@ function renderAlertsView() {
     return acc;
   }, {});
   const moneyFlowTickers = Object.entries(
-    moneyFlowSignals.reduce((acc, item) => {
+    allMoneyFlowSignals.reduce((acc, item) => {
       if (!item.ticker) {
         return acc;
       }
@@ -3993,6 +4030,15 @@ function renderAlertsView() {
         <strong>How this relates to Active Alerts</strong>
         <p>Active Alerts are downstream sentiment-engine triggers. Smart Money Radar shows the upstream raw flow evidence from SEC insider filings, 13F ownership changes, and tape-style market anomalies before or alongside those alerts.</p>
       </div>
+      ${
+        state.selectedMoneyFlowTicker
+          ? `<div class="note-card selected-flow-note">
+              <strong>${state.selectedMoneyFlowTicker} money-flow drilldown</strong>
+              <p>Showing only money-flow evidence for ${state.selectedMoneyFlowTicker}. Use All Flow to return to the full radar.</p>
+              <button type="button" class="panel-action compact-action" data-money-flow-clear>All Flow</button>
+            </div>`
+          : ""
+      }
       <div class="workspace-detail-grid">
         <div class="workspace-stat-card"><span>Insider</span><strong>${insiderCount}</strong></div>
         <div class="workspace-stat-card"><span>Institutional</span><strong>${institutionalCount}</strong></div>
@@ -4012,17 +4058,24 @@ function renderAlertsView() {
               ? moneyFlowTickers
                   .map(
                     ([ticker, count]) =>
-                      `<li><button type="button" class="workspace-list-button" data-money-flow-ticker="${ticker}">${ticker} - ${count} flow signal${count === 1 ? "" : "s"}</button></li>`
+                      `<li class="${state.selectedMoneyFlowTicker === ticker ? "active" : ""}"><button type="button" class="workspace-list-button ${state.selectedMoneyFlowTicker === ticker ? "active" : ""}" data-money-flow-ticker="${ticker}">${ticker} - ${count} flow signal${count === 1 ? "" : "s"}</button></li>`
                   )
                   .join("")
               : "<li>No concentrated money-flow names yet.</li>"
           }
         </ul>
-        <div class="section-kicker">Alert Mix</div>
+        <div class="section-kicker">Signal Diagnostics</div>
         <ul class="workspace-list">
           ${Object.entries(alertCounts).length
             ? Object.entries(alertCounts).map(([type, count]) => `<li>${prettyLabel(type)} - ${count}</li>`).join("")
-            : "<li>No alert diagnostics yet.</li>"}
+            : diagnosticRows.length
+              ? diagnosticRows
+                  .map(
+                    (row, index) =>
+                      `<li><button type="button" class="workspace-list-button" data-money-flow-diagnostic="${index}">${row.label} - ${row.facts.join(" - ")}</button></li>`
+                  )
+                  .join("")
+              : "<li>No active alerts or money-flow diagnostics yet.</li>"}
         </ul>
       </div>
     </div>
@@ -4058,7 +4111,26 @@ function renderAlertsView() {
 
   for (const button of elements.alertsMoneyFlow.querySelectorAll("[data-money-flow-ticker]")) {
     button.addEventListener("click", async () => {
-      await focusTicker(button.dataset.moneyFlowTicker, "overview");
+      state.selectedMoneyFlowTicker = button.dataset.moneyFlowTicker || null;
+      const selectedSignal = allMoneyFlowSignals.find((item) => item.ticker === state.selectedMoneyFlowTicker);
+      if (selectedSignal) {
+        openSignalDrawer(buildSignalFromFeed(selectedSignal, "Money Flow Radar"));
+      }
+      renderAlertsView();
+    });
+  }
+
+  elements.alertsMoneyFlow.querySelector("[data-money-flow-clear]")?.addEventListener("click", () => {
+    state.selectedMoneyFlowTicker = null;
+    renderAlertsView();
+  });
+
+  for (const button of elements.alertsMoneyFlow.querySelectorAll("[data-money-flow-diagnostic]")) {
+    button.addEventListener("click", () => {
+      const row = diagnosticRows[Number(button.dataset.moneyFlowDiagnostic)];
+      if (row?.item) {
+        openSignalDrawer(buildSignalFromFeed(row.item, "Money Flow Diagnostic"));
+      }
     });
   }
 
@@ -4701,7 +4773,9 @@ function renderSystemView() {
               <span>${sourceStatusMeaning(source.status)}</span>
               <span>${source.reason}</span>
               <span>${source.notes}</span>
-              <small>Action: ${prettyLabel(source.action)} - Last success: ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}</small>
+              <small>Provider: ${source.provider || "n/a"}${source.feed ? ` (${source.feed})` : ""} - Fallback: ${source.fallback_mode ? "yes" : "no"}</small>
+              <small>Action: ${prettyLabel(source.action)} - Last success: ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}${source.last_empty_at ? ` - Last empty: ${relativeTime(source.last_empty_at)}` : ""}</small>
+              ${source.last_error ? `<small class="source-error">Last error: ${escapeHtml(source.last_error)}</small>` : ""}
             </div>
           `
         )

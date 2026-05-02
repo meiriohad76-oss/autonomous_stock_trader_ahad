@@ -112,6 +112,27 @@ await page
   .catch(() => {});
 await page.screenshot({ path: `${outDir}/ux-smoke-alerts.png`, fullPage: true });
 
+const flowChipCount = await page.locator("#alerts-money-flow [data-money-flow-ticker]").count();
+let moneyFlowDrilldown = {
+  chipCount: flowChipCount,
+  stayedOnAlerts: null,
+  selectedNote: null,
+  diagnosticsText: null
+};
+if (flowChipCount) {
+  await page.locator("#alerts-money-flow [data-money-flow-ticker]").first().click();
+  await page.waitForSelector('[data-view-panel="alerts"].is-active', { timeout: 5_000 });
+  moneyFlowDrilldown = {
+    chipCount: flowChipCount,
+    stayedOnAlerts: (await page.locator('[data-view-panel="alerts"].is-active').count()) === 1,
+    selectedNote: (await page.locator("#alerts-money-flow .selected-flow-note").innerText().catch(() => "")).slice(0, 300),
+    diagnosticsText: (await page.locator("#alerts-money-flow .money-flow-diagnostics").innerText().catch(() => "")).slice(0, 500)
+  };
+  if (!moneyFlowDrilldown.stayedOnAlerts || moneyFlowDrilldown.diagnosticsText.includes("No alert diagnostics yet")) {
+    throw new Error("Money-flow concentration drilldown did not stay in Signals with usable diagnostics.");
+  }
+}
+
 const firstSignal = page.locator("[data-alert-index], [data-high-impact-index], [data-money-flow-index]").first();
 if (await firstSignal.count()) {
   await firstSignal.click();
@@ -139,6 +160,7 @@ const report = {
   overview,
   markets,
   trading,
+  moneyFlowDrilldown,
   signalDrawer,
   consoleIssues
 };

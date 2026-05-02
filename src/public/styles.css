@@ -2663,6 +2663,11 @@ input:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.workspace-list.inline-list li.active {
+  background: rgba(45, 111, 255, 0.16);
+  border-color: rgba(79, 140, 255, 0.48);
+}
+
 .workspace-list-button {
   width: 100%;
   border: 0;
@@ -2670,6 +2675,14 @@ input:focus-visible {
   background: transparent;
   color: inherit;
   text-align: left;
+}
+
+.workspace-list-button.active {
+  color: var(--text-strong);
+}
+
+.selected-flow-note {
+  border-color: rgba(79, 140, 255, 0.36);
 }
 
 .runtime-action-panel {
@@ -2736,6 +2749,11 @@ input:focus-visible {
   margin-top: 6px;
   color: var(--text-soft);
   line-height: 1.45;
+}
+
+.runtime-source-card .source-error {
+  color: #ff98a6;
+  word-break: break-word;
 }
 
 .runtime-control-head b {
