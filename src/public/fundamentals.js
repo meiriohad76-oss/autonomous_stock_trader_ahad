@@ -1,6 +1,7 @@
 const state = {
   dashboard: null,
   health: null,
+  backtest: null,
   detail: null,
   filingHistory: [],
   factSeries: [],
@@ -35,6 +36,8 @@ const elements = {
   screenerCandidates: document.querySelector("#screener-candidates"),
   screenerWatchlist: document.querySelector("#screener-watchlist"),
   screenerStageChips: document.querySelector("#screener-stage-chips"),
+  backtestSummary: document.querySelector("#backtest-summary"),
+  backtestTests: document.querySelector("#backtest-tests"),
   sectorFilterChips: document.querySelector("#sector-filter-chips"),
   sectorCards: document.querySelector("#sector-cards"),
   leaderboardExplainer: document.querySelector("#leaderboard-explainer"),
@@ -111,6 +114,18 @@ function compactNumber(value) {
 function signed(value) {
   const number = Number(value || 0) * 100;
   return `${number >= 0 ? "+" : ""}${number.toFixed(1)}%`;
+}
+
+function maybePct(value, digits = 1) {
+  if (value === null || value === undefined) {
+    return "pending";
+  }
+  const number = Number(value) * 100;
+  return Number.isFinite(number) ? `${number >= 0 ? "+" : ""}${number.toFixed(digits)}%` : "pending";
+}
+
+function statusLabel(value) {
+  return titleCase(value || "pending_validation");
 }
 
 function relativeTime(value) {
@@ -259,10 +274,11 @@ function dashboardUrl() {
 }
 
 async function loadDashboard() {
-  const [healthResult, dashboardResult, screenerConfigResult] = await Promise.allSettled([
+  const [healthResult, dashboardResult, screenerConfigResult, backtestResult] = await Promise.allSettled([
     getJson("/api/health"),
     getJson(dashboardUrl()),
-    getJson("/api/settings/fundamental-screener")
+    getJson("/api/settings/fundamental-screener"),
+    getJson("/api/backtests/fundamentals?horizonDays=5&minSample=30")
   ]);
 
   if (healthResult.status === "fulfilled") {
@@ -313,6 +329,13 @@ async function loadDashboard() {
     state.screenerConfig = state.screenerConfig || { settings: {}, fields: [] };
   }
 
+  if (backtestResult.status === "fulfilled") {
+    state.backtest = backtestResult.value;
+  } else {
+    console.error(backtestResult.reason);
+    state.backtest = state.backtest || null;
+  }
+
   const availableTickers = (state.dashboard?.leaderboard || []).map((item) => item.ticker);
   if (!state.selectedTicker || !availableTickers.includes(state.selectedTicker)) {
     state.selectedTicker = availableTickers[0] || null;
@@ -351,6 +374,50 @@ function renderSectorFilters() {
       await loadDashboard();
     });
   }
+}
+
+function renderBacktest() {
+  if (!elements.backtestSummary || !elements.backtestTests) {
+    return;
+  }
+
+  const backtest = state.backtest;
+  if (!backtest) {
+    elements.backtestSummary.innerHTML = `<article class="summary-card"><span>Status</span><strong>Unavailable</strong></article>`;
+    elements.backtestTests.innerHTML = `<p class="subtle">Backtest evidence is not available yet.</p>`;
+    return;
+  }
+
+  const summary = backtest.summary || {};
+  elements.backtestSummary.innerHTML = `
+    <article class="summary-card"><span>Status</span><strong>${statusLabel(backtest.status)}</strong></article>
+    <article class="summary-card"><span>Horizon</span><strong>${backtest.horizon_days}d</strong></article>
+    <article class="summary-card"><span>Observations</span><strong>${summary.observations || 0}</strong></article>
+    <article class="summary-card"><span>Matured Returns</span><strong>${summary.matured_forward_returns || 0}</strong></article>
+    <article class="summary-card"><span>Synthetic Excluded</span><strong>${summary.synthetic_outcomes_excluded || 0}</strong></article>
+    <article class="summary-card"><span>Min Sample</span><strong>${backtest.min_sample || 0}</strong></article>
+  `;
+
+  const tests = [...(backtest.profiles || []), ...(backtest.criteria || [])].slice(0, 10);
+  elements.backtestTests.innerHTML = tests.length
+    ? tests
+        .map((item) => `
+          <article class="backtest-card">
+            <div class="backtest-card-head">
+              <strong>${item.label}</strong>
+              <span class="badge ${item.status === "validated_sample" ? "strong" : item.status === "blocked_synthetic_prices" ? "balanced" : "weak"}">${statusLabel(item.status)}</span>
+            </div>
+            <div class="backtest-metrics">
+              <span>Sample <strong>${item.sample_size || 0}/${item.evaluated_count || 0}</strong></span>
+              <span>Hit Rate <strong>${item.hit_rate === null || item.hit_rate === undefined ? "pending" : pct(item.hit_rate, 0)}</strong></span>
+              <span>Avg Return <strong>${maybePct(item.average_forward_return)}</strong></span>
+              <span>False Positives <strong>${item.false_positive_rate === null || item.false_positive_rate === undefined ? "pending" : pct(item.false_positive_rate, 0)}</strong></span>
+            </div>
+            <small>${(item.limitations || [])[0] || "Enough real forward-return observations exist for this rule."}</small>
+          </article>
+        `)
+        .join("")
+    : `<p class="subtle">No backtest rules are available yet.</p>`;
 }
 
 function renderScreener() {
@@ -811,6 +878,7 @@ function renderDetail() {
 function render() {
   renderSummary();
   renderScreener();
+  renderBacktest();
   renderSectorFilters();
   renderSectors();
   renderLeaderboard();

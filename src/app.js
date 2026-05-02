@@ -47,6 +47,7 @@ import {
 } from "./domain/portfolio-policy.js";
 import { buildLlmSelectionSnapshot } from "./domain/llm-selection-agent.js";
 import { buildFinalSelectionSnapshot } from "./domain/final-selection.js";
+import { buildFundamentalBacktestSnapshot } from "./domain/backtest.js";
 import { createCorporateEventsCollector } from "./domain/corporate-events.js";
 import { createSocialSentimentCollector } from "./domain/social-sentiment.js";
 import { createTradePrintsCollector } from "./domain/trade-prints.js";
@@ -1661,6 +1662,18 @@ export function createSentimentApp() {
     },
     getFundamentalsChanges(limit) {
       return fundamentals.getChanges(limit);
+    },
+    getFundamentalBacktest(options = {}) {
+      return buildFundamentalBacktestSnapshot({
+        config,
+        store,
+        horizonDays: options.horizonDays || options.horizon_days,
+        minSample: options.minSample || options.min_sample,
+        allowSyntheticPrices:
+          options.allowSyntheticPrices === true ||
+          options.allow_synthetic_prices === true ||
+          String(options.allowSyntheticPrices || options.allow_synthetic_prices || "").toLowerCase() === "true"
+      });
     },
     getMacroRegime(options = {}) {
       return macroRegimeAgent.getMacroRegime(options);

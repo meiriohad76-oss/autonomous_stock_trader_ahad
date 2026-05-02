@@ -33,6 +33,7 @@ body,
 .detail-grid > *,
 .screener-explainer > *,
 .settings-grid > *,
+.backtest-grid > *,
 .hero-grid > *,
 .detail-summary > * {
   min-width: 0;
@@ -276,6 +277,7 @@ h1 {
 .stack-grid,
 .feed-list,
 .factor-grid,
+.backtest-grid,
 .metric-list,
 .timeline-list,
 .history-strip {
@@ -396,7 +398,8 @@ h1 {
 .sector-card,
 .factor-card,
 .history-card,
-.feed-card {
+.feed-card,
+.backtest-card {
   border-radius: 18px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.66);
@@ -510,10 +513,52 @@ h1 {
 .factor-card,
 .history-card,
 .feed-card,
+.backtest-card,
 .setting-card,
 .timeline-item,
 .fact-point {
   overflow-wrap: anywhere;
+}
+
+.backtest-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.backtest-card {
+  display: grid;
+  gap: 10px;
+}
+
+.backtest-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.backtest-card p,
+.backtest-card small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.backtest-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.backtest-metrics span {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(23, 35, 45, 0.05);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.backtest-metrics strong {
+  color: var(--ink);
 }
 
 .detail-grid {

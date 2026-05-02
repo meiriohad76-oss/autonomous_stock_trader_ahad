@@ -180,6 +180,16 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/backtests/fundamentals" && request.method === "GET") {
+    sendJson(response, 200, app.getFundamentalBacktest({
+      horizonDays: query.horizonDays ? Number(query.horizonDays) : query.horizon_days ? Number(query.horizon_days) : undefined,
+      minSample: query.minSample ? Number(query.minSample) : query.min_sample ? Number(query.min_sample) : undefined,
+      allowSyntheticPrices:
+        String(query.allowSyntheticPrices || query.allow_synthetic_prices || "false").toLowerCase() === "true"
+    }));
+    return;
+  }
+
   if (pathname === "/api/fundamentals/sec-queue" && request.method === "GET") {
     sendJson(response, 200, app.getSecFundamentalsQueue({
       limit: query.limit ? Number(query.limit) : 20

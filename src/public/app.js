@@ -4110,12 +4110,9 @@ function renderAlertsView() {
   }
 
   for (const button of elements.alertsMoneyFlow.querySelectorAll("[data-money-flow-ticker]")) {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", () => {
       state.selectedMoneyFlowTicker = button.dataset.moneyFlowTicker || null;
-      const selectedSignal = allMoneyFlowSignals.find((item) => item.ticker === state.selectedMoneyFlowTicker);
-      if (selectedSignal) {
-        openSignalDrawer(buildSignalFromFeed(selectedSignal, "Money Flow Radar"));
-      }
+      closeSignalDrawer();
       renderAlertsView();
     });
   }
