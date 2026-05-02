@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createSentimentApp } from "../src/app.js";
 
@@ -724,6 +724,60 @@ async function runDiagnostics(options) {
   const app = createSentimentApp();
   const startedAt = Date.now();
   const events = [];
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const outputPath = options.out
+    ? path.resolve(options.out)
+    : path.join(app.config.rootDir, "data", "runtime", "agent-diagnostics", `agent-diagnostics-${timestamp}.json`);
+  const jsonlPath = outputPath.replace(/\.json$/i, ".jsonl");
+  await mkdir(path.dirname(outputPath), { recursive: true });
+  await writeFile(jsonlPath, "");
+  console.error(`[agent-diagnostics] report_path ${outputPath}`);
+  console.error(`[agent-diagnostics] event_log_path ${jsonlPath}`);
+
+  let eventWrite = Promise.resolve();
+  const report = {
+    status: "initializing",
+    started_at: nowIso(),
+    finished_at: null,
+    duration_ms: null,
+    options: sanitize(options),
+    environment: sanitize({
+      node: process.version,
+      platform: process.platform,
+      cwd: process.cwd(),
+      config: {
+        pi_performance_mode: app.config.piPerformanceMode,
+        database_enabled: app.config.databaseEnabled,
+        database_provider: app.config.databaseProvider,
+        autonomous_data_enabled: app.config.autonomousDataEnabled,
+        market_data_provider: app.config.marketDataProvider,
+        fundamental_market_data_provider: app.config.fundamentalMarketDataProvider,
+        marketaux_enabled: app.config.marketauxEnabled,
+        marketaux_configured: Boolean(app.config.marketauxApiKey),
+        twelve_data_configured: Boolean(app.config.twelveDataApiKey),
+        alpaca_market_data_configured: Boolean(app.config.alpacaMarketDataApiKeyId && app.config.alpacaMarketDataApiSecretKey),
+        broker_provider: app.config.brokerProvider,
+        broker_adapter: app.config.brokerAdapter,
+        broker_submit_enabled: app.config.brokerSubmitEnabled
+      }
+    }),
+    before: null,
+    agents: [],
+    events,
+    after: null,
+    summary: null
+  };
+
+  async function flushEvents() {
+    await eventWrite;
+  }
+
+  async function checkpoint(status = report.status) {
+    report.status = status;
+    report.duration_ms = durationMs(startedAt);
+    await flushEvents();
+    await writeFile(outputPath, JSON.stringify(report, null, 2));
+  }
 
   function emit(event, agentKey, details = {}) {
     const entry = {
@@ -733,6 +787,11 @@ async function runDiagnostics(options) {
       details: sanitize(details)
     };
     events.push(entry);
+    eventWrite = eventWrite
+      .then(() => appendFile(jsonlPath, `${JSON.stringify(entry)}\n`))
+      .catch((error) => {
+        console.error(`[agent-diagnostics] failed_to_write_event_log ${error.message}`);
+      });
     const suffix = details.error ? ` error=${details.error}` : "";
     console.error(`[agent-diagnostics] ${entry.at} ${agentKey || "system"} ${event}${suffix}`);
   }
@@ -749,6 +808,7 @@ async function runDiagnostics(options) {
   }
 
   try {
+    await checkpoint("initializing");
     emit("initialize_start", "system");
     await app.initialize();
     app.setStartupStatus({ http_listening: true, initialized: true, live_sources_started: false, phase: "diagnostic" });
@@ -758,49 +818,21 @@ async function runDiagnostics(options) {
       autonomous_data_enabled: app.config.autonomousDataEnabled
     });
 
-    const report = {
-      status: "running",
-      started_at: nowIso(),
-      finished_at: null,
-      duration_ms: null,
-      options: sanitize(options),
-      environment: sanitize({
-        node: process.version,
-        platform: process.platform,
-        cwd: process.cwd(),
-        config: {
-          pi_performance_mode: app.config.piPerformanceMode,
-          database_enabled: app.config.databaseEnabled,
-          database_provider: app.config.databaseProvider,
-          autonomous_data_enabled: app.config.autonomousDataEnabled,
-          market_data_provider: app.config.marketDataProvider,
-          fundamental_market_data_provider: app.config.fundamentalMarketDataProvider,
-          marketaux_enabled: app.config.marketauxEnabled,
-          marketaux_configured: Boolean(app.config.marketauxApiKey),
-          twelve_data_configured: Boolean(app.config.twelveDataApiKey),
-          alpaca_market_data_configured: Boolean(app.config.alpacaMarketDataApiKeyId && app.config.alpacaMarketDataApiSecretKey),
-          broker_provider: app.config.brokerProvider,
-          broker_adapter: app.config.brokerAdapter,
-          broker_submit_enabled: app.config.brokerSubmitEnabled
-        }
-      }),
-      before: {
-        counters: stateCounters(app),
-        health: sanitize(app.getHealth()),
-        runtime_reliability: sanitize(app.getRuntimeReliability()),
-        agency_cycle: sanitize(await getCycle(app, options))
-      },
-      agents: [],
-      events,
-      after: null,
-      summary: null
+    report.status = "running";
+    report.before = {
+      counters: stateCounters(app),
+      health: sanitize(app.getHealth()),
+      runtime_reliability: sanitize(app.getRuntimeReliability()),
+      agency_cycle: sanitize(await getCycle(app, options))
     };
+    await checkpoint("running");
 
     for (const spec of selectedAgents) {
       const agentStartedAt = Date.now();
       const agent = buildAgentReport(spec.key, spec.label);
       report.agents.push(agent);
       emit("agent_start", spec.key);
+      await checkpoint("running");
       try {
         await inspectAgent(app, agent, options, emit);
       } catch (error) {
@@ -815,6 +847,7 @@ async function runDiagnostics(options) {
           checks: agent.checks.map((item) => ({ key: item.key, status: item.status })),
           errors: agent.errors
         });
+        await checkpoint("running");
       }
     }
 
@@ -846,22 +879,37 @@ async function runDiagnostics(options) {
       log_note: "Full extraction logs are in agents[].extraction_log and events[]."
     };
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const outputPath = options.out
-      ? path.resolve(options.out)
-      : path.join(app.config.rootDir, "data", "runtime", "agent-diagnostics", `agent-diagnostics-${timestamp}.json`);
-    const jsonlPath = outputPath.replace(/\.json$/i, ".jsonl");
-    await mkdir(path.dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, JSON.stringify(report, null, 2));
-    await writeFile(jsonlPath, events.map((event) => JSON.stringify(event)).join("\n") + "\n");
+    await checkpoint(report.status);
 
     return {
       report,
       outputPath,
       jsonlPath
     };
+  } catch (error) {
+    report.status = "error";
+    report.finished_at = nowIso();
+    report.duration_ms = durationMs(startedAt);
+    report.error = error.message;
+    report.summary = {
+      status: "error",
+      agent_count: report.agents.length,
+      log_note: "The diagnostic stopped before completion. Inspect events[] and the JSONL event log for the last completed step."
+    };
+    emit("diagnostic_error", "system", { error: error.message });
+    await checkpoint("error");
+    error.reportPath = outputPath;
+    error.jsonlPath = jsonlPath;
+    throw error;
   } finally {
-    await app.stopLiveSources();
+    await flushEvents();
+    try {
+      await app.stopLiveSources();
+    } catch (error) {
+      emit("stop_live_sources_warning", "system", { error: error.message });
+      await checkpoint(report.status || "running");
+      await flushEvents();
+    }
   }
 }
 
@@ -894,7 +942,9 @@ async function main() {
 main().catch((error) => {
   console.error(JSON.stringify({
     status: "error",
-    error: error.message
+    error: error.message,
+    report_path: error.reportPath || null,
+    event_log_path: error.jsonlPath || null
   }, null, 2));
   process.exitCode = 1;
 });

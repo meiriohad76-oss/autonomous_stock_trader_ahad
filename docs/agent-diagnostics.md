@@ -9,6 +9,8 @@ The runner initializes the app, checks each worker independently, optionally per
 
 The JSON report is the full evidence pack. The JSONL file is the event stream and is easier to tail or grep.
 
+Both files are created at startup and checkpointed while the diagnostic is running. If the Pi kills the process or an SSH session drops, inspect the newest `.jsonl` file and the partial `.json` report to see the last completed step.
+
 ## Common Commands
 
 Inspect all agents without polling live providers:
@@ -33,6 +35,13 @@ Run one specific agent:
 
 ```bash
 npm run check:agents -- --agent execution
+```
+
+Watch the live event stream while a diagnostic is running:
+
+```bash
+latestlog=$(ls -t data/runtime/agent-diagnostics/*.jsonl | head -1)
+tail -f "$latestlog"
 ```
 
 Fail CI or a deployment script when any agent reports `fail`:
