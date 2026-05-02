@@ -819,8 +819,10 @@ function buildSecFundamentalsQueue(store, config, options = {}) {
     next_batch: nextBatch.slice(0, limit).map(summarizeQueueCompany),
     pending_by_sector: summarizePendingBySector(pendingCompanies),
     live_preview: liveCompanies.slice(0, limit).map(summarizeQueueCompany),
+    polling: Boolean(health.polling),
     last_poll_at: health.last_poll_at || null,
     last_success_at: health.last_success_at || null,
+    next_poll_at: health.next_poll_at || null,
     last_error: health.last_error || null,
     explanation:
       "SEC fundamentals refresh runs in bounded batches. Pending bootstrap names stay visible with provisional scores until a batch replaces them with live SEC-backed metrics."

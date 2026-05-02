@@ -204,8 +204,12 @@ function statusClass(status) {
 
 function currentWorker(workers) {
   return (
-    workers.find((worker) => ["blocked", "gated", "waiting"].includes(worker.status)) ||
-    workers.find((worker) => worker.status === "review") ||
+    workers.find((worker) => worker.data_state === "blocked") ||
+    workers.find((worker) => worker.data_state === "loading") ||
+    workers.find((worker) => worker.status === "review" && !worker.data_ready) ||
+    workers.find((worker) => ["deterministic_selection", "final_selection"].includes(worker.key) && worker.status === "review") ||
+    workers.find((worker) => worker.data_state === "review") ||
+    workers.find((worker) => worker.data_state === "gated") ||
     workers.find((worker) => worker.status === "ready") ||
     workers[workers.length - 1]
   );
@@ -497,6 +501,8 @@ export function buildAgencyCycleStatus({
   const freshDecisionEvidence = workflowStatus?.live_data?.fresh_decision_evidence_count || 0;
   const livePricingReady = Boolean(workflowStatus?.live_data?.live_pricing_ready);
   const secLiveCount = Math.max(0, trackedCount - pendingSec);
+  const secPolling = Boolean(secQueue?.polling);
+  const selectorRan = Number(tradeSetups?.counts?.tracked_tickers || 0) > 0;
   const marketSourceProgress = sourceProgress(["market_data", "fundamental_market_data", "market_flow"], sources);
   const signalSourceProgress = sourceProgress(
     [
@@ -513,6 +519,11 @@ export function buildAgencyCycleStatus({
   );
   const pricingProgress = livePricingReady ? 65 : marketSourceProgress.pct >= 67 ? 55 : marketSourceProgress.pct >= 34 ? 35 : 0;
   const marketProgressPct = clampProgress(Math.max(marketSourceProgress.pct, pricingProgress));
+  const marketDataState = livePricingReady
+    ? marketSourceProgress.remaining.length || marketSourceProgress.polling ? "review" : "ready"
+    : marketSourceProgress.polling
+      ? "loading"
+      : "blocked";
   const signalProgressPct = freshDecisionEvidence > 0
     ? Math.max(75, signalSourceProgress.target ? signalSourceProgress.pct : 100)
     : signalSourceProgress.pct;
@@ -560,14 +571,14 @@ export function buildAgencyCycleStatus({
     fundamentals: trackedCount
       ? pendingSec
         ? workerStatus("review", `${pendingSec} bootstrap rows still need SEC confirmation.`, {
-            data_state: "loading",
-            loading: true,
-            data_ready: false,
+            data_state: secPolling ? "loading" : "review",
+            loading: secPolling,
+            data_ready: secLiveCount > 0,
             progress_pct: fundamentalsProgressPct,
             progress_current: secLiveCount,
             progress_target: trackedCount,
-            progress_label: `${secLiveCount}/${trackedCount} SEC-backed`,
-            remaining: [`${pendingSec} bootstrap fundamentals rows`]
+            progress_label: `${secLiveCount}/${trackedCount} SEC-backed${secPolling ? "; polling now" : "; background catch-up"}`,
+            remaining: [`${pendingSec} bootstrap fundamentals rows`, secQueue?.next_poll_at ? `next auto SEC batch ${secQueue.next_poll_at}` : "run SEC Batch to continue now"]
           })
         : workerStatus("complete", "SEC-backed fundamentals coverage is complete.", {
             data_state: "ready",
@@ -585,22 +596,25 @@ export function buildAgencyCycleStatus({
         }),
     market: livePricingReady || sourceIsFresh(sources.market_flow) || sourceIsFresh(sources.market_data) || sourceIsFresh(sources.fundamental_market_data)
       ? workerStatus("complete", "Market and pricing context is available.", {
-          data_state: marketSourceProgress.remaining.length ? "loading" : "ready",
-          loading: marketSourceProgress.remaining.length > 0 || marketSourceProgress.polling,
-          data_ready: marketSourceProgress.remaining.length === 0,
+          data_state: marketDataState,
+          loading: marketSourceProgress.polling,
+          data_ready: livePricingReady,
           progress_pct: marketProgressPct,
           progress_current: marketSourceProgress.current,
           progress_target: marketSourceProgress.target,
-          progress_label: `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh`,
+          progress_label: livePricingReady
+            ? `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh`
+            : `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh; live pricing not confirmed`,
           remaining: marketSourceProgress.remaining
         })
       : workerStatus("waiting", "Market context needs a pricing or flow refresh.", {
-          data_state: "loading",
-          loading: true,
+          data_state: marketDataState,
+          loading: marketSourceProgress.polling,
+          data_ready: false,
           progress_pct: marketProgressPct,
           progress_current: marketSourceProgress.current,
           progress_target: marketSourceProgress.target,
-          progress_label: `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh`,
+          progress_label: `${marketSourceProgress.current}/${marketSourceProgress.target || 3} market inputs fresh; live pricing not confirmed`,
           remaining: marketSourceProgress.remaining.length ? marketSourceProgress.remaining : ["live pricing", "market flow"]
         }),
     signals: freshDecisionEvidence > 0
@@ -658,11 +672,11 @@ export function buildAgencyCycleStatus({
             remaining: ["buy/sell threshold"]
           })
         : workerStatus("waiting", "No deterministic setup clears the trade threshold.", {
-            data_state: upstreamSelectionProgress >= 75 ? "review" : "loading",
-            loading: upstreamSelectionProgress < 75,
-            data_ready: upstreamSelectionProgress >= 75,
-            progress_pct: selectionProgressPct,
-            progress_label: `inputs ${upstreamSelectionProgress}% ready`,
+            data_state: selectorRan ? "review" : "loading",
+            loading: !selectorRan,
+            data_ready: selectorRan,
+            progress_pct: selectorRan ? 100 : selectionProgressPct,
+            progress_label: selectorRan ? "selector ran; no buy/sell setup clears threshold" : `inputs ${upstreamSelectionProgress}% ready`,
             remaining: ["stronger aligned fundamentals, market, and signal inputs"]
           }),
     llm_selection: llmSelection?.recommendations?.length
@@ -675,10 +689,11 @@ export function buildAgencyCycleStatus({
           remaining: ["external LLM provider"]?.filter(() => ["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status))
         })
       : workerStatus("waiting", "LLM selection has not reviewed current candidates yet.", {
-          data_state: "loading",
-          loading: true,
-          progress_pct: llmProgressPct,
-          progress_label: "waiting for selection candidates",
+          data_state: selectorRan ? "review" : "loading",
+          loading: !selectorRan,
+          data_ready: selectorRan,
+          progress_pct: selectorRan ? 100 : llmProgressPct,
+          progress_label: selectorRan ? "no deterministic candidate pack to review" : "waiting for selection candidates",
           remaining: ["deterministic candidate pack"]
         }),
     final_selection: policyBlocked
@@ -706,10 +721,11 @@ export function buildAgencyCycleStatus({
               remaining: ["executable buy/sell candidate"]
             })
           : workerStatus("waiting", "No final selection candidate is available.", {
-              data_state: "loading",
-              loading: true,
-              progress_pct: finalSelectionProgressPct,
-              progress_label: "waiting for selector output",
+              data_state: selectorRan ? "review" : "loading",
+              loading: !selectorRan,
+              data_ready: selectorRan,
+              progress_pct: selectorRan ? 100 : finalSelectionProgressPct,
+              progress_label: selectorRan ? "selection completed; no final candidate" : "waiting for selector output",
               remaining: ["deterministic and LLM selection output"]
             }),
     risk: riskBlocked
@@ -766,8 +782,9 @@ export function buildAgencyCycleStatus({
           progress_label: `${outcomeSample}/10 outcomes collected`
         })
       : workerStatus("waiting", `Collecting baseline paper outcomes: ${outcomeSample}/10.`, {
-          data_state: "loading",
-          loading: true,
+          data_state: "review",
+          loading: false,
+          data_ready: true,
           progress_pct: learningProgressPct,
           progress_current: outcomeSample,
           progress_target: 10,

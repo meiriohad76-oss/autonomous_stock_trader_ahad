@@ -611,10 +611,18 @@ export function createSecFundamentalsCollector(app) {
         refresh_limit: null,
         refresh_batch_size: 0,
         refresh_cursor: 0,
-        pending_bootstrap_companies: 0
+        pending_bootstrap_companies: 0,
+        next_poll_at: null
       };
     }
     return store.health.liveSources.sec_fundamentals;
+  }
+
+  function setNextPollAt(delayMs = config.fundamentalSecPollMs) {
+    const health = ensureHealthEntry();
+    health.next_poll_at = running && config.fundamentalSecEnabled
+      ? new Date(Date.now() + Number(delayMs || 0)).toISOString()
+      : null;
   }
 
   async function pollOnce() {
@@ -763,6 +771,7 @@ export function createSecFundamentalsCollector(app) {
       return;
     }
 
+    setNextPollAt(config.fundamentalSecPollMs);
     timer = setTimeout(async () => {
       await pollOnce();
       scheduleNext();
@@ -785,7 +794,9 @@ export function createSecFundamentalsCollector(app) {
         clearTimeout(timer);
         timer = null;
       }
-      ensureHealthEntry().polling = false;
+      const health = ensureHealthEntry();
+      health.polling = false;
+      health.next_poll_at = null;
     },
     async pollOnce() {
       ensureHealthEntry();

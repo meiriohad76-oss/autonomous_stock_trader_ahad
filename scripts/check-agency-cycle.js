@@ -66,6 +66,11 @@ if (cycle.current_worker_key !== "signals") {
   throw new Error(`Expected Signals Agent to be current blocker, got ${cycle.current_worker_key}.`);
 }
 
+const pendingFundamentals = cycle.workers.find((worker) => worker.key === "fundamentals");
+if (pendingFundamentals.data_state !== "review" || pendingFundamentals.loading) {
+  throw new Error("Pending SEC catch-up should show review/background progress, not endless loading.");
+}
+
 const signalAdvance = chooseAgencyCycleAdvance(cycle);
 if (signalAdvance.type !== "runtime_bundle" || !signalAdvance.actions?.some((action) => action.source === "market_flow")) {
   throw new Error("Signals advance should run a guarded refresh bundle that includes money flow.");
@@ -128,6 +133,65 @@ if (readyCycle.status !== "paper_ready" || !readyCycle.can_submit_orders) {
 
 if (!readyCycle.workers.every((worker) => typeof worker.progress_pct === "number" && worker.data_state)) {
   throw new Error("Ready cycle workers should all expose data progress fields.");
+}
+
+const noCandidateCycle = buildAgencyCycleStatus({
+  readiness: { ready: true },
+  runtimeReliability: { status: "healthy" },
+  workflowStatus: {
+    status: "review_required",
+    can_use_for_decisions: true,
+    can_preview_orders: false,
+    can_submit_orders: false,
+    live_data: {
+      fresh_decision_evidence_count: 3,
+      live_pricing_ready: false,
+      sources: [
+        { key: "market_flow", label: "Market Flow", status: "fresh", fallback_mode: false },
+        { key: "market_data", label: "Market Data", status: "fallback", fallback_mode: true },
+        { key: "fundamental_market_data", label: "Fundamental Market Reference", status: "fallback", fallback_mode: true }
+      ]
+    },
+    blockers: [],
+    warnings: ["Live pricing is not confirmed."],
+    next_actions: []
+  },
+  tradeSetups: {
+    counts: { tracked_tickers: 168, long: 0, short: 0, watch: 0, no_trade: 0 },
+    setups: []
+  },
+  executionStatus: {
+    broker: { configured: false, ready_for_order_submission: false }
+  },
+  riskSnapshot: { status: "ok", hard_blocks: [] },
+  positionMonitor: { position_count: 0, open_order_count: 0 },
+  portfolioPolicy: { status: "ok", summary: "Policy clear.", hard_blocks: [] },
+  llmSelection: {
+    status: "shadow",
+    mode: "shadow",
+    recommendations: []
+  },
+  finalSelection: {
+    counts: { final_buy: 0, final_sell: 0, executable: 0, review: 0, watch: 0, visible: 0 },
+    candidates: []
+  },
+  secQueue: {
+    tracked_companies: 168,
+    pending_bootstrap_companies: 144,
+    live_sec_companies: 24,
+    coverage_ratio: 0.143
+  },
+  executionLog: []
+});
+
+const noCandidateDeterministic = noCandidateCycle.workers.find((worker) => worker.key === "deterministic_selection");
+if (noCandidateDeterministic.data_state !== "review" || noCandidateDeterministic.loading) {
+  throw new Error("Deterministic selector should show computed/no-candidate review, not loading forever.");
+}
+
+const blockedMarket = noCandidateCycle.workers.find((worker) => worker.key === "market");
+if (blockedMarket.data_state !== "blocked" || blockedMarket.loading) {
+  throw new Error("Market Agent should show blocked live-pricing state, not endless loading, when providers are fallback.");
 }
 
 const readyAdvance = chooseAgencyCycleAdvance(readyCycle);
