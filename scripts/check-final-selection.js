@@ -200,6 +200,104 @@ if (
   throw new Error("LLM selector should expose the committee prompt version and richer review fields.");
 }
 
+const demotionFixture = buildFinalSelectionSnapshot({
+  config,
+  tradeSetups: {
+    as_of: new Date().toISOString(),
+    counts: { short: 2 },
+    setups: [
+      {
+        ticker: "GOOD",
+        company_name: "Higher Quality Review",
+        sector: "Financials",
+        action: "short",
+        conviction: 0.6,
+        setup_label: "tactical_short",
+        position_size_pct: 0.02,
+        current_price: 100,
+        summary: "GOOD is a demoted short fixture.",
+        thesis: ["money-flow evidence is skewed to distribution"],
+        risk_flags: ["fails the stage-one screener", "runtime reliability reduces conviction by 6%"],
+        evidence: { positive: [], negative: ["adverse money-flow signal"] },
+        evidence_quality: { average_downstream_weight: 0.76, alert_quality_items: 1, weak_quality_items: 0 },
+        fundamentals: {
+          screen_stage: "reject",
+          direction_label: "bearish_headwind",
+          composite_fundamental_score: 0.56,
+          final_confidence: 0.94
+        },
+        score_components: { gap: 0.62, raw_short: 0.66, raw_long: 0, short: 0.6, long: 0 },
+        runtime_reliability: { status: "healthy", adjustment_multiplier: 0.94 }
+      },
+      {
+        ticker: "THIN",
+        company_name: "Thin Evidence Review",
+        sector: "Financials",
+        action: "short",
+        conviction: 0.6,
+        setup_label: "tactical_short",
+        position_size_pct: 0.02,
+        current_price: 100,
+        summary: "THIN is a demoted short fixture.",
+        thesis: ["money-flow evidence is skewed to distribution"],
+        risk_flags: ["fails the stage-one screener", "runtime reliability reduces conviction by 6%"],
+        evidence: { positive: [], negative: ["adverse money-flow signal"] },
+        evidence_quality: { average_downstream_weight: 0.5, alert_quality_items: 0, weak_quality_items: 4 },
+        fundamentals: {
+          screen_stage: "reject",
+          direction_label: "bearish_headwind",
+          composite_fundamental_score: 0.28,
+          final_confidence: 0.7
+        },
+        score_components: { gap: 0.42, raw_short: 0.6, raw_long: 0, short: 0.6, long: 0 },
+        runtime_reliability: { status: "healthy", adjustment_multiplier: 0.94 }
+      }
+    ]
+  },
+  llmSelection: {
+    status: "ok",
+    mode: "fixture",
+    recommendations: [
+      { ticker: "GOOD", action: "watch", confidence: 0.58, reviewer: "fixture", concerns: [] },
+      { ticker: "THIN", action: "watch", confidence: 0.58, reviewer: "fixture", concerns: [] }
+    ]
+  },
+  portfolioPolicy,
+  riskSnapshot: {
+    status: "ok",
+    equity: 100000,
+    buying_power: 90000,
+    gross_exposure_pct: 0.05,
+    hard_blocks: [],
+    positions: []
+  },
+  positionMonitor: {
+    positions: [],
+    position_count: 0,
+    open_order_count: 0
+  },
+  window: "1h",
+  limit: 2
+});
+
+const higherQualityReview = demotionFixture.candidates.find((candidate) => candidate.ticker === "GOOD");
+const thinEvidenceReview = demotionFixture.candidates.find((candidate) => candidate.ticker === "THIN");
+
+if (
+  !higherQualityReview?.final_score_components?.setup_quality_adjustment ||
+  !thinEvidenceReview?.final_score_components?.setup_quality_adjustment
+) {
+  throw new Error("Final selector should expose score components for review/watch candidates.");
+}
+
+if (higherQualityReview.final_conviction <= thinEvidenceReview.final_conviction) {
+  throw new Error("Final selector should not flatten demoted candidates with materially different evidence quality.");
+}
+
+if (higherQualityReview.final_conviction - thinEvidenceReview.final_conviction < 0.03) {
+  throw new Error("Final selector score dispersion should be visible enough to avoid identical-looking review grades.");
+}
+
 console.log(
   JSON.stringify(
     {
@@ -211,6 +309,7 @@ console.log(
       llm_prompt_version: llmSelection.prompt_version,
       top_candidate: apple.ticker,
       report_status: apple.selection_report.status,
+      score_dispersion_ok: true,
       microsoft_reason: microsoft.reason_codes[0]
     },
     null,
