@@ -204,8 +204,8 @@ export const config = {
   agencyOngoingCycleMs: envNumber("AGENCY_ONGOING_CYCLE_MS", 900000, 900000),
   agencyBaselineUniverseMinCount: Number(process.env.AGENCY_BASELINE_UNIVERSE_MIN_COUNT || 160),
   agencyBaselineRequireFullSec:
-    String(process.env.AGENCY_BASELINE_REQUIRE_FULL_SEC || "true").toLowerCase() !== "false",
-  agencyBaselineMinSecCoveragePct: Number(process.env.AGENCY_BASELINE_MIN_SEC_COVERAGE_PCT || 1),
+    String(process.env.AGENCY_BASELINE_REQUIRE_FULL_SEC || "false").toLowerCase() === "true",
+  agencyBaselineMinSecCoveragePct: Number(process.env.AGENCY_BASELINE_MIN_SEC_COVERAGE_PCT || 0.99),
   agencyBaselineMinSignalSources: Number(process.env.AGENCY_BASELINE_MIN_SIGNAL_SOURCES || 3),
   agencyBaselineSecBatchesPerRun: envNumber("AGENCY_BASELINE_SEC_BATCHES_PER_RUN", 4, 3),
   seedDataOnEmpty: String(process.env.SEED_DATA_ON_EMPTY || "false").toLowerCase() === "true",

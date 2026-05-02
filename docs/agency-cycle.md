@@ -28,7 +28,7 @@ Recommended cadence:
 
 - initial baseline cycle: every 5 minutes until all required workers are baseline-ready
 - ongoing agency cycle: every 15 minutes during market hours
-- SEC fundamentals first-load catch-up: several bounded batches per initial-baseline run, then the normal SEC refresh interval after coverage is complete
+- SEC fundamentals first-load catch-up: baseline-ready at the configured coverage threshold, default 99%, with any remaining SEC exceptions continuing as background catch-up
 - market/news/signals: use the configured source intervals, with paper execution gated whenever live pricing is fallback, synthetic, or unconfirmed
 
 The Command dashboard exposes `Initial Baseline`, `Ongoing Updates`, `Recommended Cadence`, and `Next Scheduled` cards so a worker no longer looks stuck when it is either waiting for a scheduled catch-up batch or blocked by missing live data.
@@ -40,7 +40,7 @@ Each worker now also exposes an ETA estimate. The estimate is conservative and u
 - signal/news universe rotation using enabled source batch sizes, RSS/Marketaux poll caps, and source cadence
 - downstream selector/risk/execution workers inherit the upstream data ETA, or show blocked when credentials/configuration are required
 
-If a provider is rate-limited, the ETA uses the provider cooldown. If credentials are missing, the ETA is shown as blocked rather than time-based.
+If a provider is rate-limited, the ETA uses the provider cooldown. If credentials are missing, the ETA is shown as blocked rather than time-based. A single SEC row that repeatedly errors no longer traps the whole agency in first-load mode once the configured coverage threshold is met.
 
 ## Dashboard
 

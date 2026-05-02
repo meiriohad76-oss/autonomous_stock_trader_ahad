@@ -963,8 +963,28 @@ export function buildAgencyCycleStatus({
     ? `${secRemainingBatches} batch(es), about ${secBaselineRunsRemaining} baseline run(s)`
     : null;
   const secCooldownMs = sourceCooldownMs(secRuntimeSource);
+  const secCatchupEstimate = pendingSec
+    ? completionEstimate({
+        phase: "full_extraction",
+        ms: batchCompletionMs({
+          remaining: pendingSec,
+          batchSize: secBatchSize,
+          batchesPerCycle: secBatchesPerRun,
+          cycleMs: cfg.agencyInitialBaselineCycleMs,
+          cooldownMs: secCooldownMs
+        }),
+        basis: `SEC catch-up still has ${pendingSec} bootstrap row(s): ${secBatchSize} companies/batch, ${secBatchesPerRun} batch(es)/baseline run, baseline cadence ${cadenceLabel(cfg.agencyInitialBaselineCycleMs)}${sourceCooldownLabel(secRuntimeSource) ? `, ${sourceCooldownLabel(secRuntimeSource)}` : ""}.`
+      })
+    : completionEstimate({ phase: "complete", ms: 0, basis: "All tracked companies are SEC-backed." });
   const secEstimate = fundamentalsBaselineReady
-    ? completionEstimate({ phase: "complete", ms: 0, basis: "SEC-backed fundamentals baseline is complete." })
+    ? completionEstimate({
+        phase: "complete",
+        ms: 0,
+        label: pendingSec ? "baseline ready; background catch-up remains" : "complete",
+        basis: pendingSec
+          ? `${secLiveCount}/${trackedCount} companies are SEC-backed, meeting the ${Math.round(minSecCoveragePct * 100)}% baseline threshold. Remaining rows continue as background catch-up.`
+          : "SEC-backed fundamentals baseline is complete."
+      })
     : trackedCount
       ? completionEstimate({
           phase: "initial_baseline",
@@ -1116,7 +1136,7 @@ export function buildAgencyCycleStatus({
         ? `ongoing SEC refresh ${cadenceLabel(secCadenceMs)}`
         : `initial SEC catch-up ${cadenceLabel(secCadenceMs)}`,
       completion_estimate: secEstimate,
-      full_extraction_estimate: secEstimate,
+      full_extraction_estimate: secCatchupEstimate,
       refresh_state: refreshStateFor({
         sources: [secRuntimeSource],
         baselineReady: fundamentalsBaselineReady,
