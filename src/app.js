@@ -26,7 +26,8 @@ import { createSecFundamentalsCollector, selectSecFundamentalsRefreshBatch } fro
 import { createSecInstitutionalCollector } from "./domain/sec-institutional.js";
 import { createSecInsiderCollector } from "./domain/sec-insider.js";
 import { createStore, resetStore } from "./domain/store.js";
-import { EVENT_TAXONOMY, TICKER_LOOKUP } from "./domain/taxonomy.js";
+import { EVENT_TAXONOMY } from "./domain/taxonomy.js";
+import { lookupUniverseEntry } from "./domain/tracked-universe.js";
 import { createMacroRegimeAgent } from "./domain/macro-regime.js";
 import { createTradeSetupAgent } from "./domain/trade-setup.js";
 import { RUNTIME_PROFILES, createRuntimeReliabilityAgent } from "./domain/runtime-reliability.js";
@@ -586,11 +587,10 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
   }
 
   function resolveTickerMetadata(ticker, fundamentalsRow, sentimentState) {
-    const watchlistEntry = TICKER_LOOKUP.get(ticker);
     return {
-      company_name: fundamentalsRow?.company_name || sentimentState?.entity_name || watchlistEntry?.company || ticker,
-      sector: fundamentalsRow?.sector || watchlistEntry?.sector || "Other",
-      industry: fundamentalsRow?.industry || watchlistEntry?.industry || null
+      company_name: fundamentalsRow?.company_name || sentimentState?.entity_name || ticker,
+      sector: fundamentalsRow?.sector || "Other",
+      industry: fundamentalsRow?.industry || null
     };
   }
 
@@ -843,7 +843,7 @@ function refreshSecFundamentalsHealthPreview(store, config) {
 
 async function buildTickerDetail(store, marketDataService, ticker) {
   const fundamentalsByTicker = new Map((store.fundamentals?.leaderboard || []).map((row) => [row.ticker, row]));
-  const tickerMeta = TICKER_LOOKUP.get(ticker);
+  const tickerMeta = lookupUniverseEntry(store.fundamentals?.leaderboard || [], ticker);
   const fundamentalRow = fundamentalsByTicker.get(ticker) || null;
   const windows = Object.fromEntries(
     ["15m", "1h", "4h", "1d", "7d"].map((windowKey) => {
@@ -1034,12 +1034,13 @@ export function createSentimentApp() {
     getTrackedFundamentalCompanies: () => fundamentals.getTrackedCompanies()
   });
   const marketDataService = createMarketDataService({ config, store });
-  const marketFlowMonitor = createMarketFlowMonitor({ config, store, pipeline, marketDataService });
-  const secInsiderCollector = createSecInsiderCollector({ config, store, pipeline });
-  const secInstitutionalCollector = createSecInstitutionalCollector({ config, store, pipeline });
-  const corporateEventsCollector = createCorporateEventsCollector({ config, store, pipeline });
-  const socialSentimentCollector = createSocialSentimentCollector({ config, store, pipeline });
-  const tradePrintsCollector = createTradePrintsCollector({ config, store, pipeline });
+  const trackedUniverse = { getTrackedFundamentalCompanies: () => fundamentals.getTrackedCompanies() };
+  const marketFlowMonitor = createMarketFlowMonitor({ config, store, pipeline, marketDataService, ...trackedUniverse });
+  const secInsiderCollector = createSecInsiderCollector({ config, store, pipeline, ...trackedUniverse });
+  const secInstitutionalCollector = createSecInstitutionalCollector({ config, store, pipeline, ...trackedUniverse });
+  const corporateEventsCollector = createCorporateEventsCollector({ config, store, pipeline, ...trackedUniverse });
+  const socialSentimentCollector = createSocialSentimentCollector({ config, store, pipeline, ...trackedUniverse });
+  const tradePrintsCollector = createTradePrintsCollector({ config, store, pipeline, ...trackedUniverse });
 
   async function bootstrapFundamentalCoverage({ force = false } = {}) {
     const targetUniverse = await loadFundamentalUniverse({ config });
@@ -1233,6 +1234,7 @@ export function createSentimentApp() {
         marketaux_limit_per_request: config.marketauxLimitPerRequest,
         autonomous_data_enabled: config.autonomousDataEnabled,
         market_data_provider: config.marketDataProvider,
+        market_flow_max_tickers_per_poll: config.marketFlowMaxTickersPerPoll,
         alpaca_market_data_enabled: config.alpacaMarketDataEnabled,
         alpaca_market_data_configured: Boolean(config.alpacaMarketDataApiKeyId && config.alpacaMarketDataApiSecretKey),
         alpaca_market_data_feed: config.alpacaMarketDataFeed,
@@ -1256,14 +1258,17 @@ export function createSentimentApp() {
         fundamental_sec_max_companies_per_poll: config.fundamentalSecMaxCompaniesPerPoll,
         auto_start_sec_fundamentals: config.autoStartSecFundamentals,
         sec_form4_enabled: config.secForm4Enabled,
+        sec_form4_max_tickers_per_poll: config.secForm4MaxTickersPerPoll,
         sec_13f_enabled: config.sec13fEnabled,
         auto_start_sec_13f: config.autoStartSec13f,
         earnings_enabled: config.earningsEnabled || config.autonomousDataEnabled,
         earnings_provider: config.earningsProvider,
         earnings_max_tickers_per_poll: config.earningsMaxTickersPerPoll,
         stocktwits_enabled: config.stocktwitsEnabled,
+        stocktwits_max_tickers_per_poll: config.stocktwitsMaxTickersPerPoll,
         trade_prints_enabled: config.tradePrintsEnabled,
         trade_prints_provider: config.tradePrintsProvider,
+        trade_prints_max_tickers_per_poll: config.tradePrintsMaxTickersPerPoll,
         broker_adapter: config.brokerAdapter,
         execution: executionAgent.getStatus(),
         risk: {

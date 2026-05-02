@@ -1,4 +1,4 @@
-import { WATCHLIST } from "./taxonomy.js";
+import { getTrackedUniverseEntries, rotateUniverseEntries } from "./tracked-universe.js";
 
 const YAHOO_BASE = "https://query2.finance.yahoo.com/v10/finance/quoteSummary";
 const TWELVE_DATA_BASE = "https://api.twelvedata.com/earnings";
@@ -225,20 +225,15 @@ export function createCorporateEventsCollector(app) {
     return Boolean(config.earningsEnabled || config.autonomousDataEnabled);
   }
 
-  function earningsWatchlist() {
-    return WATCHLIST.filter((entry) => entry.sector !== "Macro" && entry.industry !== "ETF");
-  }
-
   function nextBatch() {
-    const universe = earningsWatchlist();
+    const universe = getTrackedUniverseEntries(app, { excludeFunds: true });
     const maxTickers = Math.max(0, Math.floor(Number(config.earningsMaxTickersPerPoll || 0)));
     if (!maxTickers || maxTickers >= universe.length) {
-      return universe;
+      return { universe, batch: universe };
     }
-    const offset = cursor % universe.length;
-    const rotated = [...universe.slice(offset), ...universe.slice(0, offset)];
-    cursor = (cursor + maxTickers) % universe.length;
-    return rotated.slice(0, maxTickers);
+    const rotated = rotateUniverseEntries(universe, cursor, maxTickers);
+    cursor = rotated.nextCursor;
+    return { universe, batch: rotated.selected };
   }
 
   function ensureHealthEntry() {
@@ -253,7 +248,8 @@ export function createCorporateEventsCollector(app) {
         polls: 0,
         consecutive_failures: 0,
         ingested_documents: 0,
-        last_batch_size: 0
+        last_batch_size: 0,
+        universe_symbols: 0
       };
     }
     store.health.liveSources.yahoo_earnings_calendar.enabled = isEnabled();
@@ -269,7 +265,8 @@ export function createCorporateEventsCollector(app) {
     health.polling = true;
     health.last_poll_at = new Date().toISOString();
     health.polls += 1;
-    const batch = nextBatch();
+    const { universe, batch } = nextBatch();
+    health.universe_symbols = universe.length;
     health.last_batch_size = batch.length;
 
     let ingested = 0;

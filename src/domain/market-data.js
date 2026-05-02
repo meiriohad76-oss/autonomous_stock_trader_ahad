@@ -1,4 +1,5 @@
-import { TICKER_LOOKUP, WINDOWS } from "./taxonomy.js";
+import { WINDOWS } from "./taxonomy.js";
+import { lookupUniverseEntry } from "./tracked-universe.js";
 import {
   alpacaHeaders,
   isLiveMarketProviderConfigured,
@@ -92,9 +93,9 @@ function buildSeriesSignal(scoredDocs, pointTime) {
   };
 }
 
-function buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, pointCount = 18) {
-  const tickerEntry = TICKER_LOOKUP.get(ticker);
-  const basePrice = tickerEntry?.base_price || 100;
+function buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, pointCount = 18, tickerEntry = null) {
+  const fallbackUnit = deterministicUnit(`${ticker}:synthetic_price`);
+  const basePrice = tickerEntry?.base_price || tickerEntry?.market_reference?.current_price || round(45 + fallbackUnit * 420, 2);
   const endTime = new Date(asOf || Date.now());
   const startTime = new Date(endTime.getTime() - 24 * 3_600_000);
   const sentimentHistory = [];
@@ -339,7 +340,8 @@ export function createMarketDataService({ config, store }) {
     }
 
     if (!isLiveMarketProviderConfigured(config, config.marketDataProvider)) {
-      const payload = buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints);
+      const tickerEntry = lookupUniverseEntry(store.fundamentals?.leaderboard || [], ticker);
+      const payload = buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints, tickerEntry);
       cache.set(cacheKey, { fetchedAt: now, payload });
       updateHealthFromCache();
       return payload;
@@ -364,7 +366,8 @@ export function createMarketDataService({ config, store }) {
       return payload;
     } catch (error) {
       health.last_error = error.message;
-      const fallback = buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints);
+      const tickerEntry = lookupUniverseEntry(store.fundamentals?.leaderboard || [], ticker);
+      const fallback = buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints, tickerEntry);
       cache.set(cacheKey, { fetchedAt: now, payload: fallback });
       updateHealthFromCache();
       return fallback;

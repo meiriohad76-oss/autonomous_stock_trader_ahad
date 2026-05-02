@@ -1,6 +1,6 @@
-import { WATCHLIST } from "./taxonomy.js";
 import { shouldUseEvidence } from "./freshness-policy.js";
 import { isLiveMarketProviderConfigured, liveMarketDataStatus } from "./market-providers.js";
+import { getTrackedUniverseEntries, rotateUniverseEntries } from "./tracked-universe.js";
 import { dedupeKey, round } from "../utils/helpers.js";
 
 function ensureHealthEntry(store, config) {
@@ -17,7 +17,9 @@ function ensureHealthEntry(store, config) {
       fallback_mode: config.marketDataProvider === "synthetic" || !isLiveMarketProviderConfigured(config, config.marketDataProvider),
       configured: isLiveMarketProviderConfigured(config, config.marketDataProvider),
       feed: null,
-      missing_config_reason: null
+      missing_config_reason: null,
+      universe_symbols: 0,
+      last_batch_size: 0
     };
   }
 
@@ -163,10 +165,23 @@ function buildRawFlowDocument(entry, flow, config) {
   };
 }
 
-export function createMarketFlowMonitor({ config, store, pipeline, marketDataService }) {
+export function createMarketFlowMonitor({ config, store, pipeline, marketDataService, getTrackedFundamentalCompanies }) {
   let timer = null;
   let running = false;
   let inFlight = false;
+  let cursor = 0;
+
+  function nextBatch() {
+    const universe = getTrackedUniverseEntries({ store, getTrackedFundamentalCompanies });
+    const maxTickers = Math.max(0, Math.floor(Number(config.marketFlowMaxTickersPerPoll || 0)));
+    if (!maxTickers || maxTickers >= universe.length) {
+      return { universe, batch: universe };
+    }
+
+    const rotated = rotateUniverseEntries(universe, cursor, maxTickers);
+    cursor = rotated.nextCursor;
+    return { universe, batch: rotated.selected };
+  }
 
   async function pollOnce() {
     if (!config.marketFlowEnabled || inFlight) {
@@ -183,12 +198,16 @@ export function createMarketFlowMonitor({ config, store, pipeline, marketDataSer
     let ingested = 0;
 
     try {
+      const { universe, batch } = nextBatch();
+      health.universe_symbols = universe.length;
+      health.last_batch_size = batch.length;
+
       if (health.fallback_mode) {
         health.last_error = "Live market flow requires a real market data provider.";
         return { ingested };
       }
 
-      for (const entry of WATCHLIST) {
+      for (const entry of batch) {
         const scoredDocs = collectTickerDocs(store, entry.ticker);
         const marketSeries = await marketDataService.getTickerSeries(entry.ticker, scoredDocs, store.health.lastUpdate || new Date().toISOString());
         const flow = detectMarketFlowSignal(marketSeries.bar_history, config);

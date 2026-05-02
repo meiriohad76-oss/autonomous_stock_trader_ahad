@@ -1,6 +1,6 @@
-import { WATCHLIST } from "./taxonomy.js";
 import { dedupeKey, normalizeWhitespace, round } from "../utils/helpers.js";
 import { fetchJsonWithRetry, fetchTextWithRetry } from "../utils/http.js";
+import { getTrackedUniverseEntries } from "./tracked-universe.js";
 
 const TRACKED_FILERS = [
   { name: "BERKSHIRE HATHAWAY INC", cik: "0001067983" },
@@ -38,8 +38,8 @@ function normalizeIssuerName(value) {
     .trim();
 }
 
-function buildWatchlistNameMap() {
-  return WATCHLIST.map((entry) => {
+function buildUniverseNameMap(entries) {
+  return entries.map((entry) => {
     const keys = [entry.company, ...entry.aliases].map(normalizeIssuerName).filter(Boolean);
     return {
       ticker: entry.ticker,
@@ -49,13 +49,13 @@ function buildWatchlistNameMap() {
   });
 }
 
-function matchWatchlistTicker(issuerName) {
+function matchUniverseTicker(issuerName, universeNameMap) {
   const normalizedIssuer = normalizeIssuerName(issuerName);
   if (!normalizedIssuer) {
     return null;
   }
 
-  for (const entry of buildWatchlistNameMap()) {
+  for (const entry of universeNameMap) {
     if (entry.keys.some((key) => normalizedIssuer.includes(key) || key.includes(normalizedIssuer))) {
       return { ticker: entry.ticker, sector: entry.sector };
     }
@@ -142,10 +142,10 @@ export function parseInfoTable(xml) {
   }));
 }
 
-function mapWatchlistHoldings(rows) {
+function mapUniverseHoldings(rows, universeNameMap) {
   const matched = new Map();
   for (const row of rows) {
-    const watch = matchWatchlistTicker(row.issuer);
+    const watch = matchUniverseTicker(row.issuer, universeNameMap);
     if (!watch) {
       continue;
     }
@@ -224,7 +224,8 @@ export function createSecInstitutionalCollector(app) {
         last_error: null,
         polls: 0,
         ingested_documents: 0,
-        tracked_filers: TRACKED_FILERS.length
+        tracked_filers: TRACKED_FILERS.length,
+        universe_symbols: 0
       };
     }
     return store.health.liveSources.sec_13f;
@@ -244,6 +245,10 @@ export function createSecInstitutionalCollector(app) {
     let ingested = 0;
 
     try {
+      const universe = getTrackedUniverseEntries(app, { excludeFunds: true });
+      const universeNameMap = buildUniverseNameMap(universe);
+      health.universe_symbols = universe.length;
+
       for (const filer of TRACKED_FILERS) {
         const submissions = await fetchJson(`https://data.sec.gov/submissions/CIK${filer.cik}.json`, config);
         const filings = findRecent13fFilings(submissions, config.sec13fLookbackHours);
@@ -262,8 +267,8 @@ export function createSecInstitutionalCollector(app) {
           loadInfoTableXml(filer.cik, previousFiling.accessionNumber, config)
         ]);
 
-        const currentHoldings = mapWatchlistHoldings(parseInfoTable(currentXml));
-        const previousHoldings = mapWatchlistHoldings(parseInfoTable(previousXml));
+        const currentHoldings = mapUniverseHoldings(parseInfoTable(currentXml), universeNameMap);
+        const previousHoldings = mapUniverseHoldings(parseInfoTable(previousXml), universeNameMap);
 
         for (const [ticker, currentHolding] of currentHoldings.entries()) {
           const previousHolding = previousHoldings.get(ticker) || null;

@@ -1,4 +1,4 @@
-import { WATCHLIST } from "./taxonomy.js";
+import { getTrackedUniverseEntries, rotateUniverseEntries } from "./tracked-universe.js";
 
 const STOCKTWITS_BASE = "https://api.stocktwits.com/api/2/streams/symbol";
 const BULLISH_SKEW_THRESHOLD = 0.60;
@@ -93,6 +93,7 @@ export function createSocialSentimentCollector(app) {
   let timer = null;
   let running = false;
   let inFlight = false;
+  let cursor = 0;
 
   function isEnabled() {
     return Boolean(config.stocktwitsEnabled || config.autonomousDataEnabled);
@@ -108,7 +109,9 @@ export function createSocialSentimentCollector(app) {
         last_error: null,
         polls: 0,
         consecutive_failures: 0,
-        ingested_documents: 0
+        ingested_documents: 0,
+        universe_symbols: 0,
+        last_batch_size: 0
       };
     }
     store.health.liveSources.stocktwits_stream.enabled = isEnabled();
@@ -130,7 +133,17 @@ export function createSocialSentimentCollector(app) {
     let lastFailure = null;
 
     try {
-      for (const entry of WATCHLIST) {
+      const universe = getTrackedUniverseEntries(app, { excludeFunds: true });
+      const maxTickers = Math.max(0, Math.floor(Number(config.stocktwitsMaxTickersPerPoll || 0)));
+      const rotated = maxTickers && maxTickers < universe.length
+        ? rotateUniverseEntries(universe, cursor, maxTickers)
+        : { selected: universe, nextCursor: 0 };
+      cursor = rotated.nextCursor;
+      const batch = rotated.selected;
+      health.universe_symbols = universe.length;
+      health.last_batch_size = batch.length;
+
+      for (const entry of batch) {
         const seenKey = buildSeenKey(entry.ticker);
         if (store.seenExternalDocuments.has(seenKey)) {
           skipped += 1;
@@ -167,9 +180,9 @@ export function createSocialSentimentCollector(app) {
       }
 
       health.ingested_documents += ingested;
-      if (ingested > 0 || errors < WATCHLIST.length) health.last_success_at = new Date().toISOString();
+      if (ingested > 0 || errors < batch.length) health.last_success_at = new Date().toISOString();
       health.last_error = errors > 0 ? `${errors} tickers failed${lastFailure ? `: ${lastFailure}` : ""}` : null;
-      health.consecutive_failures = errors === WATCHLIST.length ? health.consecutive_failures + 1 : 0;
+      health.consecutive_failures = batch.length && errors === batch.length ? health.consecutive_failures + 1 : 0;
       return { ingested, skipped, errors };
     } finally {
       health.polling = false;

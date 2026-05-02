@@ -1,7 +1,7 @@
 process.env.DATABASE_ENABLED = process.env.DATABASE_ENABLED || "false";
 process.env.SEED_DATA_IN_DECISIONS = "true";
 
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 const { createSentimentApp } = await import("../src/app.js");
@@ -38,6 +38,37 @@ const filesToParse = [
 
 for (const file of filesToParse) {
   JSON.parse(await readFile(file, "utf8"));
+}
+
+async function collectSourceFiles(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await collectSourceFiles(fullPath));
+    } else if (entry.isFile() && /\.(js|html|css)$/.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+const forbiddenSampleUniverseReferences = [];
+const retiredSampleUniverseTokens = [
+  "WATCH" + "LIST",
+  "TICKER_" + "LOOKUP",
+  "US Mega Cap " + "Watchlist"
+];
+for (const file of await collectSourceFiles(path.join(config.rootDir, "src"))) {
+  const text = await readFile(file, "utf8");
+  if (retiredSampleUniverseTokens.some((token) => text.includes(token))) {
+    forbiddenSampleUniverseReferences.push(path.relative(config.rootDir, file));
+  }
+}
+
+if (forbiddenSampleUniverseReferences.length) {
+  throw new Error(`Source still references the retired sample stock list: ${forbiddenSampleUniverseReferences.join(", ")}`);
 }
 
 const rssItems = parseGoogleNewsRss(`
@@ -170,6 +201,13 @@ try {
       async processRawDocument(raw) {
         fallbackDocuments.push(raw);
       }
+    },
+    getTrackedFundamentalCompanies() {
+      return [
+        { ticker: "AAPL", company_name: "Apple Inc.", sector: "Information Technology" },
+        { ticker: "ADBE", company_name: "Adobe Inc.", sector: "Information Technology" },
+        { ticker: "CRM", company_name: "Salesforce, Inc.", sector: "Information Technology" }
+      ];
     }
   });
   const fallbackResult = await fallbackCollector.pollOnce();
@@ -707,6 +745,7 @@ console.log(
   JSON.stringify(
     {
       parsed_files: filesToParse.length,
+      sample_universe_references: forbiddenSampleUniverseReferences.length,
       rss_items_parsed: rssItems.length,
       yahoo_rss_items_parsed: yahooRssItems.length,
       marketaux_items_mapped: marketauxMapped.length,

@@ -1,6 +1,6 @@
-import { WATCHLIST } from "./taxonomy.js";
 import { dedupeKey, normalizeWhitespace, round } from "../utils/helpers.js";
 import { fetchJsonWithRetry, fetchTextWithRetry } from "../utils/http.js";
+import { getTrackedUniverseEntries, rotateUniverseEntries } from "./tracked-universe.js";
 
 function secHeaders(config) {
   return {
@@ -260,6 +260,19 @@ export function createSecInsiderCollector(app) {
   let timer = null;
   let running = false;
   let inFlight = false;
+  let cursor = 0;
+
+  function nextBatch() {
+    const universe = getTrackedUniverseEntries(app, { excludeFunds: true });
+    const maxTickers = Math.max(0, Math.floor(Number(config.secForm4MaxTickersPerPoll || 0)));
+    if (!maxTickers || maxTickers >= universe.length) {
+      return { universe, batch: universe };
+    }
+
+    const rotated = rotateUniverseEntries(universe, cursor, maxTickers);
+    cursor = rotated.nextCursor;
+    return { universe, batch: rotated.selected };
+  }
 
   function ensureHealthEntry() {
     if (!store.health.liveSources.sec_form4) {
@@ -271,7 +284,9 @@ export function createSecInsiderCollector(app) {
         last_error: null,
         polls: 0,
         ingested_documents: 0,
-        recent_filings_seen: 0
+        recent_filings_seen: 0,
+        universe_symbols: 0,
+        last_batch_size: 0
       };
     }
 
@@ -294,8 +309,11 @@ export function createSecInsiderCollector(app) {
 
     try {
       const tickerMap = await loadTickerCikMap(config, store);
+      const { universe, batch } = nextBatch();
+      health.universe_symbols = universe.length;
+      health.last_batch_size = batch.length;
 
-      for (const entry of WATCHLIST) {
+      for (const entry of batch) {
         const cik = tickerMap.get(entry.ticker);
         if (!cik) {
           continue;

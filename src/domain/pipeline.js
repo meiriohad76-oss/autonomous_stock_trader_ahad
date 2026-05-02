@@ -136,7 +136,8 @@ export function createPipeline(store) {
     store.health.queueDepth += 1;
     store.rawDocuments.push(raw);
 
-    const normalized = normalizeRawDocument(raw);
+    const universeEntries = store.fundamentals?.leaderboard || [];
+    const normalized = normalizeRawDocument(raw, { universeEntries });
     const freshness = freshnessStatus(normalized, store.config);
     if (!freshness.fresh) {
       store.health.queueDepth = Math.max(0, store.health.queueDepth - 1);
@@ -155,7 +156,7 @@ export function createPipeline(store) {
     normalized.novelty_score = cluster.novelty_score;
     store.normalizedDocuments.push(normalized);
 
-    const entities = buildEntityRows(normalized, store.config.universeName);
+    const entities = buildEntityRows(normalized, store.config.universeName, { universeEntries });
     store.documentEntities.push(...entities);
 
     const ruleResult = classifyWithRules(normalized);

@@ -1,6 +1,6 @@
-import { WATCHLIST } from "./taxonomy.js";
 import { dedupeKey, normalizeWhitespace } from "../utils/helpers.js";
 import { fetchJsonWithRetry, fetchTextWithRetry } from "../utils/http.js";
+import { getTrackedUniverseEntries, rotateUniverseEntries } from "./tracked-universe.js";
 
 function decodeHtmlEntities(value) {
   return String(value || "")
@@ -129,37 +129,6 @@ function marketauxProvider(symbols) {
     collector: "marketaux_news",
     query: symbols.join(",")
   };
-}
-
-function normalizeNewsUniverseEntry(entry) {
-  const ticker = String(entry?.ticker || "").toUpperCase().trim();
-  if (!ticker) {
-    return null;
-  }
-
-  const fallback = WATCHLIST.find((item) => item.ticker === ticker) || {};
-  return {
-    ticker,
-    company: entry.company || entry.name || fallback.company || ticker,
-    sector: entry.sector || fallback.sector || "Unknown",
-    industry: entry.industry || fallback.industry || "Unknown",
-    aliases: entry.aliases || fallback.aliases || [],
-    base_price: entry.base_price || entry.current_price || fallback.base_price || null
-  };
-}
-
-function uniqueUniverseEntries(entries) {
-  const seen = new Set();
-  const normalized = [];
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const next = normalizeNewsUniverseEntry(entry);
-    if (!next || seen.has(next.ticker)) {
-      continue;
-    }
-    seen.add(next.ticker);
-    normalized.push(next);
-  }
-  return normalized;
 }
 
 function marketauxTimestamp(date) {
@@ -295,17 +264,7 @@ export function createLiveNewsCollector(app) {
   }
 
   function newsUniverseEntries() {
-    if (config.liveNewsUniverseMode === "watchlist") {
-      return uniqueUniverseEntries(WATCHLIST);
-    }
-
-    const tracked = typeof app.getUniverseEntries === "function"
-      ? app.getUniverseEntries()
-      : typeof app.getTrackedFundamentalCompanies === "function"
-        ? app.getTrackedFundamentalCompanies()
-        : [];
-    const universe = uniqueUniverseEntries(tracked);
-    return universe.length ? universe : uniqueUniverseEntries(WATCHLIST);
+    return getTrackedUniverseEntries(app);
   }
 
   function rotateChunks(chunks, cursor, maxCount) {
@@ -322,23 +281,6 @@ export function createLiveNewsCollector(app) {
     return {
       selected,
       nextCursor: (cursor + limit) % chunks.length
-    };
-  }
-
-  function rotateEntries(entries, cursor, maxCount) {
-    if (!entries.length) {
-      return { selected: [], nextCursor: 0 };
-    }
-
-    const limit = Math.min(entries.length, Math.max(1, Number(maxCount || entries.length)));
-    const selected = [];
-    for (let offset = 0; offset < limit; offset += 1) {
-      selected.push(entries[(cursor + offset) % entries.length]);
-    }
-
-    return {
-      selected,
-      nextCursor: (cursor + limit) % entries.length
     };
   }
 
@@ -470,7 +412,7 @@ export function createLiveNewsCollector(app) {
       const marketauxTickers = new Set(marketauxFeeds.map((result) => result.entry.ticker));
       let rssCandidates = marketauxRequestedEntries;
       if (!marketauxRequestedEntries.length) {
-        const rotatedRss = rotateEntries(universeEntries, rssCursor, config.liveNewsRssFallbackMaxTickers);
+        const rotatedRss = rotateUniverseEntries(universeEntries, rssCursor, config.liveNewsRssFallbackMaxTickers);
         rssCandidates = rotatedRss.selected;
         rssCursor = rotatedRss.nextCursor;
       }

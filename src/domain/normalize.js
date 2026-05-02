@@ -1,11 +1,12 @@
-import { SOURCE_TRUST, TICKER_LOOKUP, WATCHLIST } from "./taxonomy.js";
+import { SOURCE_TRUST } from "./taxonomy.js";
+import { buildUniverseLookup, uniqueUniverseEntries } from "./tracked-universe.js";
 import { clamp, differenceInHours, makeId, normalizeWhitespace } from "../utils/helpers.js";
 
-function detectTickers(text) {
+function detectTickers(text, universeEntries) {
   const matches = [];
 
-  for (const entry of WATCHLIST) {
-    const tokens = [entry.ticker, entry.company, ...entry.aliases];
+  for (const entry of universeEntries) {
+    const tokens = [entry.ticker, entry.company, entry.company_name, ...entry.aliases];
     const found = tokens.some((token) => new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
 
     if (found) {
@@ -29,14 +30,16 @@ function detectThemes(text) {
   return themePatterns.filter(([, pattern]) => pattern.test(text)).map(([theme]) => theme);
 }
 
-export function normalizeRawDocument(raw) {
+export function normalizeRawDocument(raw, options = {}) {
+  const universeEntries = uniqueUniverseEntries(options.universeEntries || []);
+  const tickerLookup = buildUniverseLookup(universeEntries);
   const headline = normalizeWhitespace(raw.title);
   const bodyText = normalizeWhitespace(raw.body);
   const combined = `${headline} ${bodyText}`;
   const hintedTicker = raw.source_metadata?.ticker_hint?.toUpperCase?.() || null;
-  const detectedTickers = detectTickers(combined);
+  const detectedTickers = detectTickers(combined, universeEntries);
   const primaryTicker = hintedTicker || detectedTickers[0] || null;
-  const watchlistEntry = primaryTicker ? TICKER_LOOKUP.get(primaryTicker) : null;
+  const universeEntry = primaryTicker ? tickerLookup.get(primaryTicker) : null;
   const publishedAt = raw.published_at || new Date().toISOString();
   const timelinessScore = clamp(Math.exp(-differenceInHours(publishedAt) / 18), 0.08, 1);
   const extractionQualityScore = clamp(
@@ -49,9 +52,9 @@ export function normalizeRawDocument(raw) {
   );
   const mappingConfidence = hintedTicker ? 0.94 : primaryTicker ? 0.72 : 0.18;
   const sourceTrust = SOURCE_TRUST[raw.source_name] || 0.5;
-  const sector = raw.source_metadata?.sector_hint || watchlistEntry?.sector || null;
-  const industry = watchlistEntry?.industry || null;
-  const companies = watchlistEntry ? [watchlistEntry.company] : [];
+  const sector = raw.source_metadata?.sector_hint || universeEntry?.sector || null;
+  const industry = universeEntry?.industry || null;
+  const companies = universeEntry ? [universeEntry.company] : [];
 
   return {
     doc_id: makeId(),
@@ -86,11 +89,12 @@ export function normalizeRawDocument(raw) {
   };
 }
 
-export function buildEntityRows(normalized, universeName) {
+export function buildEntityRows(normalized, universeName, options = {}) {
+  const tickerLookup = buildUniverseLookup(options.universeEntries || []);
   const entities = [];
 
   if (normalized.primary_ticker) {
-    const tickerEntry = TICKER_LOOKUP.get(normalized.primary_ticker);
+    const tickerEntry = tickerLookup.get(normalized.primary_ticker);
     entities.push({
       entity_type: "ticker",
       entity_key: normalized.primary_ticker,

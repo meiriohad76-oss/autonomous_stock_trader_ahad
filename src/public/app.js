@@ -4774,7 +4774,7 @@ function renderSystemView() {
               <span>${source.reason}</span>
               <span>${source.notes}</span>
               <small>Provider: ${source.provider || "n/a"}${source.feed ? ` (${source.feed})` : ""} - Fallback: ${source.fallback_mode ? "yes" : "no"}</small>
-              ${source.universe_symbols ? `<small>Universe: ${source.requested_symbols || 0}/${source.universe_symbols} symbols${source.total_batches ? ` - Batches: ${source.requested_batches || 0}/${source.total_batches}` : ""}${source.limit_per_request ? ` - Limit: ${source.limit_per_request}/request` : ""}</small>` : ""}
+              ${source.universe_symbols ? `<small>Universe: ${source.requested_symbols || source.last_batch_size || 0}/${source.universe_symbols} symbols${source.total_batches ? ` - Batches: ${source.requested_batches || 0}/${source.total_batches}` : ""}${source.limit_per_request ? ` - Limit: ${source.limit_per_request}/request` : ""}</small>` : ""}
               ${source.rss_fallback_symbols ? `<small>RSS fallback tickers this poll: ${source.rss_fallback_symbols}</small>` : ""}
               ${source.coverage_note ? `<small>${escapeHtml(source.coverage_note)}</small>` : ""}
               <small>Action: ${prettyLabel(source.action)} - Last success: ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}${source.last_empty_at ? ` - Last empty: ${relativeTime(source.last_empty_at)}` : ""}</small>
