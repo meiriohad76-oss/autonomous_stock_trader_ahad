@@ -18,6 +18,32 @@ paths:
       responses:
         "200":
           description: Config payload.
+  /api/system/doctor:
+    get:
+      summary: End-to-end product doctor covering live data, agency workers, selection, risk, broker, and persistence gates.
+      parameters:
+        - in: query
+          name: window
+          schema:
+            type: string
+            enum: [15m, 1h, 4h, 1d, 7d]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: minConviction
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+      responses:
+        "200":
+          description: Product readiness checks, blockers, warnings, next actions, live-data summary, and agency status.
+        "400":
+          description: Product doctor could not be built.
   /api/fundamentals/dashboard:
     get:
       summary: Fundamental Analyst dashboard snapshot with sectors, company leaderboard, and recent changes.

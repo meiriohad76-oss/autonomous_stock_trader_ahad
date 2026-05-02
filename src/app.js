@@ -38,6 +38,7 @@ import { createRiskAgent } from "./domain/risk-agent.js";
 import { createPositionMonitorAgent } from "./domain/position-monitor-agent.js";
 import { buildTradingWorkflowStatus } from "./domain/trading-workflow.js";
 import { buildAgencyCycleStatus, chooseAgencyCycleAdvance } from "./domain/agency-cycle.js";
+import { buildSystemDoctorSnapshot } from "./domain/system-doctor.js";
 import {
   PORTFOLIO_POLICY_FIELDS,
   buildPortfolioPolicySnapshot,
@@ -539,6 +540,22 @@ function summarizeRuntimeActionResult(result) {
     pending_sector_count: Array.isArray(pending_by_sector) ? pending_by_sector.length : undefined,
     live_preview_count: Array.isArray(live_preview) ? live_preview.length : undefined
   };
+}
+
+function boundedFundamentalMarketDataLimit(requestedLimit = null) {
+  const configuredCap = Math.max(0, Math.floor(Number(config.fundamentalMarketDataMaxCompaniesPerPoll || 0)));
+  const requested = Math.max(0, Math.floor(Number(requestedLimit || 0)));
+
+  if (!requested && configuredCap) {
+    return configuredCap;
+  }
+  if (!requested) {
+    return 0;
+  }
+  if (!configuredCap) {
+    return requested;
+  }
+  return Math.min(requested, configuredCap);
 }
 
 async function persistEnvUpdates(filePath, updates) {
@@ -1234,6 +1251,7 @@ export function createSentimentApp() {
         marketaux_max_requests_per_poll: config.marketauxMaxRequestsPerPoll,
         marketaux_limit_per_request: config.marketauxLimitPerRequest,
         autonomous_data_enabled: config.autonomousDataEnabled,
+        credential_warnings: config.credentialWarnings || [],
         market_data_provider: config.marketDataProvider,
         market_flow_max_tickers_per_poll: config.marketFlowMaxTickersPerPoll,
         alpaca_market_data_enabled: config.alpacaMarketDataEnabled,
@@ -1441,7 +1459,8 @@ export function createSentimentApp() {
           await ensureFundamentalCoverage({ force: forceUniverse });
           result = await secFundamentalsCollector.pollOnce();
         } else if (canonicalSource === "fundamental_market_data") {
-          const limit = Math.max(0, Math.floor(Number(payload.limit || payload.company_limit || 0)));
+          const requestedLimit = Math.max(0, Math.floor(Number(payload.limit || payload.company_limit || 0)));
+          const limit = boundedFundamentalMarketDataLimit(requestedLimit);
           const companies = limit ? fundamentals.getTrackedCompanies().slice(0, limit) : fundamentals.getTrackedCompanies();
           const referenceMap = await fundamentalMarketDataService.getReferenceBatch(companies);
           const refreshed = await fundamentals.refreshMarketReference(referenceMap);
@@ -1449,7 +1468,9 @@ export function createSentimentApp() {
             refreshed_companies: refreshed,
             reference_count: referenceMap.size,
             limited: Boolean(limit),
-            requested_limit: limit || null
+            requested_limit: requestedLimit || null,
+            effective_limit: limit || null,
+            provider_cap: config.fundamentalMarketDataMaxCompaniesPerPoll || null
           };
         } else if (canonicalSource === "fundamental_universe") {
           result = await ensureFundamentalCoverage({ force: true });
@@ -1836,6 +1857,45 @@ export function createSentimentApp() {
         advanceLog: store.agencyCycleLog || []
       });
     },
+    async getSystemDoctor(options = {}) {
+      refreshSecFundamentalsHealthPreview(store, config);
+      const window = options.window || config.defaultWindow;
+      const limit = options.limit ? Number(options.limit) : 25;
+      const [workflowStatus, agencyCycle, finalSelection, riskSnapshot, positionMonitor] = await Promise.all([
+        this.getTradingWorkflowStatus({ ...options, window, limit }),
+        this.getAgencyCycleStatus({ ...options, window, limit }),
+        this.getFinalSelection({
+          window,
+          limit,
+          minConviction: options.minConviction !== undefined ? Number(options.minConviction) : undefined
+        }),
+        riskAgent.getSnapshot(),
+        positionMonitorAgent.getSnapshot({
+          window,
+          limit: options.positionLimit ? Number(options.positionLimit) : 25
+        })
+      ]);
+      const portfolioPolicy = buildPortfolioPolicySnapshot({
+        config,
+        riskSnapshot,
+        positionMonitor
+      });
+
+      return buildSystemDoctorSnapshot({
+        config,
+        readiness: getReadiness(),
+        health: this.getHealth(),
+        runtimeReliability: runtimeReliabilityAgent.getSnapshot(),
+        workflowStatus,
+        agencyCycle,
+        finalSelection,
+        executionStatus: executionAgent.getStatus(),
+        riskSnapshot,
+        positionMonitor,
+        portfolioPolicy,
+        secQueue: buildSecFundamentalsQueue(store, config, { limit: 8 })
+      });
+    },
     async advanceAgencyCycle(options = {}) {
       const window = options.window || config.defaultWindow;
       const before = await this.getAgencyCycleStatus(options);
@@ -1968,7 +2028,8 @@ export function createSentimentApp() {
       const window = options.window || config.defaultWindow;
       const limit = options.limit ? Number(options.limit) : 25;
       const includeHeavy = Boolean(options.includeHeavy || options.include_heavy);
-      const priceLimit = Math.max(1, Math.min(50, Math.floor(Number(options.priceLimit || options.price_limit || 25))));
+      const requestedPriceLimit = Math.max(1, Math.floor(Number(options.priceLimit || options.price_limit || config.fundamentalMarketDataMaxCompaniesPerPoll || 25)));
+      const priceLimit = Math.max(1, boundedFundamentalMarketDataLimit(requestedPriceLimit) || requestedPriceLimit);
       const before = await this.getAgencyCycleStatus({ ...options, window, limit });
       const actionResults = [];
       const runtimeActions = [
@@ -2077,6 +2138,8 @@ export function createSentimentApp() {
           skipped_count: skippedCount,
           include_heavy: includeHeavy,
           price_limit: priceLimit,
+          requested_price_limit: requestedPriceLimit,
+          provider_price_cap: config.fundamentalMarketDataMaxCompaniesPerPoll || null,
           final_executable: finalSelection.counts?.executable || 0,
           final_buy: finalSelection.counts?.final_buy || 0,
           final_sell: finalSelection.counts?.final_sell || 0,

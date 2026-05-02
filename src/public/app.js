@@ -19,17 +19,7 @@ const WORKER_LABEL_BY_AGENT = AGENCY_WORKERS.reduce((acc, item) => {
   return acc;
 }, {});
 const LEARNING_PRIORITY_WEIGHT = { High: 3, Medium: 2, Low: 1 };
-const FALLBACK_TICKER_META = {
-  AAPL: { company: "Apple", sector: "Technology" },
-  MSFT: { company: "Microsoft", sector: "Technology" },
-  NVDA: { company: "Nvidia", sector: "Technology" },
-  TSLA: { company: "Tesla", sector: "Consumer Discretionary" },
-  AMZN: { company: "Amazon", sector: "Consumer Discretionary" },
-  META: { company: "Meta Platforms", sector: "Communication Services" },
-  GOOGL: { company: "Alphabet", sector: "Communication Services" },
-  QQQ: { company: "Invesco QQQ Trust", sector: "Macro" },
-  SPY: { company: "SPDR S&P 500 ETF Trust", sector: "Macro" }
-};
+const FALLBACK_TICKER_META = {};
 const INSIDER_FLOW_EVENT_TYPES = new Set(["insider_buy", "insider_sell", "activist_stake"]);
 const INSTITUTIONAL_FLOW_EVENT_TYPES = new Set(["institutional_buying", "institutional_selling"]);
 const TAPE_FLOW_EVENT_TYPES = new Set([
@@ -57,6 +47,7 @@ const state = {
   config: null,
   health: null,
   runtimeReliability: null,
+  systemDoctor: null,
   agencyCycle: null,
   agencyCycleError: "",
   secQueue: null,
@@ -2640,9 +2631,10 @@ async function loadConfig() {
 }
 
 async function loadHealth() {
-  const [health, runtimeReliability, agencyCycle, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor, portfolioPolicy] = await Promise.all([
+  const [health, runtimeReliability, systemDoctor, agencyCycle, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor, portfolioPolicy] = await Promise.all([
     getJson("/api/health"),
     getJson("/api/runtime-reliability").catch(() => null),
+    getJson(`/api/system/doctor?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
     getJson(`/api/agency/cycle?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch((error) => ({ __error: error.message })),
     getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null),
     getJson(`/api/trading-workflow/status?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
@@ -2654,6 +2646,7 @@ async function loadHealth() {
   ]);
   state.health = health;
   state.runtimeReliability = runtimeReliability || health.runtime_reliability || null;
+  state.systemDoctor = systemDoctor;
   state.agencyCycleError = agencyCycle?.__error || "";
   state.agencyCycle = agencyCycle?.__error ? null : agencyCycle;
   state.secQueue = secQueue;
@@ -4693,6 +4686,69 @@ function renderTradingView() {
   }
 }
 
+function renderSystemDoctorPanel() {
+  const doctor = state.systemDoctor;
+  if (!doctor) {
+    return `
+      <div class="runtime-action-panel">
+        <div class="section-kicker">End-To-End Doctor</div>
+        <h3>Readiness loading</h3>
+        <p class="workspace-copy">The product doctor is checking live data, selection, risk, broker, and persistence gates.</p>
+      </div>
+    `;
+  }
+
+  const checks = doctor.checks || [];
+  const blockers = doctor.blockers || [];
+  const warnings = doctor.warnings || [];
+  const actions = doctor.next_actions || [];
+
+  return `
+    <div class="workflow-readiness-card ${doctor.status_class || workflowStatusClass(doctor.status)}">
+      <div>
+        <div class="section-kicker">End-To-End Doctor</div>
+        <h3>${prettyLabel(doctor.status)}</h3>
+        <p>${escapeHtml(doctor.summary)}</p>
+      </div>
+      <div class="workflow-readiness-flags">
+        <span class="sentiment-badge ${doctor.can_use_for_decisions ? "bullish" : "bearish"}">${doctor.can_use_for_decisions ? "Decision Ready" : "Decision Blocked"}</span>
+        <span class="sentiment-badge ${doctor.can_preview_orders ? "bullish" : "neutral"}">${doctor.can_preview_orders ? "Preview Ready" : "Preview Limited"}</span>
+        <span class="sentiment-badge ${doctor.can_submit_orders ? "bullish" : "neutral"}">${doctor.can_submit_orders ? "Paper Submit Ready" : "Submit Gated"}</span>
+      </div>
+    </div>
+    <div class="workflow-step-grid">
+      ${checks
+        .map(
+          (item) => `
+            <div class="workflow-step-card ${workflowStatusClass(item.status)}">
+              <span>${prettyLabel(item.status)}</span>
+              <strong>${escapeHtml(item.label)}</strong>
+              <p>${escapeHtml(item.summary)}</p>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+    ${
+      blockers.length || warnings.length || actions.length
+        ? `<div class="workflow-action-grid">
+            ${
+              blockers.length
+                ? `<div class="workflow-action-card bearish"><strong>Blockers</strong><ul>${blockers.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+                : ""
+            }
+            ${
+              warnings.length
+                ? `<div class="workflow-action-card neutral"><strong>Warnings</strong><ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+                : ""
+            }
+            <div class="workflow-action-card bullish"><strong>Next Actions</strong><ul>${actions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+          </div>`
+        : ""
+    }
+  `;
+}
+
 function renderSystemView() {
   const pulse = state.snapshot?.market_pulse || {};
   const runtimeReliability = state.runtimeReliability || state.health?.runtime_reliability || null;
@@ -4739,6 +4795,7 @@ function renderSystemView() {
       : "Persistence is disabled. Runtime data will reset on service restart.";
 
   elements.systemOverview.innerHTML = `
+    <div class="workspace-stat-card"><span>Product Doctor</span><strong>${prettyLabel(state.systemDoctor?.status || "loading")}</strong></div>
     <div class="workspace-stat-card"><span>Status</span><strong>${elements.healthStatus.textContent}</strong></div>
     <div class="workspace-stat-card"><span>Queue Depth</span><strong>${elements.healthQueue.textContent}</strong></div>
     <div class="workspace-stat-card"><span>Latency</span><strong>${elements.healthLatency.textContent}</strong></div>
@@ -4804,6 +4861,7 @@ function renderSystemView() {
       : `<div class="workspace-empty">No source telemetry available.</div>`;
 
   elements.systemNotes.innerHTML = `
+    ${renderSystemDoctorPanel()}
     ${renderExecutionConsolePanel()}
     <div class="runtime-action-panel runtime-console">
       <div class="section-kicker">Runtime Control Console</div>

@@ -19,6 +19,7 @@
     "check:final-selection": "node scripts/check-final-selection.js",
     "check:backtest": "node scripts/check-backtest.js",
     "check:live-data-failover": "node scripts/check-live-data-failover.js",
+    "check:end-to-end": "node scripts/check-end-to-end-product.js",
     "check:agency-operational": "node scripts/check-agency-operational.js",
     "check:runtime-reliability": "node scripts/check-runtime-reliability.js",
     "check:workflow": "node scripts/check-trading-workflow.js",

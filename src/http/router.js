@@ -62,6 +62,19 @@ export async function routeRequest(app, request, response) {
     return;
   }
 
+  if (pathname === "/api/system/doctor" && request.method === "GET") {
+    try {
+      sendJson(response, 200, await app.getSystemDoctor({
+        window: query.window || app.config.defaultWindow,
+        limit: query.limit ? Number(query.limit) : 25,
+        minConviction: query.minConviction !== undefined ? Number(query.minConviction) : undefined
+      }));
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
   if (pathname === "/api/runtime-reliability/actions" && request.method === "POST") {
     let body = "";
 

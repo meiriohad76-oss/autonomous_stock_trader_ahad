@@ -60,23 +60,90 @@ function envBoolean(name, fallback, piFallback = fallback) {
   return String(value).toLowerCase() !== "false";
 }
 
+const placeholderCredentialNames = new Set();
+
+function isPlaceholderCredential(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const lower = normalized.toLowerCase();
+  const compact = lower.replace(/[\s._-]+/g, "_");
+
+  return (
+    /^your_/.test(compact) ||
+    /^replace_with_/.test(compact) ||
+    /^replace_/.test(compact) ||
+    /^paste_/.test(compact) ||
+    /^insert_/.test(compact) ||
+    /_here$/.test(compact) ||
+    ["changeme", "change_me", "todo", "tbd", "none", "null", "undefined", "xxx", "xxxxx"].includes(compact) ||
+    /^<[^>]+>$/.test(normalized)
+  );
+}
+
+function envCredential(name) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null) {
+    return "";
+  }
+
+  const value = stripWrappingQuotes(String(raw).trim());
+  if (!value) {
+    return "";
+  }
+
+  if (isPlaceholderCredential(value)) {
+    placeholderCredentialNames.add(name);
+    return "";
+  }
+
+  return value;
+}
+
+function firstCredential(...names) {
+  for (const name of names) {
+    const value = envCredential(name);
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
 const autonomousDataEnabled = envBoolean("AGENCY_AUTONOMOUS_DATA_ENABLED", "true", "true");
-const hasTwelveDataKey = Boolean(process.env.TWELVE_DATA_API_KEY);
-const hasStocktwitsKey = Boolean(process.env.STOCKTWITS_API_KEY);
-const hasPolygonKey = Boolean(process.env.POLYGON_API_KEY);
-const hasIexKey = Boolean(process.env.IEX_API_KEY);
-const hasGenericTradePrintsKey = Boolean(process.env.TRADE_PRINTS_API_KEY);
-const hasAlpacaMarketDataKey = Boolean(
-  (process.env.ALPACA_MARKET_DATA_API_KEY_ID || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) &&
-    (process.env.ALPACA_MARKET_DATA_API_SECRET_KEY ||
-      process.env.ALPACA_API_SECRET_KEY ||
-      process.env.ALPACA_SECRET_KEY)
+const twelveDataApiKey = envCredential("TWELVE_DATA_API_KEY");
+const marketauxApiKey = envCredential("MARKETAUX_API_KEY");
+const stocktwitsApiKey = envCredential("STOCKTWITS_API_KEY");
+const polygonApiKey = envCredential("POLYGON_API_KEY");
+const iexApiKey = envCredential("IEX_API_KEY");
+const genericTradePrintsApiKey = envCredential("TRADE_PRINTS_API_KEY");
+const alpacaMarketDataApiKeyId = firstCredential(
+  "ALPACA_MARKET_DATA_API_KEY_ID",
+  "ALPACA_API_KEY_ID",
+  "ALPACA_API_KEY"
 );
+const alpacaMarketDataApiSecretKey = firstCredential(
+  "ALPACA_MARKET_DATA_API_SECRET_KEY",
+  "ALPACA_API_SECRET_KEY",
+  "ALPACA_SECRET_KEY"
+);
+const alpacaApiKeyId = firstCredential("ALPACA_API_KEY_ID", "ALPACA_API_KEY");
+const alpacaApiSecretKey = firstCredential("ALPACA_API_SECRET_KEY", "ALPACA_SECRET_KEY");
+const llmSelectionApiKey = firstCredential("LLM_SELECTION_API_KEY", "OPENAI_API_KEY");
+const earningsApiKey = firstCredential("EARNINGS_API_KEY", "TWELVE_DATA_API_KEY");
+const hasTwelveDataKey = Boolean(twelveDataApiKey);
+const hasStocktwitsKey = Boolean(stocktwitsApiKey);
+const hasPolygonKey = Boolean(polygonApiKey);
+const hasIexKey = Boolean(iexApiKey);
+const hasGenericTradePrintsKey = Boolean(genericTradePrintsApiKey);
+const hasAlpacaMarketDataKey = Boolean(alpacaMarketDataApiKeyId && alpacaMarketDataApiSecretKey);
 const alpacaMarketDataEnabled =
   String(process.env.ALPACA_MARKET_DATA_ENABLED || (hasAlpacaMarketDataKey ? "true" : "false")).toLowerCase() !==
   "false";
 const marketauxEnabled =
-  String(process.env.MARKETAUX_ENABLED || (process.env.MARKETAUX_API_KEY ? "true" : "false")).toLowerCase() !==
+  String(process.env.MARKETAUX_ENABLED || (marketauxApiKey ? "true" : "false")).toLowerCase() !==
   "false";
 const stocktwitsEnabled =
   String(process.env.STOCKTWITS_ENABLED || (hasStocktwitsKey ? "true" : "false")).toLowerCase() !== "false";
@@ -105,8 +172,8 @@ const selectedTradePrintsProvider =
   String(process.env.TRADE_PRINTS_PROVIDER || "").trim().toLowerCase() ||
   (hasPolygonKey || hasGenericTradePrintsKey ? "polygon" : hasIexKey ? "iex" : "polygon");
 const selectedTradePrintsApiKey =
-  process.env.TRADE_PRINTS_API_KEY ||
-  (selectedTradePrintsProvider === "iex" ? process.env.IEX_API_KEY : process.env.POLYGON_API_KEY) ||
+  genericTradePrintsApiKey ||
+  (selectedTradePrintsProvider === "iex" ? iexApiKey : polygonApiKey) ||
   "";
 
 export const config = {
@@ -144,7 +211,7 @@ export const config = {
   liveNewsRequestTimeoutMs: Number(process.env.LIVE_NEWS_REQUEST_TIMEOUT_MS || 12000),
   liveNewsRequestRetries: envNumber("LIVE_NEWS_REQUEST_RETRIES", 1, 0),
   marketauxEnabled,
-  marketauxApiKey: process.env.MARKETAUX_API_KEY || "",
+  marketauxApiKey,
   marketauxBaseUrl: process.env.MARKETAUX_BASE_URL || "https://api.marketaux.com/v1/news/all",
   marketauxMaxItemsPerTicker: envNumber("MARKETAUX_MAX_ITEMS_PER_TICKER", 3, 2),
   marketauxSymbolsPerRequest: envNumber("MARKETAUX_SYMBOLS_PER_REQUEST", 5, 5),
@@ -159,18 +226,10 @@ export const config = {
   marketDataCacheMs: Number(process.env.MARKET_DATA_CACHE_MS || 60000),
   marketDataRefreshMs: envNumber("MARKET_DATA_REFRESH_MS", 60000, 300000),
   marketDataRequestTimeoutMs: Number(process.env.MARKET_DATA_REQUEST_TIMEOUT_MS || 12000),
-  twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || "",
+  twelveDataApiKey,
   alpacaMarketDataEnabled,
-  alpacaMarketDataApiKeyId:
-    process.env.ALPACA_MARKET_DATA_API_KEY_ID ||
-    process.env.ALPACA_API_KEY_ID ||
-    process.env.ALPACA_API_KEY ||
-    "",
-  alpacaMarketDataApiSecretKey:
-    process.env.ALPACA_MARKET_DATA_API_SECRET_KEY ||
-    process.env.ALPACA_API_SECRET_KEY ||
-    process.env.ALPACA_SECRET_KEY ||
-    "",
+  alpacaMarketDataApiKeyId,
+  alpacaMarketDataApiSecretKey,
   alpacaMarketDataBaseUrl: process.env.ALPACA_MARKET_DATA_BASE_URL || "https://data.alpaca.markets",
   alpacaMarketDataFeed: process.env.ALPACA_MARKET_DATA_FEED || "iex",
   marketFlowEnabled: String(process.env.MARKET_FLOW_ENABLED || "true").toLowerCase() !== "false",
@@ -219,8 +278,8 @@ export const config = {
   brokerTradingMode: process.env.BROKER_TRADING_MODE || "paper",
   brokerSubmitEnabled: String(process.env.BROKER_SUBMIT_ENABLED || "false").toLowerCase() === "true",
   brokerRequestTimeoutMs: Number(process.env.BROKER_REQUEST_TIMEOUT_MS || 12000),
-  alpacaApiKeyId: process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY || "",
-  alpacaApiSecretKey: process.env.ALPACA_API_SECRET_KEY || process.env.ALPACA_SECRET_KEY || "",
+  alpacaApiKeyId,
+  alpacaApiSecretKey,
   alpacaPaperBaseUrl: process.env.ALPACA_PAPER_BASE_URL || "https://paper-api.alpaca.markets",
   alpacaLiveBaseUrl: process.env.ALPACA_LIVE_BASE_URL || "https://api.alpaca.markets",
   alpacaAllowLiveTrading: String(process.env.ALPACA_ALLOW_LIVE_TRADING || "false").toLowerCase() === "true",
@@ -229,8 +288,8 @@ export const config = {
   alpacaMcpCommand: process.env.ALPACA_MCP_COMMAND || "",
   alpacaMcpUvPath: process.env.ALPACA_MCP_UV_PATH || process.env.UV_PATH || "",
   alpacaMcpRequestTimeoutMs: Number(process.env.ALPACA_MCP_REQUEST_TIMEOUT_MS || 30000),
-  alpacaMcpApiKey: process.env.ALPACA_API_KEY || process.env.ALPACA_API_KEY_ID || "",
-  alpacaMcpSecretKey: process.env.ALPACA_SECRET_KEY || process.env.ALPACA_API_SECRET_KEY || "",
+  alpacaMcpApiKey: firstCredential("ALPACA_API_KEY", "ALPACA_API_KEY_ID"),
+  alpacaMcpSecretKey: firstCredential("ALPACA_SECRET_KEY", "ALPACA_API_SECRET_KEY"),
   alpacaMcpPaperTrade: process.env.ALPACA_PAPER_TRADE || "true",
   alpacaMcpToolsets: process.env.ALPACA_TOOLSETS || "account,trading,assets,stock-data,news",
   executionMinConviction: Number(process.env.EXECUTION_MIN_CONVICTION || 0.62),
@@ -261,7 +320,7 @@ export const config = {
   llmSelectionModel: process.env.LLM_SELECTION_MODEL || "policy-aware-shadow-reviewer",
   llmSelectionMinConfidence: Number(process.env.LLM_SELECTION_MIN_CONFIDENCE || 0.58),
   llmSelectionApiUrl: process.env.LLM_SELECTION_API_URL || "",
-  llmSelectionApiKey: process.env.LLM_SELECTION_API_KEY || process.env.OPENAI_API_KEY || "",
+  llmSelectionApiKey,
   riskMaxGrossExposurePct: Number(process.env.RISK_MAX_GROSS_EXPOSURE_PCT || 0.35),
   riskMaxSingleNameExposurePct: Number(process.env.RISK_MAX_SINGLE_NAME_EXPOSURE_PCT || 0.08),
   riskMaxOpenOrders: Number(process.env.RISK_MAX_OPEN_ORDERS || 10),
@@ -282,20 +341,20 @@ export const config = {
     process.env.SEC_USER_AGENT || "SentimentAnalyst/1.0 contact=local@example.com",
   earningsEnabled: String(process.env.EARNINGS_ENABLED || "true").toLowerCase() !== "false",
   earningsProvider: process.env.EARNINGS_PROVIDER || "yahoo",
-  earningsApiKey: process.env.EARNINGS_API_KEY || process.env.TWELVE_DATA_API_KEY || "",
+  earningsApiKey,
   earningsLookAheadDays: Number(process.env.EARNINGS_LOOK_AHEAD_DAYS || 14),
   earningsPollMs: Number(process.env.EARNINGS_POLL_MS || 14400000),
   earningsRequestTimeoutMs: Number(process.env.EARNINGS_REQUEST_TIMEOUT_MS || 12000),
   earningsMaxTickersPerPoll: envNumber("EARNINGS_MAX_TICKERS_PER_POLL", 12, 6),
   stocktwitsEnabled,
-  stocktwitsApiKey: process.env.STOCKTWITS_API_KEY || "",
+  stocktwitsApiKey,
   stocktwitsPollMs: Number(process.env.STOCKTWITS_POLL_MS || 300000),
   stocktwitsMaxTickersPerPoll: envNumber("STOCKTWITS_MAX_TICKERS_PER_POLL", 20, 8),
   stocktwitsRequestTimeoutMs: Number(process.env.STOCKTWITS_REQUEST_TIMEOUT_MS || 10000),
   tradePrintsEnabled,
   tradePrintsProvider: selectedTradePrintsProvider,
-  polygonApiKey: process.env.POLYGON_API_KEY || "",
-  iexApiKey: process.env.IEX_API_KEY || "",
+  polygonApiKey,
+  iexApiKey,
   tradePrintsApiKey: selectedTradePrintsApiKey,
   tradePrintsPollMs: Number(process.env.TRADE_PRINTS_POLL_MS || 60000),
   tradePrintsMaxTickersPerPoll: envNumber("TRADE_PRINTS_MAX_TICKERS_PER_POLL", 25, 8),
@@ -313,6 +372,10 @@ export const config = {
   executionMaxPositions: Number(process.env.EXECUTION_MAX_POSITIONS || 10),
   envPath,
   rootDir,
+  credentialWarnings: Array.from(placeholderCredentialNames).map((name) => ({
+    env: name,
+    issue: "placeholder_value_ignored"
+  })),
   publicDir: path.join(rootDir, "src", "public"),
   dataDir: path.join(rootDir, "data"),
   sampleEventsPath: path.join(rootDir, "data", "sample-events.json"),
