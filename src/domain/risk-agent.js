@@ -143,6 +143,7 @@ export function evaluateExecutionRisk(intent, portfolioRisk, config) {
   const checks = [];
   const proposedNotional = toNumber(intent.estimated_notional_usd);
   const currentGrossPct = toNumber(portfolioRisk.gross_exposure_pct);
+  const openOrders = toNumber(portfolioRisk.open_orders, 0);
   const proposedGrossPct = currentGrossPct + proposedNotional / Math.max(1, portfolioRisk.equity);
   const existingTickerExposure =
     portfolioRisk.positions.find((position) => position.symbol === intent.ticker)?.exposure_pct || 0;
@@ -164,9 +165,9 @@ export function evaluateExecutionRisk(intent, portfolioRisk, config) {
   });
   checks.push({
     key: "open_orders",
-    value: portfolioRisk.open_orders,
+    value: openOrders,
     limit: limits.max_open_orders,
-    pass: portfolioRisk.open_orders < limits.max_open_orders
+    pass: openOrders < limits.max_open_orders
   });
   checks.push({
     key: "runtime_constraint",

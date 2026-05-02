@@ -99,6 +99,17 @@ function latestAlertTimestamp(alert) {
   return alert.created_at || alert.detected_at || null;
 }
 
+function evidenceFlowWeight(item) {
+  const baseWeight = Number(item.downstream_weight ?? item.evidence_quality?.downstream_weight ?? 0.5);
+  const tierMultiplier =
+    item.display_tier === "alert"
+      ? 1
+      : item.display_tier === "context"
+        ? 0.45
+        : 0.7;
+  return clamp(baseWeight, 0, 1) * tierMultiplier;
+}
+
 function pricePlan(action, currentPrice, conviction, beta = 1) {
   if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
     return {
@@ -372,9 +383,13 @@ function computeSetup({
   const sentimentConfidence = Number(sentimentRow?.weighted_confidence || 0);
   const fundamentalScore = Number(fundamentalRow?.composite_fundamental_score || 0);
   const anomalyPenalty = Number(fundamentalRow?.anomaly_penalty || 0);
-  const bullishFlowCount = docs.filter((item) => BULLISH_FLOW_EVENT_TYPES.has(item.event_type)).length;
-  const bearishFlowCount = docs.filter((item) => BEARISH_FLOW_EVENT_TYPES.has(item.event_type)).length;
-  const flowBalance = bullishFlowCount - bearishFlowCount;
+  const bullishFlowItems = docs.filter((item) => BULLISH_FLOW_EVENT_TYPES.has(item.event_type));
+  const bearishFlowItems = docs.filter((item) => BEARISH_FLOW_EVENT_TYPES.has(item.event_type));
+  const bullishFlowCount = bullishFlowItems.length;
+  const bearishFlowCount = bearishFlowItems.length;
+  const bullishFlowWeight = bullishFlowItems.reduce((sum, item) => sum + evidenceFlowWeight(item), 0);
+  const bearishFlowWeight = bearishFlowItems.reduce((sum, item) => sum + evidenceFlowWeight(item), 0);
+  const flowBalance = bullishFlowWeight - bearishFlowWeight;
   const qualityAverage = docs.length
     ? docs.reduce((sum, item) => sum + Number(item.downstream_weight ?? item.evidence_quality?.downstream_weight ?? 0.5), 0) / docs.length
     : 0.45;

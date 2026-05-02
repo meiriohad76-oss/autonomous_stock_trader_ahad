@@ -16,6 +16,10 @@ function defaultAliases(company) {
 }
 
 export function normalizeUniverseEntry(entry = {}) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
   const ticker = cleanTicker(entry.ticker || entry.symbol || entry.entity_key);
   if (!ticker) {
     return null;
