@@ -11,6 +11,8 @@ The JSON report is the full evidence pack. The JSONL file is the event stream an
 
 Both files are created at startup and checkpointed while the diagnostic is running. If the Pi kills the process or an SSH session drops, inspect the newest `.jsonl` file and the partial `.json` report to see the last completed step.
 
+By default, the all-agent diagnostic does not force a live universe refresh. It inspects the currently loaded S&P 100 plus QQQ universe, then moves on to the rest of the agents. This keeps one slow reference download from blocking the full diagnostic report.
+
 ## Common Commands
 
 Inspect all agents without polling live providers:
@@ -35,6 +37,12 @@ Run one specific agent:
 
 ```bash
 npm run check:agents -- --agent execution
+```
+
+Force-test the live Universe Agent reference refresh:
+
+```bash
+npm run check:agents -- --agent universe --refresh-universe
 ```
 
 Watch the live event stream while a diagnostic is running:

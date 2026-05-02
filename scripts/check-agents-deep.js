@@ -52,6 +52,7 @@ Options:
   --limit <n>               Candidate/detail limit. Default: ${DEFAULT_LIMIT}
   --price-limit <n>         Pricing/reference extraction batch size. Default: ${DEFAULT_PRICE_LIMIT}
   --max-sec-batches <n>     Max SEC fundamentals batches during Fundamentals Agent check. Default: AGENCY_BASELINE_SEC_BATCHES_PER_RUN or 4
+  --refresh-universe        Force a live Universe Agent refresh. Default: inspect the loaded universe only.
   --no-extract              Do not poll live/external sources; only inspect current state.
   --fail-on-agent-fail      Exit with code 1 when an agent reports fail. Default: write diagnostics and exit 0 unless the script crashes.
   --out <path>              Write full JSON report to this path.
@@ -61,6 +62,7 @@ Examples:
   npm run check:agents
   npm run check:agents -- --agent market,fundamentals --max-sec-batches 4
   npm run check:agents -- --no-extract
+  npm run check:agents -- --agent universe --refresh-universe
 
 Agent keys:
   ${AGENTS.map((agent) => agent.key).join(", ")}
@@ -92,6 +94,7 @@ function parseArgs(argv) {
     priceLimit: DEFAULT_PRICE_LIMIT,
     agentKeys: null,
     maxSecBatches: null,
+    refreshUniverse: false,
     extract: true,
     failOnAgentFail: false,
     out: null,
@@ -102,6 +105,8 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === "--help" || arg === "-h") {
       options.help = true;
+    } else if (arg === "--refresh-universe") {
+      options.refreshUniverse = true;
     } else if (arg === "--no-extract") {
       options.extract = false;
     } else if (arg === "--fail-on-agent-fail") {
@@ -475,15 +480,53 @@ async function runRuntimeAction(app, agent, payload, sourceKeys, emit, { optiona
   }
 }
 
+function recordSkippedAction(app, agent, payload, sourceKeys, emit, summary, details = {}) {
+  const counters = stateCounters(app);
+  const sources = sourceSnapshot(app, sourceKeys);
+  const entry = {
+    ok: null,
+    skipped: true,
+    warning: false,
+    started_at: nowIso(),
+    finished_at: nowIso(),
+    duration_ms: 0,
+    payload: sanitize(payload),
+    reason: summary,
+    details: sanitize(details),
+    counters_before: counters,
+    counters_after: counters,
+    counter_delta: deltaCounters(counters, counters),
+    sources_before: sources,
+    sources_after: sources
+  };
+  agent.extraction_log.push(entry);
+  emit("action_skipped", agent.key, {
+    action: payload.action,
+    source: payload.source || null,
+    reason: summary,
+    ...details
+  });
+}
+
 async function inspectAgent(app, agent, options, emit) {
   const cycleBefore = await getCycle(app, options);
   agent.worker_before = summarizeWorker(workerFromCycle(cycleBefore, agent.key));
 
   if (agent.key === "universe") {
-    if (options.extract) {
+    if (options.extract && options.refreshUniverse) {
       await runRuntimeAction(app, agent, { action: "refresh_universe" }, ["fundamental_universe"], emit);
     }
     const queue = app.getSecFundamentalsQueue({ limit: 5 });
+    if (options.extract && !options.refreshUniverse) {
+      const summary = "Live universe refresh skipped by default; current tracked universe inspected.";
+      recordSkippedAction(app, agent, { action: "refresh_universe" }, ["fundamental_universe"], emit, summary, {
+        tracked_companies: queue.tracked_companies,
+        command: "npm run check:agents -- --agent universe --refresh-universe"
+      });
+      addCheck(agent, "universe_refresh_mode", "pass", `${summary} Use --refresh-universe to force the external refresh.`, {
+        tracked_companies: queue.tracked_companies
+      });
+    }
     agent.output_summary = {
       tracked_companies: queue.tracked_companies,
       live_sec_companies: queue.live_sec_companies,
@@ -500,7 +543,7 @@ async function inspectAgent(app, agent, options, emit) {
         const response = await runRuntimeAction(
           app,
           agent,
-          { action: "poll_once", source: "sec_fundamentals", forceUniverse: index === 0 },
+          { action: "poll_once", source: "sec_fundamentals", forceUniverse: options.refreshUniverse && index === 0 },
           ["sec_fundamentals", "fundamental_universe"],
           emit
         );
