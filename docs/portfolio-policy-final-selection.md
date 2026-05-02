@@ -7,6 +7,7 @@ The Portfolio Policy Agent owns user-editable trading rules. The dashboard expos
 Current rules:
 
 - Weekly target and weekly drawdown guardrail.
+- Minimum Final Selection conviction required before Risk and Execution preview.
 - Maximum positions and maximum new positions per cycle.
 - Maximum single-position size, gross exposure, and sector exposure.
 - Cash reserve requirement.
@@ -39,7 +40,7 @@ Final Selection uses this sequence:
 4. Promote only names where deterministic and LLM actions agree.
 5. Keep LLM-only promotions as watch/review. The LLM cannot override deterministic no-trade by itself.
 6. Demote disagreements to review.
-7. Apply portfolio policy: size cap, new-position cap, position capacity, cash reserve, gross exposure, sector exposure, and add-to-position rules.
+7. Apply portfolio policy: minimum final conviction, size cap, new-position cap, position capacity, cash reserve, gross exposure, sector exposure, and add-to-position rules.
 8. Send only final executable candidates to Risk and Execution preview.
 9. Alpaca submission remains supervised and still requires explicit approval.
 

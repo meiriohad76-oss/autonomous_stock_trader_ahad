@@ -25,12 +25,17 @@ function agreementStatus(deterministicAction, llmAction) {
   return "both_non_tradable";
 }
 
-function baseDecision(setup, llm, config) {
+function effectiveExecutionMinConviction(config, portfolioPolicy) {
+  return Number(portfolioPolicy?.portfolioExecutionMinConviction ?? config.executionMinConviction ?? 0.62);
+}
+
+function baseDecision(setup, llm, config, portfolioPolicy) {
   const deterministicAction = setup.action;
   const llmAction = llm?.action || "watch";
   const agreement = agreementStatus(deterministicAction, llmAction);
   const deterministicConviction = Number(setup.conviction || 0);
   const llmConfidence = Number(llm?.confidence || 0);
+  const requiredFinalConviction = effectiveExecutionMinConviction(config, portfolioPolicy);
   const agreementBonus = agreement === "agree" && isTradable(deterministicAction)
     ? 0.07
     : agreement === "direction_conflict"
@@ -55,7 +60,7 @@ function baseDecision(setup, llm, config) {
 
   if (agreement === "agree" && isTradable(deterministicAction)) {
     finalAction = deterministicAction;
-    executionAllowed = score >= Number(config.executionMinConviction || 0.62);
+    executionAllowed = score >= requiredFinalConviction;
     if (!executionAllowed) {
       reasonCodes.push("final_score_below_execution_minimum");
     }
@@ -81,6 +86,8 @@ function baseDecision(setup, llm, config) {
     final_action: finalAction,
     execution_allowed: executionAllowed,
     final_conviction: round(score, 3),
+    required_final_conviction: round(requiredFinalConviction, 3),
+    final_conviction_gap: round(Math.max(0, requiredFinalConviction - score), 3),
     agreement,
     reason_codes: reasonCodes
   };
@@ -143,7 +150,7 @@ function buildInitialCandidates({ tradeSetups, llmSelection, portfolioPolicy, ri
 
   return (tradeSetups?.setups || []).map((setup) => {
     const llm = llmByTicker.get(setup.ticker) || null;
-    const decision = baseDecision(setup, llm, config);
+    const decision = baseDecision(setup, llm, config, portfolioPolicy);
     const sizePct = round(
       clamp(
         Number(setup.position_size_pct || 0),
@@ -152,9 +159,19 @@ function buildInitialCandidates({ tradeSetups, llmSelection, portfolioPolicy, ri
       ),
       4
     );
+    const finalConvictionGateApplies = isTradable(decision.final_action);
     const policyGates = [
       policyGate("risk_manager", !riskBlocked, riskBlocked ? "Risk Manager is blocking new execution." : "Risk Manager is not hard-blocking.", riskSnapshot?.status || "unknown", "not_blocked"),
-      policyGate("single_position_size", sizePct <= Number(portfolioPolicy.portfolioMaxPositionPct || 0.03), "Position size is inside the policy cap.", sizePct, portfolioPolicy.portfolioMaxPositionPct)
+      policyGate("single_position_size", sizePct <= Number(portfolioPolicy.portfolioMaxPositionPct || 0.03), "Position size is inside the policy cap.", sizePct, portfolioPolicy.portfolioMaxPositionPct),
+      policyGate(
+        "final_conviction_minimum",
+        !finalConvictionGateApplies || decision.final_conviction >= decision.required_final_conviction,
+        finalConvictionGateApplies
+          ? "Final conviction must clear the user policy minimum."
+          : "Final conviction minimum applies only to final buy/sell candidates.",
+        decision.final_conviction,
+        decision.required_final_conviction
+      )
     ];
 
     return {
@@ -167,6 +184,8 @@ function buildInitialCandidates({ tradeSetups, llmSelection, portfolioPolicy, ri
       llm_confidence: llm?.confidence ?? null,
       final_action: decision.final_action,
       final_conviction: decision.final_conviction,
+      required_final_conviction: decision.required_final_conviction,
+      final_conviction_gap: decision.final_conviction_gap,
       execution_allowed: decision.execution_allowed && !riskBlocked,
       agreement: decision.agreement,
       reason_codes: [...decision.reason_codes],
@@ -337,6 +356,7 @@ export function buildFinalSelectionSnapshot({
       max_positions: portfolioPolicy.portfolioMaxPositions,
       max_new_positions_per_cycle: portfolioPolicy.portfolioMaxNewPositionsPerCycle,
       max_position_pct: portfolioPolicy.portfolioMaxPositionPct,
+      execution_min_conviction: portfolioPolicy.portfolioExecutionMinConviction,
       max_gross_exposure_pct: portfolioPolicy.portfolioMaxGrossExposurePct,
       max_sector_exposure_pct: portfolioPolicy.portfolioMaxSectorExposurePct,
       cash_reserve_pct: portfolioPolicy.portfolioCashReservePct,

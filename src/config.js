@@ -311,6 +311,7 @@ export const config = {
   executionDefaultOrderType: process.env.EXECUTION_DEFAULT_ORDER_TYPE || "market",
   executionDefaultTimeInForce: process.env.EXECUTION_DEFAULT_TIME_IN_FORCE || "day",
   portfolioWeeklyTargetPct: Number(process.env.PORTFOLIO_WEEKLY_TARGET_PCT || 0.03),
+  portfolioExecutionMinConviction: Number(process.env.PORTFOLIO_EXECUTION_MIN_CONVICTION || process.env.EXECUTION_MIN_CONVICTION || 0.62),
   portfolioMaxWeeklyDrawdownPct: Number(process.env.PORTFOLIO_MAX_WEEKLY_DRAWDOWN_PCT || 0.04),
   portfolioMaxPositions: Number(process.env.PORTFOLIO_MAX_POSITIONS || process.env.EXECUTION_MAX_POSITIONS || 10),
   portfolioMaxNewPositionsPerCycle: Number(process.env.PORTFOLIO_MAX_NEW_POSITIONS_PER_CYCLE || 3),

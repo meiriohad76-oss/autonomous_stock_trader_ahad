@@ -11,6 +11,16 @@ export const PORTFOLIO_POLICY_FIELDS = {
     label: "Weekly Target",
     help: "Target return used for progress tracking and sizing discipline. This is not a guaranteed return."
   },
+  portfolioExecutionMinConviction: {
+    env: "PORTFOLIO_EXECUTION_MIN_CONVICTION",
+    type: "number",
+    min: 0.45,
+    max: 0.9,
+    digits: 3,
+    step: 0.01,
+    label: "Execution Conviction Min",
+    help: "Minimum Final Selection conviction before a candidate can move to Risk and Execution preview."
+  },
   portfolioMaxWeeklyDrawdownPct: {
     env: "PORTFOLIO_MAX_WEEKLY_DRAWDOWN_PCT",
     type: "number",
@@ -181,6 +191,7 @@ export function portfolioPolicyFieldList() {
 export function readPortfolioPolicy(config) {
   return {
     portfolioWeeklyTargetPct: toNumber(config.portfolioWeeklyTargetPct, 0.03),
+    portfolioExecutionMinConviction: toNumber(config.portfolioExecutionMinConviction, toNumber(config.executionMinConviction, 0.62)),
     portfolioMaxWeeklyDrawdownPct: toNumber(config.portfolioMaxWeeklyDrawdownPct, 0.04),
     portfolioMaxPositions: Math.round(toNumber(config.portfolioMaxPositions, 10)),
     portfolioMaxNewPositionsPerCycle: Math.round(toNumber(config.portfolioMaxNewPositionsPerCycle, 3)),
@@ -283,6 +294,7 @@ export function buildPolicyAdjustedSetup(setup, policy, { finalAction = setup?.a
       default_stop_loss_pct: policy.portfolioDefaultStopLossPct,
       default_take_profit_pct: policy.portfolioDefaultTakeProfitPct,
       trailing_stop_pct: policy.portfolioTrailingStopPct,
+      execution_min_conviction: policy.portfolioExecutionMinConviction,
       exit_plan_source: exits.source
     }
   };
@@ -344,6 +356,13 @@ export function buildPortfolioPolicySnapshot({ config, riskSnapshot = null, posi
         label: "Weekly target",
         value: round(weeklyProgressPct, 4),
         limit: policy.portfolioWeeklyTargetPct,
+        pass: true
+      },
+      {
+        key: "execution_min_conviction",
+        label: "Execution conviction min",
+        value: policy.portfolioExecutionMinConviction,
+        limit: policy.portfolioExecutionMinConviction,
         pass: true
       },
       {

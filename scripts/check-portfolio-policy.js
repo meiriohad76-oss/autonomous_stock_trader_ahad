@@ -18,6 +18,7 @@ const config = {
   riskMaxOpenOrders: 10,
   riskBlockWhenRuntimeConstrained: false,
   portfolioWeeklyTargetPct: 0.03,
+  portfolioExecutionMinConviction: 0.58,
   portfolioMaxWeeklyDrawdownPct: 0.04,
   portfolioMaxPositions: 6,
   portfolioMaxNewPositionsPerCycle: 2,
@@ -131,7 +132,7 @@ const snapshot = buildPortfolioPolicySnapshot({
   positionMonitor: monitor
 });
 
-if (!snapshot.guardrails.length || snapshot.settings.portfolioMaxPositions !== 6) {
+if (!snapshot.guardrails.length || snapshot.settings.portfolioMaxPositions !== 6 || snapshot.settings.portfolioExecutionMinConviction !== 0.58) {
   throw new Error("Portfolio policy snapshot should expose settings and guardrails.");
 }
 
@@ -140,6 +141,7 @@ console.log(
     {
       status: "ok",
       policy_status: snapshot.status,
+      execution_min_conviction: policy.portfolioExecutionMinConviction,
       max_position_pct: policy.portfolioMaxPositionPct,
       adjusted_size_pct: adjustedSetup.position_size_pct,
       close_candidates: monitor.close_candidate_count,

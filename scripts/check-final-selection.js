@@ -28,6 +28,7 @@ const config = {
 
 const portfolioPolicy = {
   portfolioWeeklyTargetPct: 0.03,
+  portfolioExecutionMinConviction: 0.62,
   portfolioMaxWeeklyDrawdownPct: 0.04,
   portfolioMaxPositions: 10,
   portfolioMaxNewPositionsPerCycle: 1,
@@ -157,8 +158,12 @@ const microsoft = finalSelection.candidates.find((candidate) => candidate.ticker
 const tesla = finalSelection.candidates.find((candidate) => candidate.ticker === "TSLA");
 const nvidia = finalSelection.candidates.find((candidate) => candidate.ticker === "NVDA");
 
-if (!apple?.execution_allowed || apple.setup_for_execution?.position_size_pct !== 0.03) {
+if (!apple?.execution_allowed || apple.setup_for_execution?.position_size_pct !== 0.03 || apple.required_final_conviction !== 0.62) {
   throw new Error("Final selector should promote the strongest aligned candidate and cap position size.");
+}
+
+if (finalSelection.portfolio_policy.execution_min_conviction !== 0.62) {
+  throw new Error("Final selector should expose the user-editable execution conviction policy.");
 }
 
 if (microsoft?.execution_allowed) {

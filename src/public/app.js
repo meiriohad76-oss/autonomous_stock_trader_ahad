@@ -2509,6 +2509,8 @@ function buildSignalFromFinalSelection(candidate) {
     `Deterministic: ${prettyLabel(candidate.deterministic_action)} at ${formatNumber((candidate.deterministic_conviction || 0) * 100, 0)}%.`,
     `LLM lane: ${prettyLabel(candidate.llm_action)}${candidate.llm_confidence !== null && candidate.llm_confidence !== undefined ? ` at ${formatNumber(candidate.llm_confidence * 100, 0)}%` : ""}.`,
     `Agreement: ${prettyLabel(candidate.agreement)}.`,
+    `Execution minimum: ${formatNumber((candidate.required_final_conviction || 0) * 100, 0)}%.`,
+    candidate.final_conviction_gap ? `Final score is short by ${formatNumber(candidate.final_conviction_gap * 100, 1)}%.` : "",
     `Policy size: ${formatNumber((candidate.position_size_pct || 0) * 100, 1)}%.`,
     ...(deterministic.thesis || []).slice(0, 3).map((item) => `Deterministic thesis: ${item}`),
     ...(llm.supporting_factors || []).slice(0, 3).map((item) => `LLM support: ${item}`),
@@ -2538,6 +2540,7 @@ function buildSignalFromFinalSelection(candidate) {
       <div class="workspace-stat-card"><span>Final</span><strong>${prettyLabel(candidate.final_action)}</strong></div>
       <div class="workspace-stat-card"><span>Executable</span><strong>${candidate.execution_allowed ? "Yes" : "No"}</strong></div>
       <div class="workspace-stat-card"><span>Final Score</span><strong>${formatNumber((candidate.final_conviction || 0) * 100, 0)}%</strong></div>
+      <div class="workspace-stat-card"><span>Required</span><strong>${formatNumber((candidate.required_final_conviction || 0) * 100, 0)}%</strong></div>
       <div class="workspace-stat-card"><span>Deterministic</span><strong>${prettyLabel(candidate.deterministic_action)}</strong></div>
       <div class="workspace-stat-card"><span>LLM</span><strong>${prettyLabel(candidate.llm_action)}</strong></div>
       <div class="workspace-stat-card"><span>Agreement</span><strong>${prettyLabel(candidate.agreement)}</strong></div>
@@ -3495,7 +3498,7 @@ function renderFinalSelectionLists(finalSelection, options = {}) {
                             <div class="trade-list-row trade-list-row-with-action final-selection-row">
                               <button type="button" class="trade-list-main" data-final-selection-ticker="${escapeHtml(candidate.ticker)}">
                                 <span>${escapeHtml(candidate.ticker)}</span>
-                                <small>${formatNumber((candidate.final_conviction || 0) * 100, 0)}% final - ${prettyLabel(candidate.agreement)} - ${prettyLabel(candidate.final_action)}</small>
+                                <small>${formatNumber((candidate.final_conviction || 0) * 100, 0)}% final / ${formatNumber((candidate.required_final_conviction || 0) * 100, 0)}% min - ${prettyLabel(candidate.agreement)} - ${prettyLabel(candidate.final_action)}</small>
                               </button>
                               ${
                                 includePreview
@@ -5287,7 +5290,7 @@ function renderAgencyCommandCenter() {
       name: "Portfolio Policy Agent",
       status: state.portfolioPolicy?.status || "policy",
       statusClass: monitorActionClass(state.portfolioPolicy?.status || "ok"),
-      mission: "Applies user-editable rules for weekly target, drawdown, position count, sizing, cash reserve, stops, targets, adds, and reductions.",
+      mission: "Applies user-editable rules for weekly target, final conviction, drawdown, position count, sizing, cash reserve, stops, targets, adds, and reductions.",
       metric: `${formatNumber((state.portfolioPolicySettings.portfolioMaxPositionPct || 0.03) * 100, 1)}%`,
       metricLabel: "max position",
       view: "portfolio",

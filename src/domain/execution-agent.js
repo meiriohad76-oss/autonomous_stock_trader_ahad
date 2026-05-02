@@ -32,6 +32,10 @@ function block(reason, details = {}) {
   };
 }
 
+function effectiveExecutionMinConviction(config) {
+  return Number(config.portfolioExecutionMinConviction ?? config.executionMinConviction ?? 0.62);
+}
+
 function buildClientOrderId(ticker, action, now = new Date()) {
   const stamp = now.toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
   return `ahad-${ticker}-${action}-${stamp}`.toLowerCase().slice(0, 48);
@@ -65,12 +69,13 @@ function bracketLegs(setup, action) {
 }
 
 export function summarizeExecutionConfig(config) {
+  const minConviction = effectiveExecutionMinConviction(config);
   return {
     provider: config.brokerProvider,
     adapter: config.brokerAdapter,
     mode: config.brokerTradingMode,
     submit_enabled: Boolean(config.brokerSubmitEnabled),
-    min_conviction: config.executionMinConviction,
+    min_conviction: minConviction,
     min_notional_usd: config.executionMinNotionalUsd,
     max_order_notional_usd: config.executionMaxOrderNotionalUsd,
     max_position_pct: Math.min(config.executionMaxPositionPct, config.portfolioMaxPositionPct || config.executionMaxPositionPct),
@@ -98,6 +103,7 @@ export function buildExecutionIntent(setup, account, config, { now = new Date() 
   const side = orderSideForAction(action);
   const conviction = numberOrNull(setup.conviction) ?? 0;
   const currentPrice = numberOrNull(setup.current_price);
+  const minConviction = effectiveExecutionMinConviction(config);
 
   if (!ticker) {
     return block("missing_ticker", { setup });
@@ -111,12 +117,12 @@ export function buildExecutionIntent(setup, account, config, { now = new Date() 
     return block("short_trading_disabled", { ticker, action, setup });
   }
 
-  if (conviction < config.executionMinConviction) {
+  if (conviction < minConviction) {
     return block("conviction_below_execution_minimum", {
       ticker,
       action,
       conviction,
-      required_conviction: config.executionMinConviction,
+      required_conviction: minConviction,
       setup
     });
   }
