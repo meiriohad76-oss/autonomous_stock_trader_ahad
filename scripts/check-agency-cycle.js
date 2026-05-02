@@ -59,10 +59,17 @@ for (const worker of cycle.workers) {
   if (!worker.data_state || typeof worker.progress_pct !== "number" || !worker.progress_label) {
     throw new Error(`Worker ${worker.key} is missing data readiness/progress telemetry.`);
   }
+  if (!worker.completion_estimate || !worker.estimated_completion_label) {
+    throw new Error(`Worker ${worker.key} is missing completion ETA telemetry.`);
+  }
 }
 
 if (!cycle.data_progress || typeof cycle.data_progress.pct !== "number" || !cycle.data_progress.label) {
   throw new Error("Agency cycle is missing aggregate data progress telemetry.");
+}
+
+if (!cycle.initial_baseline.estimated_completion_label) {
+  throw new Error("Initial baseline should expose an estimated completion label.");
 }
 
 if (!cycle.initial_baseline || cycle.baseline_ready !== false || cycle.mode !== "initial_baseline") {
@@ -80,6 +87,9 @@ if (cycle.current_worker_key !== "signals") {
 const pendingFundamentals = cycle.workers.find((worker) => worker.key === "fundamentals");
 if (pendingFundamentals.data_state !== "review" || pendingFundamentals.loading) {
   throw new Error("Pending SEC catch-up should show review/background progress, not endless loading.");
+}
+if (!/SEC limit plan/.test(pendingFundamentals.estimation_basis || "")) {
+  throw new Error("Fundamentals ETA should explain the SEC batch/cadence basis.");
 }
 
 const signalAdvance = chooseAgencyCycleAdvance(cycle);
@@ -210,6 +220,9 @@ if (noCandidateDeterministic.data_state !== "review" || noCandidateDeterministic
 const blockedMarket = noCandidateCycle.workers.find((worker) => worker.key === "market");
 if (blockedMarket.data_state !== "blocked" || blockedMarket.loading) {
   throw new Error("Market Agent should show blocked live-pricing state, not endless loading, when providers are fallback.");
+}
+if (!blockedMarket.estimated_completion_label || blockedMarket.estimated_completion_label === "complete") {
+  throw new Error("Market Agent should expose a non-complete ETA when live pricing is blocked or fallback.");
 }
 
 const readyAdvance = chooseAgencyCycleAdvance(readyCycle);

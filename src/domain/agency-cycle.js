@@ -219,8 +219,59 @@ function formatDuration(ms) {
   return `${Number.isInteger(days) ? days : days.toFixed(1)} day`;
 }
 
+function estimateAt(ms) {
+  const numeric = Number(ms);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+  return new Date(Date.now() + numeric).toISOString();
+}
+
+function estimateLabel(ms, fallback = "unknown") {
+  if (ms === null || ms === undefined || ms === "") {
+    return fallback;
+  }
+  const numeric = Number(ms);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  if (numeric <= 0) {
+    return "complete";
+  }
+  return `about ${formatDuration(numeric)}`;
+}
+
+function completionEstimate({ phase = "initial_baseline", ms = null, label = null, basis = null, blocked = false } = {}) {
+  const numeric = Number(ms);
+  const hasMs = ms !== null && ms !== undefined && ms !== "" && Number.isFinite(numeric);
+  const safeMs = hasMs ? Math.max(0, Math.round(numeric)) : null;
+  return {
+    phase,
+    blocked: Boolean(blocked),
+    ms: safeMs,
+    label: label || estimateLabel(safeMs, blocked ? "blocked until configuration changes" : "unknown"),
+    at: estimateAt(safeMs),
+    basis: basis || null
+  };
+}
+
+function normalizeEstimate(value = null, ready = false) {
+  if (value && typeof value === "object") {
+    return completionEstimate(value);
+  }
+  if (ready) {
+    return completionEstimate({ phase: "complete", ms: 0, basis: "Worker baseline is ready." });
+  }
+  return null;
+}
+
 function cadenceLabel(ms, fallback = "manual/on change") {
   return msNumber(ms) ? `every ${formatDuration(ms)}` : fallback;
+}
+
+function maxPositive(values = []) {
+  const positives = values.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
+  return positives.length ? Math.max(...positives) : 0;
 }
 
 function runtimeSourceByKey(runtimeReliability = {}) {
@@ -228,6 +279,50 @@ function runtimeSourceByKey(runtimeReliability = {}) {
     acc[source.key] = source;
     return acc;
   }, {});
+}
+
+function sourceCooldownMs(source = {}) {
+  const cooldowns = Array.isArray(source.provider_cooldowns) ? source.provider_cooldowns : [];
+  return maxPositive(cooldowns.map((item) => Number(item.seconds_remaining || 0) * 1000));
+}
+
+function sourceCooldownLabel(source = {}) {
+  const cooldowns = Array.isArray(source.provider_cooldowns) ? source.provider_cooldowns : [];
+  const active = cooldowns
+    .map((item) => ({
+      provider: item.provider || source.provider || "provider",
+      ms: Number(item.seconds_remaining || 0) * 1000
+    }))
+    .filter((item) => Number.isFinite(item.ms) && item.ms > 0)
+    .sort((a, b) => b.ms - a.ms);
+  if (!active.length) {
+    return null;
+  }
+  return `${active[0].provider} cooldown ${formatDuration(active[0].ms)}`;
+}
+
+function sourceUnconfigured(source = {}) {
+  return source.status === "unconfigured" || source.configured === false;
+}
+
+function batchCompletionMs({ remaining = 0, batchSize = 1, batchesPerCycle = 1, cycleMs = 0, cooldownMs = 0 } = {}) {
+  const left = Math.max(0, Number(remaining || 0));
+  if (!left) {
+    return 0;
+  }
+  const capacity = Math.max(1, Number(batchSize || 1) * Math.max(1, Number(batchesPerCycle || 1)));
+  const cycles = Math.max(1, Math.ceil(left / capacity));
+  return Math.max(0, Number(cooldownMs || 0)) + cycles * msNumber(cycleMs, 0);
+}
+
+function rotationEstimateMs({ target = 0, perPoll = 0, intervalMs = 0 } = {}) {
+  const total = Math.max(0, Number(target || 0));
+  const batch = Math.max(0, Number(perPoll || 0));
+  const interval = msNumber(intervalMs, 0);
+  if (!total || !batch || !interval) {
+    return null;
+  }
+  return Math.ceil(total / batch) * interval;
 }
 
 function latestSourceAt(source = {}) {
@@ -342,6 +437,8 @@ function buildWorker(base, index, status, detail, metric, action = base.action, 
   const loadPhase = data.load_phase || (baselineRequired && !baselineReady ? "initial_baseline" : "ongoing_updates");
   const refreshCadenceMs = data.refresh_cadence_ms ?? null;
   const refreshState = data.refresh_state || (data.loading || dataState === "loading" ? "refreshing" : baselineReady ? "scheduled" : "baseline_pending");
+  const estimate = normalizeEstimate(data.completion_estimate, Boolean(baselineReady));
+  const fullExtractionEstimate = normalizeEstimate(data.full_extraction_estimate, false);
 
   return {
     step: index + 1,
@@ -368,6 +465,14 @@ function buildWorker(base, index, status, detail, metric, action = base.action, 
     progress_label: data.progress_label || `${progressPct}%`,
     progress_current: data.progress_current ?? null,
     progress_target: data.progress_target ?? null,
+    completion_estimate: estimate,
+    estimated_completion_ms: estimate?.ms ?? null,
+    estimated_completion_label: estimate?.label || null,
+    estimated_completion_at: estimate?.at || null,
+    estimation_basis: estimate?.basis || null,
+    full_extraction_estimate: fullExtractionEstimate,
+    full_extraction_estimate_ms: fullExtractionEstimate?.ms ?? null,
+    full_extraction_estimate_label: fullExtractionEstimate?.label || null,
     refresh_cadence_ms: refreshCadenceMs,
     refresh_cadence_label: data.refresh_cadence_label || cadenceLabel(refreshCadenceMs),
     refresh_state: refreshState,
@@ -414,6 +519,25 @@ function aggregateDataProgress(workers) {
     baselineWorkers.reduce((sum, worker) => sum + Number(worker.progress_pct || 0), 0) / baselineTotal
   );
   const baselineFinished = baselineReady === baselineWorkers.length && baselineWorkers.length > 0;
+  const pendingBaselineWorkers = baselineWorkers.filter((worker) => !worker.baseline_ready);
+  const pendingBaselineEstimates = pendingBaselineWorkers
+    .map((worker) => ({
+      key: worker.key,
+      label: worker.label,
+      ms: worker.estimated_completion_ms,
+      basis: worker.estimation_basis
+    }))
+    .filter((item) => Number.isFinite(Number(item.ms)));
+  const slowestBaselineEstimate = pendingBaselineEstimates
+    .sort((a, b) => Number(b.ms) - Number(a.ms))[0] || null;
+  const blockedBaselineEstimate = pendingBaselineWorkers.find((worker) => worker.completion_estimate?.blocked) || null;
+  const baselineEstimateMs = baselineFinished
+    ? 0
+    : blockedBaselineEstimate
+      ? null
+      : slowestBaselineEstimate
+      ? Number(slowestBaselineEstimate.ms)
+      : null;
   const updateActive = workers.filter((worker) => worker.refresh_state === "refreshing").length;
   const updateDue = workers.filter((worker) => worker.refresh_state === "due").length;
   const nextRefreshAt = workers
@@ -456,6 +580,18 @@ function aggregateDataProgress(workers) {
       required_count: baselineWorkers.length,
       loading_count: baselineLoading,
       blocked_count: baselineBlocked,
+      estimated_completion_ms: baselineEstimateMs,
+      estimated_completion_label: blockedBaselineEstimate
+        ? blockedBaselineEstimate.estimated_completion_label || "blocked until configuration changes"
+        : baselineEstimateMs === null ? "unknown" : estimateLabel(baselineEstimateMs),
+      estimated_completion_at: estimateAt(baselineEstimateMs),
+      estimation_basis: blockedBaselineEstimate
+        ? `Blocked pending worker: ${blockedBaselineEstimate.label}. ${blockedBaselineEstimate.estimation_basis || ""}`.trim()
+        : slowestBaselineEstimate
+        ? `Slowest pending worker: ${slowestBaselineEstimate.label}. ${slowestBaselineEstimate.basis || ""}`.trim()
+        : baselineFinished
+          ? "All required baseline workers are ready."
+          : "At least one pending worker is blocked by configuration or missing telemetry.",
       label: baselineFinished
         ? "Initial baseline is complete"
         : `${baselineReady}/${baselineWorkers.length} baseline agents ready`
@@ -666,7 +802,9 @@ export function buildAgencyCycleStatus({
     marketDataRefreshMs: 300_000,
     marketFlowPollMs: 300_000,
     liveNewsPollMs: 900_000,
+    liveNewsRssFallbackMaxTickers: 20,
     fundamentalMarketDataRefreshMs: 900_000,
+    fundamentalMarketDataMaxCompaniesPerPoll: 25,
     fundamentalSecBaselinePollMs: 900_000,
     fundamentalSecPollMs: 21_600_000,
     agencyBaselineSecBatchesPerRun: 4,
@@ -820,20 +958,165 @@ export function buildAgencyCycleStatus({
   const secBatchSize = Math.max(1, Number(secQueue?.next_batch_size || secQueue?.refresh_limit || 1));
   const secRemainingBatches = pendingSec ? Math.ceil(pendingSec / secBatchSize) : 0;
   const secBatchesPerRun = Math.max(1, Number(cfg.agencyBaselineSecBatchesPerRun || 1));
+  const secBaselineRunsRemaining = pendingSec ? Math.ceil(secRemainingBatches / secBatchesPerRun) : 0;
   const secRunEstimate = pendingSec
-    ? `${secRemainingBatches} batch(es), about ${Math.ceil(secRemainingBatches / secBatchesPerRun)} baseline run(s)`
+    ? `${secRemainingBatches} batch(es), about ${secBaselineRunsRemaining} baseline run(s)`
     : null;
+  const secCooldownMs = sourceCooldownMs(secRuntimeSource);
+  const secEstimate = fundamentalsBaselineReady
+    ? completionEstimate({ phase: "complete", ms: 0, basis: "SEC-backed fundamentals baseline is complete." })
+    : trackedCount
+      ? completionEstimate({
+          phase: "initial_baseline",
+          ms: batchCompletionMs({
+            remaining: pendingSec,
+            batchSize: secBatchSize,
+            batchesPerCycle: secBatchesPerRun,
+            cycleMs: cfg.agencyInitialBaselineCycleMs,
+            cooldownMs: secCooldownMs
+          }),
+          basis: `SEC limit plan: ${secBatchSize} companies/batch, ${secBatchesPerRun} batch(es)/baseline run, baseline cadence ${cadenceLabel(cfg.agencyInitialBaselineCycleMs)}${sourceCooldownLabel(secRuntimeSource) ? `, ${sourceCooldownLabel(secRuntimeSource)}` : ""}.`
+        })
+      : completionEstimate({
+          phase: "initial_baseline",
+          ms: cfg.agencyInitialBaselineCycleMs,
+          basis: `Waiting for Universe Agent; baseline cadence ${cadenceLabel(cfg.agencyInitialBaselineCycleMs)}.`
+        });
+  const marketCooldownMs = maxPositive(marketRuntimeSources.map((source) => sourceCooldownMs(source)));
+  const marketMissingInputs = Math.max(0, Number(marketSourceProgress.target || 0) - Number(marketSourceProgress.current || 0));
+  const marketBlockedByConfig = marketRuntimeSources.some((source) => ["market_data", "fundamental_market_data"].includes(source.key) && sourceUnconfigured(source));
+  const marketEstimate = marketBaselineReady
+    ? completionEstimate({ phase: "complete", ms: 0, basis: "Live pricing/reference and market-flow inputs are fresh." })
+    : marketBlockedByConfig
+      ? completionEstimate({
+          phase: "blocked",
+          ms: null,
+          blocked: true,
+          label: "blocked until live pricing is configured",
+          basis: "Market Agent needs MARKET_DATA_PROVIDER/FUNDAMENTAL_MARKET_DATA_PROVIDER credentials before time-based extraction can complete."
+        })
+      : completionEstimate({
+          phase: "initial_baseline",
+          ms: Math.max(marketCooldownMs, Math.max(1, marketMissingInputs) * marketCadenceMs),
+          basis: `Market plan: ${marketSourceProgress.current}/${marketSourceProgress.target || 2} inputs fresh, pricing/flow cadence ${cadenceLabel(marketCadenceMs)}${marketCooldownMs ? `, ${marketRuntimeSources.map(sourceCooldownLabel).filter(Boolean).join(", ")}` : ""}.`
+        });
+  const marketReferenceSource = runtimeSources.fundamental_market_data || sources.fundamental_market_data || {};
+  const marketReferencePerPoll = Math.max(
+    1,
+    Number(cfg.fundamentalMarketDataMaxCompaniesPerPoll || marketReferenceSource.last_batch_size || 1)
+  );
+  const marketReferenceCached = Math.max(0, Math.min(trackedCount || 0, Number(marketReferenceSource.cache_entries || 0)));
+  const marketReferenceRemaining = Math.max(0, Number(trackedCount || 0) - marketReferenceCached);
+  const marketReferenceRotationMs = trackedCount
+    ? batchCompletionMs({
+        remaining: marketReferenceRemaining || trackedCount,
+        batchSize: marketReferencePerPoll,
+        batchesPerCycle: 1,
+        cycleMs: cfg.fundamentalMarketDataRefreshMs,
+        cooldownMs: sourceCooldownMs(marketReferenceSource)
+      })
+    : null;
+  const marketFullEstimate = marketReferenceRotationMs === null
+    ? null
+    : completionEstimate({
+        phase: marketReferenceRemaining ? "full_extraction" : "complete",
+        ms: marketReferenceRemaining ? marketReferenceRotationMs : 0,
+        label: marketReferenceRemaining ? null : "full reference coverage complete",
+        basis: `Full market-reference rotation: ${marketReferenceCached}/${trackedCount} cached, ${marketReferencePerPoll} companies/poll, ${cadenceLabel(cfg.fundamentalMarketDataRefreshMs)}.`
+      });
+  const signalCooldownMs = maxPositive(signalRuntimeSources.map((source) => sourceCooldownMs(source)));
+  const signalMissingSources = Math.max(0, signalBaselineTarget - Number(signalSourceProgress.current || 0));
+  const signalBlockedByConfig = signalSourceProgress.target === 0;
+  const signalEstimate = signalsBaselineReady
+    ? completionEstimate({ phase: "complete", ms: 0, basis: "Fresh decision evidence and required signal sources are available." })
+    : signalBlockedByConfig
+      ? completionEstimate({
+          phase: "blocked",
+          ms: null,
+          blocked: true,
+          label: "blocked until at least one signal source is enabled",
+          basis: "Signals Agent has no enabled source in the current runtime plan."
+        })
+      : completionEstimate({
+          phase: "initial_baseline",
+          ms: Math.max(signalCooldownMs, Math.max(1, signalMissingSources) * signalsCadenceMs),
+          basis: `Signal plan: ${signalSourceProgress.current}/${signalBaselineTarget} required sources fresh, cadence ${cadenceLabel(signalsCadenceMs)}${signalCooldownMs ? `, ${signalRuntimeSources.map(sourceCooldownLabel).filter(Boolean).join(", ")}` : ""}.`
+        });
+  const marketauxSource = runtimeSources.marketaux_news || sources.marketaux_news || {};
+  const liveNewsSource = runtimeSources.live_news || sources.live_news || {};
+  const newsSymbolsPerPoll = Math.max(
+    1,
+    Number(
+      marketauxSource.enabled !== false && marketauxSource.max_requests_per_poll && marketauxSource.symbols_per_request
+        ? Number(marketauxSource.max_requests_per_poll || 1) * Number(marketauxSource.symbols_per_request || 1)
+        : liveNewsSource.requested_symbols || liveNewsSource.rss_fallback_symbols || cfg.liveNewsRssFallbackMaxTickers || 1
+    )
+  );
+  const newsUniverseSize = Number(marketauxSource.universe_symbols || liveNewsSource.universe_symbols || trackedCount || 0);
+  const newsRotationMs = rotationEstimateMs({
+    target: newsUniverseSize,
+    perPoll: newsSymbolsPerPoll,
+    intervalMs: cfg.liveNewsPollMs
+  });
+  const signalsFullEstimate = newsRotationMs === null
+    ? null
+    : completionEstimate({
+        phase: "full_extraction",
+        ms: newsRotationMs + sourceCooldownMs(marketauxSource || liveNewsSource),
+        basis: `Full signal/news universe rotation: ${newsUniverseSize} symbols, about ${newsSymbolsPerPoll} symbols/poll, ${cadenceLabel(cfg.liveNewsPollMs)}.`
+      });
+  const upstreamEstimateMs = upstreamBaselineReady
+    ? 0
+    : maxPositive([secEstimate.ms, marketEstimate.ms, signalEstimate.ms]);
+  const upstreamBlocked = [secEstimate, marketEstimate, signalEstimate].some((estimate) => estimate?.blocked);
+  const upstreamBasis = `Waits on upstream data workers; agency cycle cadence ${cadenceLabel(agencyCycleCadenceMs)}.`;
+  const selectorEstimate = deterministicBaselineReady
+    ? completionEstimate({ phase: "complete", ms: 0, basis: "Selector has current upstream inputs." })
+    : upstreamBlocked
+      ? completionEstimate({ phase: "blocked", ms: null, blocked: true, label: "blocked until upstream data is ready", basis: upstreamBasis })
+      : completionEstimate({
+          phase: "initial_baseline",
+          ms: upstreamEstimateMs + agencyCycleCadenceMs,
+          basis: upstreamBasis
+        });
+  const llmEstimate = llmBaselineReady
+    ? completionEstimate({ phase: "complete", ms: 0, basis: "LLM/shadow selection lane has reviewed the current pack." })
+    : selectorEstimate.blocked
+      ? completionEstimate({ phase: "blocked", ms: null, blocked: true, label: "blocked until selector output exists", basis: upstreamBasis })
+      : completionEstimate({
+          phase: "initial_baseline",
+          ms: Number(selectorEstimate.ms || 0) + agencyCycleCadenceMs,
+          basis: `Runs after deterministic candidate pack; parallel review cadence ${cadenceLabel(agencyCycleCadenceMs)}.`
+        });
+  const finalEstimate = finalBaselineReady
+    ? completionEstimate({ phase: "complete", ms: 0, basis: "Final selector has current deterministic and LLM/shadow outputs." })
+    : selectorEstimate.blocked
+      ? completionEstimate({ phase: "blocked", ms: null, blocked: true, label: "blocked until selector outputs exist", basis: upstreamBasis })
+      : completionEstimate({
+          phase: "initial_baseline",
+          ms: Math.max(Number(selectorEstimate.ms || 0), Number(llmEstimate.ms || 0)) + agencyCycleCadenceMs,
+          basis: `Final arbitration runs after deterministic and LLM/shadow outputs; cadence ${cadenceLabel(agencyCycleCadenceMs)}.`
+        });
   const workerTiming = {
     universe: {
       refresh_cadence_ms: 86_400_000,
       refresh_cadence_label: "daily on startup/refresh",
-      refresh_state: universeBaselineReady ? "scheduled" : "baseline_pending"
+      refresh_state: universeBaselineReady ? "scheduled" : "baseline_pending",
+      completion_estimate: universeBaselineReady
+        ? completionEstimate({ phase: "complete", ms: 0, basis: "Allowed S&P 100 plus QQQ universe is loaded." })
+        : completionEstimate({
+            phase: "initial_baseline",
+            ms: cfg.agencyInitialBaselineCycleMs,
+            basis: `Universe refresh runs in the next baseline cycle; cadence ${cadenceLabel(cfg.agencyInitialBaselineCycleMs)}.`
+          })
     },
     fundamentals: {
       refresh_cadence_ms: secCadenceMs,
       refresh_cadence_label: fundamentalsBaselineReady
         ? `ongoing SEC refresh ${cadenceLabel(secCadenceMs)}`
         : `initial SEC catch-up ${cadenceLabel(secCadenceMs)}`,
+      completion_estimate: secEstimate,
+      full_extraction_estimate: secEstimate,
       refresh_state: refreshStateFor({
         sources: [secRuntimeSource],
         baselineReady: fundamentalsBaselineReady,
@@ -845,6 +1128,8 @@ export function buildAgencyCycleStatus({
     market: {
       refresh_cadence_ms: marketCadenceMs,
       refresh_cadence_label: `pricing/flow ${cadenceLabel(marketCadenceMs)}`,
+      completion_estimate: marketEstimate,
+      full_extraction_estimate: marketFullEstimate,
       refresh_state: refreshStateFor({
         sources: marketRuntimeSources,
         baselineReady: marketBaselineReady,
@@ -855,6 +1140,8 @@ export function buildAgencyCycleStatus({
     signals: {
       refresh_cadence_ms: signalsCadenceMs,
       refresh_cadence_label: `signals/flow ${cadenceLabel(signalsCadenceMs)}`,
+      completion_estimate: signalEstimate,
+      full_extraction_estimate: signalsFullEstimate,
       refresh_state: refreshStateFor({
         sources: signalRuntimeSources,
         baselineReady: signalsBaselineReady,
@@ -865,42 +1152,58 @@ export function buildAgencyCycleStatus({
     policy: {
       refresh_cadence_ms: null,
       refresh_cadence_label: "on user policy change",
-      refresh_state: policyBaselineReady ? "scheduled" : "baseline_pending"
+      refresh_state: policyBaselineReady ? "scheduled" : "baseline_pending",
+      completion_estimate: policyBaselineReady
+        ? completionEstimate({ phase: "complete", ms: 0, basis: "Portfolio policy is loaded." })
+        : completionEstimate({ phase: "blocked", ms: null, blocked: true, label: "blocked until policy is loaded", basis: "Policy is local configuration; reload app telemetry after editing .env or saving policy." })
     },
     deterministic_selection: {
       refresh_cadence_ms: agencyCycleCadenceMs,
       refresh_cadence_label: `agency cycle ${cadenceLabel(agencyCycleCadenceMs)}`,
-      refresh_state: deterministicBaselineReady ? "scheduled" : "baseline_pending"
+      refresh_state: deterministicBaselineReady ? "scheduled" : "baseline_pending",
+      completion_estimate: selectorEstimate
     },
     llm_selection: {
       refresh_cadence_ms: agencyCycleCadenceMs,
       refresh_cadence_label: `parallel review ${cadenceLabel(agencyCycleCadenceMs)}`,
-      refresh_state: llmBaselineReady ? "scheduled" : "baseline_pending"
+      refresh_state: llmBaselineReady ? "scheduled" : "baseline_pending",
+      completion_estimate: llmEstimate
     },
     final_selection: {
       refresh_cadence_ms: agencyCycleCadenceMs,
       refresh_cadence_label: `final arbitration ${cadenceLabel(agencyCycleCadenceMs)}`,
-      refresh_state: finalBaselineReady ? "scheduled" : "baseline_pending"
+      refresh_state: finalBaselineReady ? "scheduled" : "baseline_pending",
+      completion_estimate: finalEstimate
     },
     risk: {
       refresh_cadence_ms: agencyCycleCadenceMs,
       refresh_cadence_label: `risk snapshot ${cadenceLabel(agencyCycleCadenceMs)}`,
-      refresh_state: riskBaselineReady ? "scheduled" : "baseline_pending"
+      refresh_state: riskBaselineReady ? "scheduled" : "baseline_pending",
+      completion_estimate: riskBaselineReady
+        ? completionEstimate({ phase: "complete", ms: 0, basis: "Risk snapshot is available." })
+        : completionEstimate({ phase: "initial_baseline", ms: agencyCycleCadenceMs, basis: `Risk snapshot is refreshed by the agency cycle; cadence ${cadenceLabel(agencyCycleCadenceMs)}.` })
     },
     execution: {
       refresh_cadence_ms: cfg.executionSyncMs,
       refresh_cadence_label: `broker sync ${cadenceLabel(cfg.executionSyncMs)}`,
-      refresh_state: executionBaselineReady ? "scheduled" : "baseline_pending"
+      refresh_state: executionBaselineReady ? "scheduled" : "baseline_pending",
+      completion_estimate: executionBaselineReady
+        ? completionEstimate({ phase: "complete", ms: 0, basis: "Execution broker/previews are configured for the current supervised mode." })
+        : completionEstimate({ phase: "blocked", ms: null, blocked: true, label: "blocked until Alpaca paper credentials are configured", basis: "Execution Agent needs broker credentials or MCP broker config; time alone will not complete this worker." })
     },
     portfolio: {
       refresh_cadence_ms: cfg.executionSyncMs,
       refresh_cadence_label: `position sync ${cadenceLabel(cfg.executionSyncMs)}`,
-      refresh_state: portfolioBaselineReady ? "scheduled" : "baseline_pending"
+      refresh_state: portfolioBaselineReady ? "scheduled" : "baseline_pending",
+      completion_estimate: portfolioBaselineReady
+        ? completionEstimate({ phase: "complete", ms: 0, basis: "Portfolio monitor has broker or local position telemetry." })
+        : completionEstimate({ phase: "blocked", ms: null, blocked: true, label: "blocked until broker account access is configured", basis: "Portfolio Monitor needs Alpaca/MCP account access or visible local positions." })
     },
     learning: {
       refresh_cadence_ms: cfg.agencyOngoingCycleMs,
       refresh_cadence_label: `outcome review ${cadenceLabel(cfg.agencyOngoingCycleMs)}`,
-      refresh_state: "scheduled"
+      refresh_state: "scheduled",
+      completion_estimate: completionEstimate({ phase: "complete", ms: 0, basis: "Learning Agent can run with the current paper outcome sample, even if recommendations are limited." })
     }
   };
   const workerBaseline = {

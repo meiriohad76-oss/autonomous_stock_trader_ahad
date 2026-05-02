@@ -278,6 +278,9 @@ function summarizeWorker(worker = null) {
     refresh_state: worker.refresh_state,
     progress_pct: worker.progress_pct,
     progress_label: worker.progress_label,
+    completion_estimate: worker.completion_estimate || null,
+    estimated_completion_label: worker.estimated_completion_label || null,
+    full_extraction_estimate: worker.full_extraction_estimate || null,
     remaining: worker.remaining || [],
     metric: worker.metric || null
   };

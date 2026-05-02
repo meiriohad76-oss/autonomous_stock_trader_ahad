@@ -50,6 +50,7 @@ npm run check:agents -- --fail-on-agent-fail
 For each agent, inspect:
 
 - `worker_before` and `worker_after`: dashboard-facing readiness state before and after the check.
+- `completion_estimate` and `full_extraction_estimate`: ETA, basis, and blocked/configuration notes for that worker.
 - `extraction_log`: every runtime extraction action, payload, duration, source health before and after, counters before and after, and result summary.
 - `checks`: pass/warning/fail assertions for that agent.
 - `output_summary`: the agent-specific result, such as SEC coverage, live pricing status, recent signal links, final-selection counts, broker readiness, or learning sample size.

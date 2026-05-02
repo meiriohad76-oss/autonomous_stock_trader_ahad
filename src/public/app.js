@@ -327,6 +327,33 @@ function timeUntil(value) {
   return `in ${Math.ceil(hours / 24)}d`;
 }
 
+function workerEtaText(worker = {}) {
+  const estimate = worker.completion_estimate || {};
+  const fullEstimate = worker.full_extraction_estimate || {};
+  if (estimate.label && estimate.label !== "complete") {
+    return `ETA ${estimate.label}`;
+  }
+  if (fullEstimate.label && fullEstimate.label !== "complete" && fullEstimate.label !== "full reference coverage complete") {
+    return `Full ${fullEstimate.label}`;
+  }
+  if (estimate.label === "complete") {
+    return "ETA complete";
+  }
+  return "";
+}
+
+function workerEtaDetail(worker = {}) {
+  const estimate = worker.completion_estimate || {};
+  const fullEstimate = worker.full_extraction_estimate || {};
+  return [
+    estimate.label ? `ETA: ${estimate.label}` : null,
+    estimate.at ? `Estimated at: ${formatDateTime(estimate.at)}` : null,
+    estimate.basis ? `Basis: ${estimate.basis}` : null,
+    fullEstimate.label && fullEstimate.label !== estimate.label ? `Full extraction: ${fullEstimate.label}` : null,
+    fullEstimate.basis ? `Full extraction basis: ${fullEstimate.basis}` : null
+  ].filter(Boolean);
+}
+
 function sentimentClass(regime) {
   return regime === "bullish" ? "bullish" : regime === "bearish" ? "bearish" : "neutral";
 }
@@ -2124,10 +2151,12 @@ function renderAgencyStatusStrip(workers = [], currentKey = null, { loading = fa
           (worker) => {
             const pct = Math.min(100, Math.max(0, Number(worker.progress_pct || 0)));
             const dataState = worker.data_state || (loading ? "loading" : "observing");
+            const etaText = workerEtaText(worker);
             const title = [
               worker.detail,
               worker.load_phase_label ? `Phase: ${worker.load_phase_label}` : null,
               worker.progress_label ? `Progress: ${worker.progress_label}` : null,
+              ...workerEtaDetail(worker),
               worker.refresh_cadence_label ? `Cadence: ${worker.refresh_cadence_label}` : null,
               worker.remaining?.length ? `Remaining: ${worker.remaining.join(", ")}` : null
             ].filter(Boolean).join(" | ");
@@ -2142,6 +2171,7 @@ function renderAgencyStatusStrip(workers = [], currentKey = null, { loading = fa
               <span>${String(worker.step || 0).padStart(2, "0")}</span>
               <strong>${escapeHtml(worker.label || prettyLabel(worker.key))}</strong>
               <small>${escapeHtml(prettyLabel(worker.load_phase || dataState))} - ${escapeHtml(worker.progress_label || prettyLabel(worker.status || "loading"))}</small>
+              ${etaText ? `<small class="agency-status-eta">${escapeHtml(etaText)}</small>` : ""}
               <div class="agency-status-progress" aria-hidden="true"><i style="width: ${pct}%"></i></div>
             </button>
           `;
@@ -2159,13 +2189,16 @@ function renderAgencyLoadPhases(cycle = {}) {
   const cadence = cycle.refresh_cadence || state.config?.agency_cadence || {};
   const baselinePct = Math.min(100, Math.max(0, Number(baseline.pct || 0)));
   const phase = progress.phase || (baseline.ready ? "ongoing_updates" : "initial_baseline");
+  const baselineEta = baseline.estimated_completion_label && baseline.estimated_completion_label !== "complete"
+    ? ` ETA ${baseline.estimated_completion_label}.`
+    : "";
 
   return `
     <div class="agency-load-phases" aria-label="Agency load phases">
       <div class="agency-load-phase-card ${baseline.ready ? "bullish" : baseline.blocked_count ? "bearish" : "neutral"}">
         <span>Initial Baseline</span>
         <strong>${escapeHtml(baseline.ready ? "Complete" : `${baseline.ready_count || 0}/${baseline.required_count || 12}`)}</strong>
-        <small>${escapeHtml(baseline.label || "Waiting for the first full worker baseline.")}</small>
+        <small>${escapeHtml(`${baseline.label || "Waiting for the first full worker baseline."}${baselineEta}`)}</small>
         <div class="agency-status-progress" aria-hidden="true"><i style="width:${baselinePct}%"></i></div>
       </div>
       <div class="agency-load-phase-card ${phase === "ongoing_updates" ? "bullish" : "neutral"}">
@@ -2217,6 +2250,7 @@ function renderAgencyCyclePanel(cycle) {
 
   const currentWorker = cycle.workers.find((worker) => worker.key === cycle.current_worker_key) || cycle.workers[0];
   const dataProgress = cycle.data_progress || {};
+  const currentEtaText = workerEtaText(currentWorker);
 
   return `
     <section class="agency-cycle-panel panel">
@@ -2243,6 +2277,7 @@ function renderAgencyCyclePanel(cycle) {
             <small>${escapeHtml(currentWorker?.progress_label || "")}</small>
             <div class="agency-status-progress"><i style="width:${Math.min(100, Math.max(0, Number(currentWorker?.progress_pct || 0)))}%"></i></div>
           </div>
+          ${currentEtaText ? `<div class="agency-estimate-line"><span>${escapeHtml(currentEtaText)}</span>${currentWorker?.completion_estimate?.basis ? `<small>${escapeHtml(currentWorker.completion_estimate.basis)}</small>` : ""}</div>` : ""}
           <p>${escapeHtml(currentWorker?.detail || "Waiting for telemetry.")}</p>
           ${
             currentWorker?.remaining?.length
@@ -2286,7 +2321,7 @@ function renderAgencyCyclePanel(cycle) {
                 <span>${String(worker.step).padStart(2, "0")}</span>
                 <strong>${escapeHtml(worker.label)}</strong>
                 <small>${escapeHtml(prettyLabel(worker.load_phase || worker.data_state || worker.status))} - ${escapeHtml(worker.progress_label || worker.metric || "")}</small>
-                <em>${escapeHtml(worker.refresh_cadence_label || worker.automation_label || "automatic")}</em>
+                <em>${escapeHtml([workerEtaText(worker), worker.refresh_cadence_label || worker.automation_label || "automatic"].filter(Boolean).join(" | "))}</em>
                 <div class="agency-status-progress" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, Number(worker.progress_pct || 0)))}%"></i></div>
               </button>
             `

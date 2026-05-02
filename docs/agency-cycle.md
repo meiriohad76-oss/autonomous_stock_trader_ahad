@@ -33,6 +33,15 @@ Recommended cadence:
 
 The Command dashboard exposes `Initial Baseline`, `Ongoing Updates`, `Recommended Cadence`, and `Next Scheduled` cards so a worker no longer looks stuck when it is either waiting for a scheduled catch-up batch or blocked by missing live data.
 
+Each worker now also exposes an ETA estimate. The estimate is conservative and uses configured provider limits:
+
+- remaining SEC fundamentals rows divided by `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL` and `AGENCY_BASELINE_SEC_BATCHES_PER_RUN`
+- market/reference refresh cadence, provider cooldowns, and `FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL`
+- signal/news universe rotation using enabled source batch sizes, RSS/Marketaux poll caps, and source cadence
+- downstream selector/risk/execution workers inherit the upstream data ETA, or show blocked when credentials/configuration are required
+
+If a provider is rate-limited, the ETA uses the provider cooldown. If credentials are missing, the ETA is shown as blocked rather than time-based.
+
 ## Dashboard
 
 Open the Command screen. The `Autonomous Cycle` panel shows:
@@ -62,6 +71,8 @@ Useful fields:
 - `refresh_cadence`: configured baseline and ongoing cadence recommendation
 - `current_worker_label`: the worker that needs attention now
 - `workers`: all twelve worker states
+- `workers[].completion_estimate`: worker baseline ETA, including `ms`, `label`, `at`, and the calculation basis
+- `workers[].full_extraction_estimate`: optional estimate for a full universe/source rotation
 - `next_actions`: operator-readable next steps
 - `can_preview_orders`: whether execution previews are allowed
 - `can_submit_orders`: whether supervised Alpaca paper submission is allowed

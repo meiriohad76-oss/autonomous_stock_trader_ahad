@@ -971,6 +971,7 @@ export function createRuntimeReliabilityAgent({ config, store }) {
         provider_chain: health.provider_chain || null,
         provider_cooldowns: health.provider_cooldowns || [],
         fallback_active: Boolean(health.fallback_active),
+        cache_entries: health.cache_entries ?? null,
         universe_symbols: health.universe_symbols ?? null,
         requested_symbols: health.requested_symbols ?? null,
         last_batch_size: health.last_batch_size ?? null,
