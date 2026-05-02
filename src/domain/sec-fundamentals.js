@@ -61,7 +61,8 @@ function buildEmptyResult() {
     trackedCompanies: 0,
     refreshBatchSize: 0,
     refreshLimit: null,
-    pendingBootstrapCompanies: 0
+    pendingBootstrapCompanies: 0,
+    marketReferenceRefreshSkipped: false
   };
 }
 
@@ -746,7 +747,11 @@ export function createSecFundamentalsCollector(app) {
       }
 
       if (nextCompanies.length && app.replaceFundamentalCompanies) {
-        await app.replaceFundamentalCompanies(nextCompanies, { persistenceArtifactsByTicker });
+        await app.replaceFundamentalCompanies(nextCompanies, {
+          persistenceArtifactsByTicker,
+          refreshMarketReference: false
+        });
+        result.marketReferenceRefreshSkipped = true;
       }
 
       const totalLiveCompanyCount = nextCompanies.filter((company) => company.data_source === "live_sec_filing").length;

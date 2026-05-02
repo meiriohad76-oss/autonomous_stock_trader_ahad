@@ -1552,7 +1552,12 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
     return baseCompanies.length;
   }
 
-  async function replaceCompanies(nextCompanies, { asOf = new Date().toISOString(), emitDiff = true, persistenceArtifactsByTicker: nextArtifactsByTicker } = {}) {
+  async function replaceCompanies(nextCompanies, {
+    asOf = new Date().toISOString(),
+    emitDiff = true,
+    persistenceArtifactsByTicker: nextArtifactsByTicker,
+    refreshMarketReference = true
+  } = {}) {
     if (!samplePayload) {
       samplePayload = {
         as_of: asOf,
@@ -1573,7 +1578,7 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
         ? new Map([...persistenceArtifactsByTicker, ...nextArtifactsByTicker])
         : new Map();
 
-    if (marketReferenceService && baseCompanies.length) {
+    if (refreshMarketReference && marketReferenceService && baseCompanies.length) {
       marketReferenceMap = await marketReferenceService.getReferenceBatch(baseCompanies);
     }
 

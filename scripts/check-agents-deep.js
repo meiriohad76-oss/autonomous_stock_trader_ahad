@@ -317,6 +317,7 @@ function actionResultSummary(result = {}) {
     pendingBootstrapCompanies: result.pendingBootstrapCompanies ?? null,
     refreshBatchSize: result.refreshBatchSize ?? null,
     trackedCompanies: result.trackedCompanies ?? null,
+    marketReferenceRefreshSkipped: result.marketReferenceRefreshSkipped ?? null,
     lightweight_state_saved: result.lightweight_state_saved ?? null,
     message: result.message || null,
     value: result.value ?? null
