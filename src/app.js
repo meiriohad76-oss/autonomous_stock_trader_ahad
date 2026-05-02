@@ -1027,7 +1027,12 @@ export function createSentimentApp() {
   const pipeline = createPipeline(store);
   const fundamentalMarketDataService = createFundamentalMarketDataService({ config, store });
   const fundamentals = createFundamentalsEngine({ store, config, marketReferenceService: fundamentalMarketDataService });
-  const liveNewsCollector = createLiveNewsCollector({ config, store, pipeline });
+  const liveNewsCollector = createLiveNewsCollector({
+    config,
+    store,
+    pipeline,
+    getTrackedFundamentalCompanies: () => fundamentals.getTrackedCompanies()
+  });
   const marketDataService = createMarketDataService({ config, store });
   const marketFlowMonitor = createMarketFlowMonitor({ config, store, pipeline, marketDataService });
   const secInsiderCollector = createSecInsiderCollector({ config, store, pipeline });
@@ -1219,9 +1224,13 @@ export function createSentimentApp() {
         seed_data_on_empty: config.seedDataOnEmpty,
         seed_data_in_decisions: config.seedDataInDecisions,
         live_news_enabled: config.liveNewsEnabled,
+        live_news_universe_mode: config.liveNewsUniverseMode,
+        live_news_rss_fallback_max_tickers: config.liveNewsRssFallbackMaxTickers,
         marketaux_enabled: config.marketauxEnabled,
         marketaux_configured: Boolean(config.marketauxApiKey),
         marketaux_symbols_per_request: config.marketauxSymbolsPerRequest,
+        marketaux_max_requests_per_poll: config.marketauxMaxRequestsPerPoll,
+        marketaux_limit_per_request: config.marketauxLimitPerRequest,
         autonomous_data_enabled: config.autonomousDataEnabled,
         market_data_provider: config.marketDataProvider,
         alpaca_market_data_enabled: config.alpacaMarketDataEnabled,

@@ -11,7 +11,7 @@ const {
   getFundamentalPersistenceFilings,
   materializeFundamentalPersistence
 } = await import("../src/domain/fundamental-persistence.js");
-const { createLiveNewsCollector, mapMarketauxArticles, parseGoogleNewsRss } = await import("../src/domain/live-news.js");
+const { buildMarketauxUrl, createLiveNewsCollector, mapMarketauxArticles, parseGoogleNewsRss } = await import("../src/domain/live-news.js");
 const { createMarketDataService } = await import("../src/domain/market-data.js");
 const { detectMarketFlowSignal } = await import("../src/domain/market-flow.js");
 const {
@@ -99,6 +99,31 @@ if (marketauxMapped.length !== 1 || marketauxMapped[0].items[0].link !== "https:
   throw new Error("Marketaux mapper failed to preserve linked article evidence.");
 }
 
+const marketauxUrl = new URL(
+  buildMarketauxUrl(
+    {
+      marketauxApiKey: "test",
+      marketauxBaseUrl: "https://api.marketaux.com/v1/news/all",
+      marketauxMaxItemsPerTicker: 2,
+      marketauxLimitPerRequest: 3,
+      liveNewsLookbackHours: 24
+    },
+    [
+      { ticker: "AAPL" },
+      { ticker: "MSFT" },
+      { ticker: "NVDA" }
+    ]
+  )
+);
+
+if (marketauxUrl.searchParams.get("limit") !== "3") {
+  throw new Error("Marketaux URL builder should respect the configured provider request limit.");
+}
+
+if (/[.Z]/.test(marketauxUrl.searchParams.get("published_after"))) {
+  throw new Error("Marketaux published_after should avoid milliseconds and trailing Z.");
+}
+
 const originalFetch = globalThis.fetch;
 const fallbackDocuments = [];
 globalThis.fetch = async (url) => {
@@ -156,8 +181,10 @@ try {
 }
 
 const marketauxDocuments = [];
+const marketauxRequestUrls = [];
 globalThis.fetch = async (url) => {
   if (String(url).includes("marketaux")) {
+    marketauxRequestUrls.push(String(url));
     return {
       ok: true,
       status: 200,
@@ -165,14 +192,14 @@ globalThis.fetch = async (url) => {
         return JSON.stringify({
           data: [
             {
-              uuid: "marketaux-live-aapl",
-              title: "Marketaux live headline for AAPL",
+              uuid: "marketaux-live-adbe",
+              title: "Marketaux live headline for ADBE",
               description: "Linked Marketaux test headline.",
-              url: "https://example.com/marketaux-live-aapl",
+              url: "https://example.com/marketaux-live-adbe",
               published_at: new Date().toISOString(),
               source: "Marketaux Test",
               sentiment_score: 0.31,
-              entities: [{ symbol: "AAPL", sentiment_score: 0.33, match_score: 0.91 }]
+              entities: [{ symbol: "ADBE", sentiment_score: 0.33, match_score: 0.91 }]
             }
           ]
         });
@@ -215,6 +242,9 @@ try {
       marketauxBaseUrl: "https://api.marketaux.com/v1/news/all",
       marketauxMaxItemsPerTicker: 1,
       marketauxSymbolsPerRequest: 20,
+      marketauxMaxRequestsPerPoll: 1,
+      marketauxLimitPerRequest: 3,
+      liveNewsRssFallbackMaxTickers: 2,
       marketauxRequestTimeoutMs: 100,
       marketauxRequestRetries: 0
     },
@@ -226,14 +256,23 @@ try {
       async processRawDocument(raw) {
         marketauxDocuments.push(raw);
       }
+    },
+    getTrackedFundamentalCompanies() {
+      return [
+        { ticker: "AAPL", company: "Apple", sector: "Information Technology" },
+        { ticker: "ADBE", company: "Adobe", sector: "Information Technology" },
+        { ticker: "CRM", company: "Salesforce", sector: "Information Technology" }
+      ];
     }
   });
   const marketauxResult = await marketauxCollector.pollOnce();
+  const requestSymbols = new URL(marketauxRequestUrls[0]).searchParams.get("symbols");
   if (
     !marketauxResult.ingested ||
-    !marketauxDocuments.some((item) => item.source_name === "marketaux" && item.url === "https://example.com/marketaux-live-aapl")
+    !marketauxDocuments.some((item) => item.source_name === "marketaux" && item.source_metadata?.ticker_hint === "ADBE") ||
+    !requestSymbols.includes("ADBE")
   ) {
-    throw new Error("Live news collector failed to ingest linked Marketaux items before RSS fallback.");
+    throw new Error("Live news collector failed to use the tracked full universe for Marketaux items.");
   }
 } finally {
   globalThis.fetch = originalFetch;

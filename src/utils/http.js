@@ -14,6 +14,14 @@ function isRetryable(error) {
   return !status || status === 408 || status === 429 || status >= 500;
 }
 
+function summarizeResponseBody(body) {
+  const normalized = String(body || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.length > 240 ? `${normalized.slice(0, 237)}...` : normalized;
+}
+
 async function fetchRawWithRetry(url, {
   timeoutMs = 12000,
   retries = 1,
@@ -34,8 +42,16 @@ async function fetchRawWithRetry(url, {
       });
 
       if (!response.ok) {
-        const error = new Error(`${label} failed with HTTP ${response.status}`);
+        let body = "";
+        try {
+          body = summarizeResponseBody(await response.text());
+        } catch {
+          body = "";
+        }
+        const suffix = body ? `: ${body}` : "";
+        const error = new Error(`${label} failed with HTTP ${response.status}${suffix}`);
         error.status = response.status;
+        error.body = body;
         throw error;
       }
 

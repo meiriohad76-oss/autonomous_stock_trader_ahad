@@ -4774,6 +4774,9 @@ function renderSystemView() {
               <span>${source.reason}</span>
               <span>${source.notes}</span>
               <small>Provider: ${source.provider || "n/a"}${source.feed ? ` (${source.feed})` : ""} - Fallback: ${source.fallback_mode ? "yes" : "no"}</small>
+              ${source.universe_symbols ? `<small>Universe: ${source.requested_symbols || 0}/${source.universe_symbols} symbols${source.total_batches ? ` - Batches: ${source.requested_batches || 0}/${source.total_batches}` : ""}${source.limit_per_request ? ` - Limit: ${source.limit_per_request}/request` : ""}</small>` : ""}
+              ${source.rss_fallback_symbols ? `<small>RSS fallback tickers this poll: ${source.rss_fallback_symbols}</small>` : ""}
+              ${source.coverage_note ? `<small>${escapeHtml(source.coverage_note)}</small>` : ""}
               <small>Action: ${prettyLabel(source.action)} - Last success: ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}${source.last_empty_at ? ` - Last empty: ${relativeTime(source.last_empty_at)}` : ""}</small>
               ${source.last_error ? `<small class="source-error">Last error: ${escapeHtml(source.last_error)}</small>` : ""}
             </div>
@@ -4893,6 +4896,9 @@ function renderSystemView() {
       <div class="workspace-stat-card"><span>Scorer</span><strong>Hybrid Mock</strong></div>
       <div class="workspace-stat-card"><span>Live News</span><strong>${state.config?.live_news_enabled ? "Enabled" : "Disabled"}</strong></div>
       <div class="workspace-stat-card"><span>Marketaux</span><strong>${state.config?.marketaux_configured ? "Configured" : state.config?.marketaux_enabled ? "Needs key" : "Disabled"}</strong></div>
+      <div class="workspace-stat-card"><span>News Universe</span><strong>${marketauxNews?.universe_symbols || liveNews?.universe_symbols || totalUniverse || 0}</strong></div>
+      <div class="workspace-stat-card"><span>News Poll Size</span><strong>${marketauxNews?.requested_symbols || liveNews?.requested_symbols || 0}/${marketauxNews?.universe_symbols || liveNews?.universe_symbols || totalUniverse || 0}</strong></div>
+      <div class="workspace-stat-card"><span>Marketaux Limit</span><strong>${marketauxNews?.limit_per_request || state.config?.marketaux_limit_per_request || 0}/request</strong></div>
       <div class="workspace-stat-card"><span>Marketaux Poll</span><strong>${marketauxNews?.last_success_at ? formatTime(marketauxNews.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Last Poll</span><strong>${liveNews?.last_success_at ? formatTime(liveNews.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Market Data</span><strong>${marketData?.fallback_mode ? "Fallback" : `${prettyLabel(marketData?.provider || state.config?.market_data_provider || "live")} ${marketData?.feed ? `(${marketData.feed})` : ""}`}</strong></div>

@@ -131,16 +131,53 @@ function marketauxProvider(symbols) {
   };
 }
 
-function buildMarketauxUrl(config, entries) {
+function normalizeNewsUniverseEntry(entry) {
+  const ticker = String(entry?.ticker || "").toUpperCase().trim();
+  if (!ticker) {
+    return null;
+  }
+
+  const fallback = WATCHLIST.find((item) => item.ticker === ticker) || {};
+  return {
+    ticker,
+    company: entry.company || entry.name || fallback.company || ticker,
+    sector: entry.sector || fallback.sector || "Unknown",
+    industry: entry.industry || fallback.industry || "Unknown",
+    aliases: entry.aliases || fallback.aliases || [],
+    base_price: entry.base_price || entry.current_price || fallback.base_price || null
+  };
+}
+
+function uniqueUniverseEntries(entries) {
+  const seen = new Set();
+  const normalized = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const next = normalizeNewsUniverseEntry(entry);
+    if (!next || seen.has(next.ticker)) {
+      continue;
+    }
+    seen.add(next.ticker);
+    normalized.push(next);
+  }
+  return normalized;
+}
+
+function marketauxTimestamp(date) {
+  return date.toISOString().slice(0, 19);
+}
+
+export function buildMarketauxUrl(config, entries) {
   const lookbackHours = Number(config.liveNewsLookbackHours || 24);
-  const limit = Math.min(100, Math.max(1, entries.length * Number(config.marketauxMaxItemsPerTicker || 3)));
+  const requestedLimit = Math.max(1, entries.length * Number(config.marketauxMaxItemsPerTicker || 3));
+  const providerLimit = Number(config.marketauxLimitPerRequest || 3);
+  const limit = Math.max(1, Math.min(requestedLimit, providerLimit));
   const params = new URLSearchParams({
     api_token: config.marketauxApiKey,
     symbols: entries.map((entry) => entry.ticker).join(","),
     filter_entities: "true",
     language: "en",
     limit: String(limit),
-    published_after: new Date(Date.now() - lookbackHours * 3_600_000).toISOString()
+    published_after: marketauxTimestamp(new Date(Date.now() - lookbackHours * 3_600_000))
   });
 
   return `${config.marketauxBaseUrl || "https://api.marketaux.com/v1/news/all"}?${params.toString()}`;
@@ -195,6 +232,8 @@ export function createLiveNewsCollector(app) {
   let timer = null;
   let running = false;
   let inFlight = false;
+  let marketauxChunkCursor = 0;
+  let rssCursor = 0;
 
   function ensureHealthEntry() {
     if (!store.health.liveSources.google_news_rss) {
@@ -208,7 +247,11 @@ export function createLiveNewsCollector(app) {
         consecutive_failures: 0,
         ingested_documents: 0,
         provider_success: {},
-        provider_failures: {}
+        provider_failures: {},
+        universe_symbols: 0,
+        requested_symbols: 0,
+        rss_fallback_symbols: 0,
+        universe_mode: config.liveNewsUniverseMode || "full"
       };
     }
     store.health.liveSources.google_news_rss.provider_success ||= {};
@@ -231,12 +274,72 @@ export function createLiveNewsCollector(app) {
         consecutive_failures: 0,
         ingested_documents: 0,
         requested_symbols: 0,
-        fetched_articles: 0
+        fetched_articles: 0,
+        universe_symbols: 0,
+        requested_batches: 0,
+        total_batches: 0,
+        symbols_per_request: Number(config.marketauxSymbolsPerRequest || 20),
+        max_requests_per_poll: Number(config.marketauxMaxRequestsPerPoll || 1),
+        limit_per_request: Number(config.marketauxLimitPerRequest || 3),
+        universe_mode: config.liveNewsUniverseMode || "full",
+        coverage_note: null
       };
     }
     store.health.liveSources.marketaux_news.enabled = Boolean(config.liveNewsEnabled && config.marketauxEnabled);
     store.health.liveSources.marketaux_news.configured = Boolean(config.marketauxApiKey);
+    store.health.liveSources.marketaux_news.symbols_per_request = Number(config.marketauxSymbolsPerRequest || 20);
+    store.health.liveSources.marketaux_news.max_requests_per_poll = Number(config.marketauxMaxRequestsPerPoll || 1);
+    store.health.liveSources.marketaux_news.limit_per_request = Number(config.marketauxLimitPerRequest || 3);
+    store.health.liveSources.marketaux_news.universe_mode = config.liveNewsUniverseMode || "full";
     return store.health.liveSources.marketaux_news;
+  }
+
+  function newsUniverseEntries() {
+    if (config.liveNewsUniverseMode === "watchlist") {
+      return uniqueUniverseEntries(WATCHLIST);
+    }
+
+    const tracked = typeof app.getUniverseEntries === "function"
+      ? app.getUniverseEntries()
+      : typeof app.getTrackedFundamentalCompanies === "function"
+        ? app.getTrackedFundamentalCompanies()
+        : [];
+    const universe = uniqueUniverseEntries(tracked);
+    return universe.length ? universe : uniqueUniverseEntries(WATCHLIST);
+  }
+
+  function rotateChunks(chunks, cursor, maxCount) {
+    if (!chunks.length) {
+      return { selected: [], nextCursor: 0 };
+    }
+
+    const limit = Math.min(chunks.length, Math.max(1, Number(maxCount || chunks.length)));
+    const selected = [];
+    for (let offset = 0; offset < limit; offset += 1) {
+      selected.push(chunks[(cursor + offset) % chunks.length]);
+    }
+
+    return {
+      selected,
+      nextCursor: (cursor + limit) % chunks.length
+    };
+  }
+
+  function rotateEntries(entries, cursor, maxCount) {
+    if (!entries.length) {
+      return { selected: [], nextCursor: 0 };
+    }
+
+    const limit = Math.min(entries.length, Math.max(1, Number(maxCount || entries.length)));
+    const selected = [];
+    for (let offset = 0; offset < limit; offset += 1) {
+      selected.push(entries[(cursor + offset) % entries.length]);
+    }
+
+    return {
+      selected,
+      nextCursor: (cursor + limit) % entries.length
+    };
   }
 
   async function fetchMarketauxFeeds(entries) {
@@ -250,18 +353,30 @@ export function createLiveNewsCollector(app) {
       return [];
     }
 
+    const chunks = chunkArray(entries, config.marketauxSymbolsPerRequest);
+    const rotated = rotateChunks(chunks, marketauxChunkCursor, config.marketauxMaxRequestsPerPoll);
+    marketauxChunkCursor = rotated.nextCursor;
+    const chunksToPoll = rotated.selected;
+    const requestedEntries = chunksToPoll.flat();
+
     marketauxHealth.polling = true;
     marketauxHealth.last_poll_at = new Date().toISOString();
     marketauxHealth.polls += 1;
-    marketauxHealth.requested_symbols = entries.length;
+    marketauxHealth.universe_symbols = entries.length;
+    marketauxHealth.requested_symbols = requestedEntries.length;
+    marketauxHealth.requested_batches = chunksToPoll.length;
+    marketauxHealth.total_batches = chunks.length;
+    marketauxHealth.coverage_note =
+      chunksToPoll.length < chunks.length
+        ? `Rotating ${requestedEntries.length}/${entries.length} symbols this poll to stay inside API limits.`
+        : `Polling the full ${entries.length}-symbol news universe this poll.`;
 
     const results = [];
     let fetchedArticles = 0;
     let failedChunks = 0;
-    const chunks = chunkArray(entries, config.marketauxSymbolsPerRequest);
 
     try {
-      for (const chunk of chunks) {
+      for (const chunk of chunksToPoll) {
         try {
           const payload = await fetchJsonWithRetry(buildMarketauxUrl(config, chunk), {
             timeoutMs: config.marketauxRequestTimeoutMs,
@@ -290,8 +405,8 @@ export function createLiveNewsCollector(app) {
         marketauxHealth.last_empty_at = marketauxHealth.last_success_at;
         marketauxHealth.last_error = null;
       }
-      marketauxHealth.consecutive_failures = failedChunks === chunks.length ? marketauxHealth.consecutive_failures + 1 : 0;
-      return results;
+      marketauxHealth.consecutive_failures = failedChunks === chunksToPoll.length ? marketauxHealth.consecutive_failures + 1 : 0;
+      return { feeds: results, requestedEntries };
     } finally {
       marketauxHealth.polling = false;
     }
@@ -344,9 +459,26 @@ export function createLiveNewsCollector(app) {
     let skipped = 0;
 
     try {
-      const marketauxFeeds = await fetchMarketauxFeeds(WATCHLIST);
+      const universeEntries = newsUniverseEntries();
+      health.universe_symbols = universeEntries.length;
+      health.universe_mode = config.liveNewsUniverseMode || "full";
+      const marketauxResult = await fetchMarketauxFeeds(universeEntries);
+      const marketauxFeeds = Array.isArray(marketauxResult) ? marketauxResult : marketauxResult.feeds;
+      const marketauxRequestedEntries = Array.isArray(marketauxResult?.requestedEntries)
+        ? marketauxResult.requestedEntries
+        : [];
       const marketauxTickers = new Set(marketauxFeeds.map((result) => result.entry.ticker));
-      const rssFallbackEntries = WATCHLIST.filter((entry) => !marketauxTickers.has(entry.ticker));
+      let rssCandidates = marketauxRequestedEntries;
+      if (!marketauxRequestedEntries.length) {
+        const rotatedRss = rotateEntries(universeEntries, rssCursor, config.liveNewsRssFallbackMaxTickers);
+        rssCandidates = rotatedRss.selected;
+        rssCursor = rotatedRss.nextCursor;
+      }
+      const rssFallbackEntries = rssCandidates
+        .filter((entry) => !marketauxTickers.has(entry.ticker))
+        .slice(0, Math.max(0, Number(config.liveNewsRssFallbackMaxTickers || rssCandidates.length)));
+      health.requested_symbols = marketauxRequestedEntries.length || rssFallbackEntries.length;
+      health.rss_fallback_symbols = rssFallbackEntries.length;
       const rssFeeds = await Promise.all(rssFallbackEntries.map((entry) => fetchTickerFeed(entry)));
       const fetchedFeeds = [...marketauxFeeds, ...rssFeeds];
 
@@ -399,7 +531,8 @@ export function createLiveNewsCollector(app) {
       health.last_error = errors.length
         ? `Failed all news providers for: ${errors.map((result) => result.entry.ticker).join(", ")}`
         : null;
-      health.consecutive_failures = errors.length === WATCHLIST.length ? health.consecutive_failures + 1 : 0;
+      health.consecutive_failures =
+        fetchedFeeds.length && errors.length === fetchedFeeds.length ? health.consecutive_failures + 1 : 0;
       return { ingested, skipped, errors: errors.length };
     } finally {
       health.polling = false;
