@@ -28,6 +28,22 @@ function withTimeout(timeoutMs) {
   };
 }
 
+function intervalLookbackDays(interval, pointCount) {
+  const normalized = String(interval || "15min").trim().toLowerCase();
+  const points = Math.max(1, Number(pointCount || 18));
+  if (/d|day/.test(normalized)) {
+    return Math.max(14, points * 3);
+  }
+  if (/h|hr|hour/.test(normalized)) {
+    return Math.max(7, Math.ceil(points / 4) + 4);
+  }
+  return Math.max(7, Math.ceil(points / 8) + 4);
+}
+
+function isoDaysAgo(days) {
+  return new Date(Date.now() - Math.max(1, Number(days || 1)) * 24 * 60 * 60 * 1000).toISOString();
+}
+
 function marketHealth(store, config) {
   if (!store.health.liveSources.market_data) {
     store.health.liveSources.market_data = {
@@ -222,11 +238,14 @@ async function fetchTwelveDataSeries(config, ticker) {
 }
 
 async function fetchAlpacaSeries(config, ticker) {
+  const lookbackDays = intervalLookbackDays(config.marketDataInterval, config.marketDataHistoryPoints);
   const params = new URLSearchParams({
     timeframe: normalizeAlpacaTimeframe(config.marketDataInterval),
+    start: isoDaysAgo(lookbackDays),
+    end: new Date().toISOString(),
     limit: String(config.marketDataHistoryPoints),
     adjustment: "raw",
-    sort: "asc",
+    sort: "desc",
     feed: config.alpacaMarketDataFeed || "iex"
   });
   const request = withTimeout(config.marketDataRequestTimeoutMs);
@@ -290,7 +309,8 @@ function mapTwelveDataSeries(payload, scoredDocs) {
 }
 
 function mapAlpacaSeries(payload, scoredDocs, config) {
-  const values = payload.bars.map((point) => ({
+  const bars = [...payload.bars].sort((a, b) => new Date(a.t) - new Date(b.t));
+  const values = bars.map((point) => ({
     timestamp: parseSeriesTimestamp(point.t),
     open: Number(point.o),
     high: Number(point.h),

@@ -25,6 +25,10 @@ function withTimeout(timeoutMs) {
   };
 }
 
+function isoDaysAgo(days) {
+  return new Date(Date.now() - Math.max(1, Number(days || 1)) * 24 * 60 * 60 * 1000).toISOString();
+}
+
 function asNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -178,9 +182,11 @@ async function fetchStatistics(config, ticker) {
 async function fetchAlpacaDailyBars(config, ticker) {
   const params = new URLSearchParams({
     timeframe: "1Day",
+    start: isoDaysAgo(14),
+    end: new Date().toISOString(),
     limit: "2",
     adjustment: "raw",
-    sort: "asc",
+    sort: "desc",
     feed: config.alpacaMarketDataFeed || "iex"
   });
   const request = withTimeout(config.fundamentalMarketDataRequestTimeoutMs);
@@ -252,7 +258,9 @@ function mapLiveReference(ticker, quotePayload, statsPayload, fallbackCompany) {
 }
 
 function mapAlpacaReference(ticker, barsPayload, fallbackCompany) {
-  const bars = Array.isArray(barsPayload?.bars) ? barsPayload.bars : [];
+  const bars = Array.isArray(barsPayload?.bars)
+    ? [...barsPayload.bars].sort((a, b) => new Date(a.t) - new Date(b.t))
+    : [];
   const latest = bars.at(-1) || {};
   const previous = bars.at(-2) || {};
   const fallbackMetrics = fallbackCompany?.metrics || {};
