@@ -597,7 +597,7 @@ function renderSecQueuePanel(secQueue) {
       <div class="workspace-detail-grid">
         <div class="workspace-stat-card"><span>Tracked</span><strong>${secQueue.tracked_companies || 0}</strong></div>
         <div class="workspace-stat-card"><span>SEC Live</span><strong>${secQueue.live_sec_companies || 0}</strong></div>
-        <div class="workspace-stat-card"><span>Awaiting SEC</span><strong>${secQueue.pending_live_sec_companies ?? secQueue.pending_bootstrap_companies ?? 0}</strong></div>
+        <div class="workspace-stat-card"><span>Awaiting SEC</span><strong>${secQueue.pending_live_sec_companies ?? 0}</strong></div>
         <div class="workspace-stat-card"><span>Coverage</span><strong>${coveragePct}%</strong></div>
         <div class="workspace-stat-card"><span>Next Batch</span><strong>${secQueue.next_batch_size || 0}</strong></div>
         <div class="workspace-stat-card"><span>Last SEC Run</span><strong>${lastRun}</strong></div>
@@ -958,7 +958,7 @@ function secCoverageSummary() {
   const secQueue = state.secQueue || {};
   const overview = state.snapshot?.screener_overview || {};
   const secLive = secQueue.live_sec_companies ?? overview.fundamental_sec_live ?? 0;
-  const pending = secQueue.pending_live_sec_companies ?? secQueue.pending_bootstrap_companies ?? Math.max(0, counts.tracked - secLive);
+  const pending = secQueue.pending_live_sec_companies ?? Math.max(0, counts.tracked - secLive);
   const percent = secQueue.coverage_ratio !== undefined
     ? Math.round(secQueue.coverage_ratio * 100)
     : counts.tracked
@@ -5076,8 +5076,6 @@ function renderSystemView() {
   const pendingLiveSec =
     secQueue?.pending_live_sec_companies ??
     secFundamentals?.pending_live_sec_companies ??
-    secQueue?.pending_bootstrap_companies ??
-    secFundamentals?.pending_bootstrap_companies ??
     screenerOverview.pending_live_sec ??
     0;
   const secProgress = secQueue?.coverage_ratio !== undefined

@@ -313,7 +313,6 @@ async function loadDashboard() {
         candidates: [],
         watchlist: [],
         live_sec_backed_count: 0,
-        bootstrap_placeholder_count: 0,
         pass_rate: 0
       },
       leaderboard: [],

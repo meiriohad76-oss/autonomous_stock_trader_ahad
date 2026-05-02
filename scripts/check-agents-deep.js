@@ -314,7 +314,6 @@ function actionResultSummary(result = {}) {
     reference_count: result.reference_count ?? null,
     effective_limit: result.effective_limit ?? null,
     liveCompanies: result.liveCompanies ?? null,
-    pendingBootstrapCompanies: result.pendingBootstrapCompanies ?? null,
     pendingLiveSecCompanies: result.pendingLiveSecCompanies ?? null,
     refreshBatchSize: result.refreshBatchSize ?? null,
     trackedCompanies: result.trackedCompanies ?? null,
@@ -595,7 +594,7 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     agent.output_summary = {
       tracked_companies: queue.tracked_companies,
       live_sec_companies: queue.live_sec_companies,
-      pending_live_sec_companies: queue.pending_live_sec_companies ?? queue.pending_bootstrap_companies ?? 0,
+      pending_live_sec_companies: queue.pending_live_sec_companies ?? 0,
       coverage_ratio: queue.coverage_ratio
     };
     addCheck(agent, "tracked_universe", queue.tracked_companies >= app.config.agencyBaselineUniverseMinCount ? "pass" : "fail", `${queue.tracked_companies} tracked names loaded.`);
@@ -628,9 +627,7 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
           );
           const pending = Number(
             response?.result?.pendingLiveSecCompanies ??
-              response?.result?.pendingBootstrapCompanies ??
               app.getSecFundamentalsQueue().pending_live_sec_companies ??
-              app.getSecFundamentalsQueue().pending_bootstrap_companies ??
               0
           );
           if (pending === 0) {
@@ -647,7 +644,7 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     agent.output_summary = {
       tracked_companies: queue.tracked_companies,
       live_sec_companies: queue.live_sec_companies,
-      pending_live_sec_companies: queue.pending_live_sec_companies ?? queue.pending_bootstrap_companies ?? 0,
+      pending_live_sec_companies: queue.pending_live_sec_companies ?? 0,
       coverage_ratio: queue.coverage_ratio,
       next_batch_size: queue.next_batch_size,
       next_batch: queue.next_batch
@@ -655,9 +652,9 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     addCheck(
       agent,
       "sec_coverage",
-      (queue.pending_live_sec_companies ?? queue.pending_bootstrap_companies ?? 0) === 0 ? "pass" : queue.live_sec_companies > 0 ? "warning" : "fail",
+      (queue.pending_live_sec_companies ?? 0) === 0 ? "pass" : queue.live_sec_companies > 0 ? "warning" : "fail",
       `${queue.live_sec_companies}/${queue.tracked_companies} companies are SEC-backed.`,
-      { pending_live_sec_companies: queue.pending_live_sec_companies ?? queue.pending_bootstrap_companies ?? 0 }
+      { pending_live_sec_companies: queue.pending_live_sec_companies ?? 0 }
     );
   }
 

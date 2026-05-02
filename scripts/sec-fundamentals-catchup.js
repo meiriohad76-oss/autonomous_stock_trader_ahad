@@ -93,8 +93,6 @@ function summarizeBatch(batchNumber, response) {
     pending_live_sec_companies: Number(
       result.pendingLiveSecCompanies ??
         secHealth.pending_live_sec_companies ??
-        result.pendingBootstrapCompanies ??
-        secHealth.pending_bootstrap_companies ??
         0
     ),
     refresh_batch_size: Number(result.refreshBatchSize ?? secHealth.refresh_batch_size ?? 0),

@@ -326,7 +326,7 @@ function rotationEstimateMs({ target = 0, perPoll = 0, intervalMs = 0 } = {}) {
 }
 
 function latestSourceAt(source = {}) {
-  return source.last_success_at || source.last_poll_at || source.last_backup_at || source.last_bootstrap_at || null;
+  return source.last_success_at || source.last_poll_at || source.last_backup_at || null;
 }
 
 function nextAtFrom(source = {}, intervalMs = 0, override = null) {
@@ -829,7 +829,7 @@ export function buildAgencyCycleStatus({
   const outcomeSample = decisionCount + positionCount;
   const secCoveragePct = Math.round(Number(secQueue?.coverage_ratio || 0) * 100);
   const trackedCount = secQueue?.tracked_companies || 0;
-  const pendingSec = secQueue?.pending_live_sec_companies ?? secQueue?.pending_bootstrap_companies ?? 0;
+  const pendingSec = secQueue?.pending_live_sec_companies ?? 0;
   const freshDecisionEvidence = workflowStatus?.live_data?.fresh_decision_evidence_count || 0;
   const livePricingReady = Boolean(workflowStatus?.live_data?.live_pricing_ready);
   const secLiveCount = secQueue?.live_sec_companies ?? Math.max(0, trackedCount - pendingSec);

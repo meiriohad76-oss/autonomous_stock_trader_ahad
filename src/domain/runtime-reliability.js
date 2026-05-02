@@ -501,7 +501,7 @@ function sourceSpecs(config) {
 }
 
 function latestTimestamp(health = {}) {
-  return health.last_success_at || health.last_backup_at || health.last_bootstrap_at || null;
+  return health.last_success_at || health.last_backup_at || null;
 }
 
 function errorMessage(health = {}) {

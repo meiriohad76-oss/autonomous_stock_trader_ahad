@@ -623,7 +623,6 @@ function buildScreenerView(leaderboard, baseScreener = {}, screenerSettings = sc
     watch_count: watch.length,
     rejected_count: rejected.length,
     live_sec_backed_count: liveSecBacked.length,
-    bootstrap_placeholder_count: 0,
     pending_live_sec_count: 0,
     pass_rate: leaderboard.length ? round(eligible.length / leaderboard.length, 3) : 0,
     candidates: eligible.map((item) => ({
@@ -1396,7 +1395,6 @@ export function createEmptyFundamentalsState() {
       watch_count: 0,
       rejected_count: 0,
       live_sec_backed_count: 0,
-      bootstrap_placeholder_count: 0,
       pass_rate: 0,
       candidates: [],
       watchlist: []

@@ -119,8 +119,6 @@ export function buildSystemDoctorSnapshot({
   const pendingLiveSec =
     secQueue?.pending_live_sec_companies ??
     health?.live_sources?.sec_fundamentals?.pending_live_sec_companies ??
-    secQueue?.pending_bootstrap_companies ??
-    health?.live_sources?.sec_fundamentals?.pending_bootstrap_companies ??
     0;
   const livePricingReady = Boolean(workflowStatus?.live_data?.live_pricing_ready);
   const decisionEvidence = Number(workflowStatus?.live_data?.fresh_decision_evidence_count || 0);
@@ -187,7 +185,7 @@ export function buildSystemDoctorSnapshot({
       trackedCount
         ? `${secLiveCount}/${trackedCount} names are SEC-backed; ${pendingLiveSec} names are still awaiting live SEC data.`
         : "No fundamentals universe is available.",
-      { live_sec_count: secLiveCount, pending_live_sec_count: pendingLiveSec, pending_bootstrap_count: 0 }
+      { live_sec_count: secLiveCount, pending_live_sec_count: pendingLiveSec }
     ),
     check(
       "live_pricing",

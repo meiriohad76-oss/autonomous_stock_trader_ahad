@@ -757,7 +757,6 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         sentiment_visible_universe: sentimentVisibleScreening,
         filtered_sentiment_visible_universe: filteredSentimentVisibleScreening,
         fundamental_sec_live: fullFundamentalRows.filter((row) => row.data_source === "live_sec_filing").length,
-        bootstrap: 0,
         pending_live_sec: Math.max(
           0,
           (store.fundamentalUniverse?.companies?.length || fullFundamentalRows.length) -
@@ -843,7 +842,6 @@ function buildSecFundamentalsQueue(store, config, options = {}) {
     auto_start: config.autoStartSecFundamentals,
     tracked_companies: companies.length,
     live_sec_companies: liveCompanies.length,
-    pending_bootstrap_companies: 0,
     pending_live_sec_companies: pendingCompanies.length,
     coverage_ratio: companies.length ? round(liveCompanies.length / companies.length, 3) : 0,
     refresh_limit: refreshLimit,
@@ -892,7 +890,6 @@ function refreshSecFundamentalsHealthPreview(store, config) {
     refresh_limit: refreshLimit,
     refresh_batch_size: existing.polling ? Number(existing.refresh_batch_size || 0) : nextBatch.length,
     refresh_cursor: refreshCursor,
-    pending_bootstrap_companies: 0,
     pending_live_sec_companies: pendingCompanies.length
   };
 
@@ -2160,7 +2157,7 @@ export function createSentimentApp() {
             if (
               item.payload.source === "sec_fundamentals" &&
               Number(response.result?.trackedCompanies || 0) > 0 &&
-              Number(response.result?.pendingLiveSecCompanies ?? response.result?.pendingBootstrapCompanies ?? 0) === 0
+              Number(response.result?.pendingLiveSecCompanies ?? 0) === 0
             ) {
               break;
             }

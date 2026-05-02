@@ -120,17 +120,17 @@ assert(
   screenOnlyRows.every((row) => row.weighted_confidence === 0 && row.fundamental_confidence === null),
   "Allowed-universe rows must keep sentiment confidence at zero and avoid provisional fundamental confidence."
 );
-const bootstrapRows = watchlist.leaderboard.filter(
+const forbiddenPlaceholderRows = watchlist.leaderboard.filter(
   (row) => row.fundamental_data_source === "bootstrap_placeholder" && row.sector === "Unknown"
 );
 assert(
-  bootstrapRows.length === 0,
-  "Bootstrap rows should not appear in the watchlist."
+  forbiddenPlaceholderRows.length === 0,
+  "Placeholder fundamental rows should not appear in the watchlist."
 );
 
 const secQueue = app.getSecFundamentalsQueue({ limit: 5 });
 assert(secQueue.tracked_companies === 168, "SEC queue should expose the full fundamentals universe.");
-assert(secQueue.pending_bootstrap_companies === 0, "SEC queue should not expose active pending bootstrap rows.");
+assert(!Object.hasOwn(secQueue, "pending_bootstrap_companies"), "SEC queue should not expose legacy bootstrap fields.");
 assert(secQueue.pending_live_sec_companies >= 0, "SEC queue should expose pending live-SEC count.");
 assert(secQueue.next_batch.length <= 5, "SEC queue should honor preview limits.");
 assert(secQueue.next_batch_size > 0, "SEC queue should expose the next SEC refresh batch.");
@@ -224,7 +224,7 @@ console.log(
       eligible_filter_rows: eligibleWatchlist.screener_overview.visible_universe.tracked,
       sector_count: watchlist.sectors.length,
       screen_only_rows: screenOnlyRows.length,
-      bootstrap_rows: bootstrapRows.length,
+      placeholder_fundamental_rows: forbiddenPlaceholderRows.length,
       sec_queue_next_batch: secQueue.next_batch.length,
       sec_queue_pending_live_sec: secQueue.pending_live_sec_companies,
       lightweight_state: health.database_backup.provider,

@@ -700,6 +700,49 @@ function reviveFundamentals(snapshot) {
   };
 }
 
+function scrubLegacyPlaceholderMetadata(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return /bootstrap/i.test(value) || value === "BOOTSTRAP" ? undefined : value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => scrubLegacyPlaceholderMetadata(item))
+      .filter((item) => item !== undefined);
+  }
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !/bootstrap/i.test(key))
+        .map(([key, item]) => [key, scrubLegacyPlaceholderMetadata(item)])
+        .filter(([, item]) => item !== undefined)
+    );
+  }
+  return value;
+}
+
+function reviveFundamentalUniverse(snapshot) {
+  const clean = scrubLegacyPlaceholderMetadata(snapshot);
+  if (!clean?.companies?.length) {
+    return clean;
+  }
+  return {
+    ...clean,
+    companies: clean.companies.map((company) => ({
+      ...company,
+      data_source: company.data_source || "universe_membership",
+      initial_screen: company.initial_screen
+        ? {
+            ...company.initial_screen,
+            provisional: false
+          }
+        : company.initial_screen
+    }))
+  };
+}
+
 function serializeCluster(cluster) {
   return {
     ...cluster,
@@ -967,7 +1010,7 @@ function hydrateStoreFromRows(store, rows) {
   store.sentimentStates = rows.sentimentStates.map((row) => parsePayload(row.payload_json, null)).filter(Boolean);
   store.sourceStats = new Map(
     rows.sourceStats
-      .map((row) => [row.source_name, parsePayload(row.payload_json, null)])
+      .map((row) => [row.source_name, scrubLegacyPlaceholderMetadata(parsePayload(row.payload_json, null))])
       .filter(([, value]) => Boolean(value))
   );
   store.alertHistory = rows.alertHistory.map((row) => parsePayload(row.payload_json, null)).filter(Boolean);
@@ -979,9 +1022,9 @@ function hydrateStoreFromRows(store, rows) {
   store.seenExternalDocuments = new Set(rows.seenExternalDocuments.map((row) => row.seen_key));
 
   const runtimeMap = new Map(rows.runtimeState.map((row) => [row.state_key, parsePayload(row.payload_json, null)]));
-  const persistedHealth = runtimeMap.get("health");
+  const persistedHealth = scrubLegacyPlaceholderMetadata(runtimeMap.get("health"));
   const persistedFundamentals = runtimeMap.get("fundamentals");
-  const persistedFundamentalUniverse = runtimeMap.get("fundamentalUniverse");
+  const persistedFundamentalUniverse = reviveFundamentalUniverse(runtimeMap.get("fundamentalUniverse"));
   if (persistedHealth) {
     store.health = {
       ...store.health,
@@ -1731,7 +1774,7 @@ function buildLightweightRows(store, config) {
     sentimentStates: limitedPayloadRows(store.sentimentStates, maxDocuments),
     sourceStats: [...store.sourceStats.entries()].map(([source_name, payload]) => ({
       source_name,
-      payload_json: payload
+      payload_json: scrubLegacyPlaceholderMetadata(payload)
     })),
     alertHistory: limitedPayloadRows(store.alertHistory, maxDocuments),
     dedupeClusters: [...store.dedupeClusters.entries()].map(([cluster_key, cluster]) => ({
@@ -1740,9 +1783,9 @@ function buildLightweightRows(store, config) {
     })),
     seenExternalDocuments: [...store.seenExternalDocuments].slice(-maxDocuments).map((seen_key) => ({ seen_key })),
     runtimeState: [
-      { state_key: "health", payload_json: store.health },
+      { state_key: "health", payload_json: scrubLegacyPlaceholderMetadata(store.health) },
       { state_key: "fundamentals", payload_json: buildRuntimeFundamentals(store) },
-      { state_key: "fundamentalUniverse", payload_json: store.fundamentalUniverse }
+      { state_key: "fundamentalUniverse", payload_json: reviveFundamentalUniverse(store.fundamentalUniverse) }
     ],
     fundamentals: buildFundamentalWarehouseRows(store),
     agents: buildAgentRows(store, config)
@@ -2035,7 +2078,7 @@ function createSqlitePersistence(config) {
           insertState.run(state.state_id, state.entity_type, state.entity_key, state.window, state.as_of, JSON.stringify(state));
         }
         for (const [sourceName, source] of store.sourceStats.entries()) {
-          insertSource.run(sourceName, source.updated_at || now, JSON.stringify(source));
+          insertSource.run(sourceName, source.updated_at || now, JSON.stringify(scrubLegacyPlaceholderMetadata(source)));
         }
         for (const alert of store.alertHistory) {
           insertAlert.run(alert.alert_id, alert.entity_key || null, alert.created_at || now, JSON.stringify(alert));
@@ -2050,9 +2093,9 @@ function createSqlitePersistence(config) {
         const agentRows = saveSqliteAgentRows(db, store, config);
         store.macroRegimeHistory = reviveAgentRows({ macroRegimeStates: agentRows.macroRegimeStates }).macroRegimeHistory;
         store.tradeSetupHistory = reviveAgentRows({ tradeSetupStates: agentRows.tradeSetupStates }).tradeSetupHistory;
-        insertRuntime.run("health", now, JSON.stringify(store.health));
+        insertRuntime.run("health", now, JSON.stringify(scrubLegacyPlaceholderMetadata(store.health)));
         insertRuntime.run("fundamentals", now, JSON.stringify(buildRuntimeFundamentals(store)));
-        insertRuntime.run("fundamentalUniverse", now, JSON.stringify(store.fundamentalUniverse));
+        insertRuntime.run("fundamentalUniverse", now, JSON.stringify(reviveFundamentalUniverse(store.fundamentalUniverse)));
         insertRuntime.run("earningsCalendar", now, JSON.stringify(Array.from(store.earningsCalendar.entries())));
         insertRuntime.run("pendingApprovals", now, JSON.stringify(Array.from(store.pendingApprovals.entries())));
         insertRuntime.run("positions", now, JSON.stringify(Array.from(store.positions.entries())));
@@ -2248,7 +2291,7 @@ function createPostgresPersistence(config) {
              ON CONFLICT (source_name) DO UPDATE
              SET updated_at = EXCLUDED.updated_at,
                  payload_json = EXCLUDED.payload_json`,
-            [sourceName, source.updated_at || now, JSON.stringify(source)]
+            [sourceName, source.updated_at || now, JSON.stringify(scrubLegacyPlaceholderMetadata(source))]
           );
         }
 
@@ -2294,7 +2337,7 @@ function createPostgresPersistence(config) {
            ON CONFLICT (state_key) DO UPDATE
            SET updated_at = EXCLUDED.updated_at,
                payload_json = EXCLUDED.payload_json`,
-          ["health", now, JSON.stringify(store.health)]
+          ["health", now, JSON.stringify(scrubLegacyPlaceholderMetadata(store.health))]
         );
         await client.query(
           `INSERT INTO runtime_state (state_key, updated_at, payload_json)
@@ -2310,7 +2353,7 @@ function createPostgresPersistence(config) {
           ON CONFLICT (state_key) DO UPDATE
           SET updated_at = EXCLUDED.updated_at,
               payload_json = EXCLUDED.payload_json`,
-          ["fundamentalUniverse", now, JSON.stringify(store.fundamentalUniverse)]
+          ["fundamentalUniverse", now, JSON.stringify(reviveFundamentalUniverse(store.fundamentalUniverse))]
         );
 
         await client.query("COMMIT");

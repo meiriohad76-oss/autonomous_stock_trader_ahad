@@ -2,7 +2,7 @@ import { differenceInHours, round } from "../utils/helpers.js";
 import { filterFreshEvidence, isLongHorizonEvidence } from "./freshness-policy.js";
 
 function latestSourceTimestamp(source = {}) {
-  return source.last_success_at || source.last_poll_at || source.last_backup_at || source.last_bootstrap_at || null;
+  return source.last_success_at || source.last_poll_at || source.last_backup_at || null;
 }
 
 function sourceAgeHours(source = {}) {
@@ -23,7 +23,7 @@ function sourceSummary(key, label, source = {}) {
     provider_chain: source.provider_chain || null,
     fallback_mode: fallbackMode,
     fallback_active: Boolean(source.fallback_active),
-    last_success_at: source.last_success_at || source.last_bootstrap_at || null,
+    last_success_at: source.last_success_at || null,
     last_poll_at: source.last_poll_at || null,
     age_hours: sourceAgeHours(source),
     last_error: source.last_error || null,

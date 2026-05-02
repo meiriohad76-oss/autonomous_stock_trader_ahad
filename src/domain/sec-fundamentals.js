@@ -61,7 +61,6 @@ function buildEmptyResult() {
     trackedCompanies: 0,
     refreshBatchSize: 0,
     refreshLimit: null,
-    pendingBootstrapCompanies: 0,
     pendingLiveSecCompanies: 0,
     marketReferenceRefreshSkipped: false
   };
@@ -627,7 +626,6 @@ export function createSecFundamentalsCollector(app) {
         refresh_limit: null,
         refresh_batch_size: 0,
         refresh_cursor: 0,
-        pending_bootstrap_companies: 0,
         pending_live_sec_companies: 0,
         next_poll_at: null
       };
@@ -644,7 +642,7 @@ export function createSecFundamentalsCollector(app) {
 
   function currentPollMs() {
     const health = ensureHealthEntry();
-    const pending = Number(health.pending_live_sec_companies || health.pending_bootstrap_companies || 0);
+    const pending = Number(health.pending_live_sec_companies || 0);
     if (pending > 0) {
       return Math.max(60_000, Number(config.fundamentalSecBaselinePollMs || config.fundamentalSecPollMs || 900_000));
     }
@@ -677,11 +675,9 @@ export function createSecFundamentalsCollector(app) {
       const refreshLimit = maxCompaniesPerPoll(config, trackedCompanies.length);
       health.refresh_limit = refreshLimit;
       health.refresh_batch_size = refreshBatch.length;
-      health.pending_bootstrap_companies = 0;
       health.pending_live_sec_companies = trackedCompanies.filter((company) => company.data_source !== "live_sec_filing").length;
       result.refreshLimit = refreshLimit;
       result.refreshBatchSize = refreshBatch.length;
-      result.pendingBootstrapCompanies = 0;
       result.pendingLiveSecCompanies = health.pending_live_sec_companies;
 
       const tickerMap = await loadTickerCikMap(config, store);
@@ -777,10 +773,8 @@ export function createSecFundamentalsCollector(app) {
       const pendingLiveSecCompanies = nextCompanies.filter((company) => company.data_source !== "live_sec_filing").length;
       result.ingested = refreshedLiveCompanyCount;
       result.liveCompanies = totalLiveCompanyCount;
-      result.pendingBootstrapCompanies = 0;
       result.pendingLiveSecCompanies = pendingLiveSecCompanies;
       health.live_companies = totalLiveCompanyCount;
-      health.pending_bootstrap_companies = 0;
       health.pending_live_sec_companies = pendingLiveSecCompanies;
       health.refresh_cursor =
         pendingLiveSecCompanies === 0 || refreshedLiveCompanyCount > 0
