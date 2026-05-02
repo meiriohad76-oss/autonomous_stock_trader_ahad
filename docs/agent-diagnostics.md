@@ -27,6 +27,8 @@ Run a bounded live check for the stuck baseline agents:
 npm run check:agents -- --agent market,fundamentals --max-sec-batches 2 --price-limit 8
 ```
 
+SEC fundamentals diagnostics are Pi-safe by default: each diagnostic SEC batch is capped to 2 companies with concurrency 1. Use `--sec-company-limit <n>` and `--sec-concurrency <n>` to change that, or `0` to keep the `.env` values.
+
 Run the Signals Agent and log every source extraction attempt:
 
 ```bash

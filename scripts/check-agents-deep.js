@@ -5,6 +5,8 @@ import { createSentimentApp } from "../src/app.js";
 const DEFAULT_WINDOW = "1h";
 const DEFAULT_LIMIT = 25;
 const DEFAULT_PRICE_LIMIT = 25;
+const DEFAULT_SEC_COMPANY_LIMIT = 2;
+const DEFAULT_SEC_CONCURRENCY = 1;
 const SECRET_KEY_PATTERN = /(api[_-]?key|secret|token|authorization|password|credential)/i;
 
 const AGENTS = [
@@ -52,6 +54,8 @@ Options:
   --limit <n>               Candidate/detail limit. Default: ${DEFAULT_LIMIT}
   --price-limit <n>         Pricing/reference extraction batch size. Default: ${DEFAULT_PRICE_LIMIT}
   --max-sec-batches <n>     Max SEC fundamentals batches during Fundamentals Agent check. Default: AGENCY_BASELINE_SEC_BATCHES_PER_RUN or 4
+  --sec-company-limit <n>   Max SEC companies per diagnostic batch. Default: ${DEFAULT_SEC_COMPANY_LIMIT}. Use 0 to keep .env.
+  --sec-concurrency <n>     Max SEC fundamentals request concurrency during diagnostics. Default: ${DEFAULT_SEC_CONCURRENCY}. Use 0 to keep .env.
   --refresh-universe        Force a live Universe Agent refresh. Default: inspect the loaded universe only.
   --no-extract              Do not poll live/external sources; only inspect current state.
   --fail-on-agent-fail      Exit with code 1 when an agent reports fail. Default: write diagnostics and exit 0 unless the script crashes.
@@ -94,6 +98,8 @@ function parseArgs(argv) {
     priceLimit: DEFAULT_PRICE_LIMIT,
     agentKeys: null,
     maxSecBatches: null,
+    secCompanyLimit: DEFAULT_SEC_COMPANY_LIMIT,
+    secConcurrency: DEFAULT_SEC_CONCURRENCY,
     refreshUniverse: false,
     extract: true,
     failOnAgentFail: false,
@@ -133,6 +139,14 @@ function parseArgs(argv) {
     } else if (arg === "--max-sec-batches" || arg.startsWith("--max-sec-batches=")) {
       const parsed = readOptionValue(argv, index, "--max-sec-batches");
       options.maxSecBatches = parsePositiveInteger(parsed.value, "--max-sec-batches", { allowZero: true });
+      index = parsed.nextIndex;
+    } else if (arg === "--sec-company-limit" || arg.startsWith("--sec-company-limit=")) {
+      const parsed = readOptionValue(argv, index, "--sec-company-limit");
+      options.secCompanyLimit = parsePositiveInteger(parsed.value, "--sec-company-limit", { allowZero: true });
+      index = parsed.nextIndex;
+    } else if (arg === "--sec-concurrency" || arg.startsWith("--sec-concurrency=")) {
+      const parsed = readOptionValue(argv, index, "--sec-concurrency");
+      options.secConcurrency = parsePositiveInteger(parsed.value, "--sec-concurrency", { allowZero: true });
       index = parsed.nextIndex;
     } else if (arg === "--out" || arg.startsWith("--out=")) {
       const parsed = readOptionValue(argv, index, "--out");
@@ -393,64 +407,74 @@ function workerFromCycle(cycle, key) {
   return (cycle.workers || []).find((worker) => worker.key === key) || null;
 }
 
-async function runRuntimeAction(app, agent, payload, sourceKeys, emit, { optional = false } = {}) {
+async function runRuntimeAction(app, agent, payload, sourceKeys, emit, { optional = false, checkpoint = null } = {}) {
   const startedAt = Date.now();
   const started = nowIso();
   const beforeCounters = stateCounters(app);
   const beforeSources = sourceSnapshot(app, sourceKeys);
+  const entry = {
+    ok: "running",
+    started_at: started,
+    finished_at: null,
+    duration_ms: null,
+    payload: sanitize(payload),
+    result_summary: null,
+    counters_before: beforeCounters,
+    counters_after: null,
+    counter_delta: null,
+    sources_before: beforeSources,
+    sources_after: null
+  };
+  agent.extraction_log.push(entry);
 
   emit("action_start", agent.key, {
     action: payload.action,
     source: payload.source || null,
     limit: payload.limit || payload.company_limit || null
   });
+  if (checkpoint) {
+    await checkpoint("running");
+  }
 
   try {
     const response = await app.runRuntimeReliabilityAction(payload);
     const afterCounters = stateCounters(app);
     const afterSources = sourceSnapshot(app, sourceKeys);
-    const entry = {
+    Object.assign(entry, {
       ok: true,
-      started_at: started,
       finished_at: nowIso(),
       duration_ms: durationMs(startedAt),
-      payload: sanitize(payload),
       result_summary: actionResultSummary(response.result || {}),
-      counters_before: beforeCounters,
       counters_after: afterCounters,
       counter_delta: deltaCounters(beforeCounters, afterCounters),
-      sources_before: beforeSources,
       sources_after: afterSources
-    };
-    agent.extraction_log.push(entry);
+    });
     emit("action_ok", agent.key, {
       action: payload.action,
       source: payload.source || null,
       duration_ms: entry.duration_ms,
       result: entry.result_summary
     });
+    if (checkpoint) {
+      await checkpoint("running");
+    }
     return response;
   } catch (error) {
     const afterCounters = stateCounters(app);
     const afterSources = sourceSnapshot(app, sourceKeys);
     const skipped = optional && isDisabledByConfiguration(error);
     const warning = optional && !skipped;
-    const entry = {
+    Object.assign(entry, {
       ok: skipped ? null : false,
       skipped,
       warning,
-      started_at: started,
       finished_at: nowIso(),
       duration_ms: durationMs(startedAt),
-      payload: sanitize(payload),
       error: error.message,
-      counters_before: beforeCounters,
       counters_after: afterCounters,
       counter_delta: deltaCounters(beforeCounters, afterCounters),
-      sources_before: beforeSources,
       sources_after: afterSources
-    };
-    agent.extraction_log.push(entry);
+    });
     if (skipped || warning) {
       addCheck(
         agent,
@@ -467,6 +491,9 @@ async function runRuntimeAction(app, agent, payload, sourceKeys, emit, { optiona
         duration_ms: entry.duration_ms,
         error: error.message
       });
+      if (checkpoint) {
+        await checkpoint("running");
+      }
       return null;
     }
     agent.errors.push(error.message);
@@ -476,11 +503,14 @@ async function runRuntimeAction(app, agent, payload, sourceKeys, emit, { optiona
       duration_ms: entry.duration_ms,
       error: error.message
     });
+    if (checkpoint) {
+      await checkpoint("running");
+    }
     return null;
   }
 }
 
-function recordSkippedAction(app, agent, payload, sourceKeys, emit, summary, details = {}) {
+async function recordSkippedAction(app, agent, payload, sourceKeys, emit, summary, details = {}, checkpoint = null) {
   const counters = stateCounters(app);
   const sources = sourceSnapshot(app, sourceKeys);
   const entry = {
@@ -506,23 +536,56 @@ function recordSkippedAction(app, agent, payload, sourceKeys, emit, summary, det
     reason: summary,
     ...details
   });
+  if (checkpoint) {
+    await checkpoint("running");
+  }
 }
 
-async function inspectAgent(app, agent, options, emit) {
+function applySecDiagnosticLimits(app, options) {
+  const previous = {
+    fundamentalSecMaxCompaniesPerPoll: app.config.fundamentalSecMaxCompaniesPerPoll,
+    fundamentalSecConcurrency: app.config.fundamentalSecConcurrency
+  };
+
+  const companyLimit = Number(options.secCompanyLimit || 0);
+  if (Number.isFinite(companyLimit) && companyLimit > 0) {
+    const configured = Number(app.config.fundamentalSecMaxCompaniesPerPoll || 0);
+    app.config.fundamentalSecMaxCompaniesPerPoll = configured > 0
+      ? Math.max(1, Math.min(configured, companyLimit))
+      : companyLimit;
+  }
+
+  const concurrency = Number(options.secConcurrency || 0);
+  if (Number.isFinite(concurrency) && concurrency > 0) {
+    const configured = Number(app.config.fundamentalSecConcurrency || 0);
+    app.config.fundamentalSecConcurrency = configured > 0
+      ? Math.max(1, Math.min(configured, concurrency))
+      : concurrency;
+  }
+
+  return previous;
+}
+
+function restoreSecDiagnosticLimits(app, previous) {
+  app.config.fundamentalSecMaxCompaniesPerPoll = previous.fundamentalSecMaxCompaniesPerPoll;
+  app.config.fundamentalSecConcurrency = previous.fundamentalSecConcurrency;
+}
+
+async function inspectAgent(app, agent, options, emit, checkpoint) {
   const cycleBefore = await getCycle(app, options);
   agent.worker_before = summarizeWorker(workerFromCycle(cycleBefore, agent.key));
 
   if (agent.key === "universe") {
     if (options.extract && options.refreshUniverse) {
-      await runRuntimeAction(app, agent, { action: "refresh_universe" }, ["fundamental_universe"], emit);
+      await runRuntimeAction(app, agent, { action: "refresh_universe" }, ["fundamental_universe"], emit, { checkpoint });
     }
     const queue = app.getSecFundamentalsQueue({ limit: 5 });
     if (options.extract && !options.refreshUniverse) {
       const summary = "Live universe refresh skipped by default; current tracked universe inspected.";
-      recordSkippedAction(app, agent, { action: "refresh_universe" }, ["fundamental_universe"], emit, summary, {
+      await recordSkippedAction(app, agent, { action: "refresh_universe" }, ["fundamental_universe"], emit, summary, {
         tracked_companies: queue.tracked_companies,
         command: "npm run check:agents -- --agent universe --refresh-universe"
-      });
+      }, checkpoint);
       addCheck(agent, "universe_refresh_mode", "pass", `${summary} Use --refresh-universe to force the external refresh.`, {
         tracked_companies: queue.tracked_companies
       });
@@ -538,20 +601,39 @@ async function inspectAgent(app, agent, options, emit) {
 
   if (agent.key === "fundamentals") {
     const maxBatches = options.maxSecBatches ?? Math.max(1, Number(app.config.agencyBaselineSecBatchesPerRun || 4));
+    const previousSecLimits = applySecDiagnosticLimits(app, options);
     if (options.extract) {
-      for (let index = 0; index < maxBatches; index += 1) {
-        const response = await runRuntimeAction(
-          app,
-          agent,
-          { action: "poll_once", source: "sec_fundamentals", forceUniverse: options.refreshUniverse && index === 0 },
-          ["sec_fundamentals", "fundamental_universe"],
-          emit
-        );
-        const pending = Number(response?.result?.pendingBootstrapCompanies ?? app.getSecFundamentalsQueue().pending_bootstrap_companies ?? 0);
-        if (pending === 0) {
-          break;
+      try {
+        addCheck(agent, "diagnostic_sec_limits", "pass", "SEC diagnostics are capped to avoid overloading the Pi.", {
+          max_batches: maxBatches,
+          companies_per_batch: app.config.fundamentalSecMaxCompaniesPerPoll || "env_all",
+          concurrency: app.config.fundamentalSecConcurrency || "env_default"
+        });
+        for (let index = 0; index < maxBatches; index += 1) {
+          const response = await runRuntimeAction(
+            app,
+            agent,
+            {
+              action: "poll_once",
+              source: "sec_fundamentals",
+              forceUniverse: options.refreshUniverse && index === 0,
+              company_limit: app.config.fundamentalSecMaxCompaniesPerPoll || null,
+              concurrency: app.config.fundamentalSecConcurrency || null
+            },
+            ["sec_fundamentals", "fundamental_universe"],
+            emit,
+            { checkpoint }
+          );
+          const pending = Number(response?.result?.pendingBootstrapCompanies ?? app.getSecFundamentalsQueue().pending_bootstrap_companies ?? 0);
+          if (pending === 0) {
+            break;
+          }
         }
+      } finally {
+        restoreSecDiagnosticLimits(app, previousSecLimits);
       }
+    } else {
+      restoreSecDiagnosticLimits(app, previousSecLimits);
     }
     const queue = app.getSecFundamentalsQueue({ limit: 10 });
     agent.output_summary = {
@@ -578,9 +660,10 @@ async function inspectAgent(app, agent, options, emit) {
         agent,
         { action: "poll_once", source: "fundamental_market_data", limit: options.priceLimit },
         ["fundamental_market_data", "market_data"],
-        emit
+        emit,
+        { checkpoint }
       );
-      await runRuntimeAction(app, agent, { action: "poll_once", source: "market_flow" }, ["market_flow", "market_data"], emit);
+      await runRuntimeAction(app, agent, { action: "poll_once", source: "market_flow" }, ["market_flow", "market_data"], emit, { checkpoint });
     }
     const workflow = await app.getTradingWorkflowStatus({ window: options.window, limit: options.limit, minConviction: 0 });
     const macro = app.getMacroRegime({ window: options.window });
@@ -612,7 +695,7 @@ async function inspectAgent(app, agent, options, emit) {
           { action: "poll_once", source: item.source },
           item.sourceKeys,
           emit,
-          { optional: Boolean(item.optional) }
+          { optional: Boolean(item.optional), checkpoint }
         );
       }
     }
@@ -877,7 +960,7 @@ async function runDiagnostics(options) {
       emit("agent_start", spec.key);
       await checkpoint("running");
       try {
-        await inspectAgent(app, agent, options, emit);
+        await inspectAgent(app, agent, options, emit, checkpoint);
       } catch (error) {
         agent.errors.push(error.message);
         emit("agent_fail", spec.key, { error: error.message });
