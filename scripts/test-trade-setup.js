@@ -133,6 +133,24 @@ function snapshot(store, options = {}) {
 }
 
 {
+  const plannedRuntime = {
+    status: "optimal",
+    pressure: { isConstrained: false },
+    sources: [
+      { key: "stocktwits_stream", label: "StockTwits Social Pulse", status: "disabled", enabled: false, criticality: "low", category: "social", action: "leave_disabled" },
+      { key: "trade_prints", label: "Delayed Trade Prints", status: "disabled", enabled: false, criticality: "medium", category: "money_flow", action: "leave_disabled" },
+      { key: "live_news", label: "Live News", status: "polling", enabled: true, criticality: "medium", category: "news", action: "monitor" }
+    ]
+  };
+  const result = snapshot(makeStore({ tickers: ["META"] }), { runtimeReliabilitySnapshot: plannedRuntime });
+  const setup = result.setups.find((item) => item.ticker === "META");
+  assert.equal(setup.runtime_reliability.adjustment_multiplier, 1);
+  assert.ok(!setup.risk_flags.some((flag) => /runtime reliability|StockTwits|Trade Prints/i.test(flag)));
+  assert.ok(setup.decision_thresholds, "Decision thresholds should explain the trade gate");
+  assert.ok(Array.isArray(setup.decision_blockers), "Decision blockers should be present");
+}
+
+{
   const result = snapshot(makeStore({ tickers: ["GOOGL"] }));
   const setup = result.setups.find((item) => item.ticker === "GOOGL");
   for (const key of [
@@ -149,6 +167,8 @@ function snapshot(store, options = {}) {
     "risk_flags",
     "evidence",
     "score_components",
+    "decision_thresholds",
+    "decision_blockers",
     "runtime_reliability",
     "macro_regime",
     "sentiment",

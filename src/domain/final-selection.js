@@ -119,7 +119,9 @@ function buildDeterministicExplanation(setup) {
     positive_evidence: setup.evidence?.positive || [],
     negative_evidence: setup.evidence?.negative || [],
     risk_flags: setup.risk_flags || [],
-    score_components: setup.score_components || null
+    score_components: setup.score_components || null,
+    decision_thresholds: setup.decision_thresholds || null,
+    decision_blockers: setup.decision_blockers || []
   };
 }
 

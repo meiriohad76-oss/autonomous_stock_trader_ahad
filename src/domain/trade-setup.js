@@ -40,6 +40,9 @@ const RUNTIME_CRITICALITY_MULTIPLIERS = {
   low: 0.45
 };
 
+const DIRECTION_GAP_MINIMUM = 0.08;
+const WATCH_SCORE_THRESHOLD = 0.38;
+
 function buildDocumentLookup(store) {
   return new Map(store.normalizedDocuments.map((doc) => [doc.doc_id, doc]));
 }
@@ -193,6 +196,14 @@ function runtimeSourcePenalty(source) {
     return 0;
   }
 
+  if (source.status === "polling") {
+    return 0;
+  }
+
+  if (source.status === "disabled" && source.enabled === false) {
+    return 0;
+  }
+
   const basePenalty = RUNTIME_STATUS_PENALTIES[source.status] ?? 0.04;
   const criticalityMultiplier = RUNTIME_CRITICALITY_MULTIPLIERS[source.criticality] ?? 0.75;
   return basePenalty * criticalityMultiplier;
@@ -219,6 +230,7 @@ function buildRuntimeReliabilityAdjustment(runtimeReliabilitySnapshot) {
       key: source.key,
       label: source.label,
       status: source.status,
+      enabled: source.enabled,
       action: source.action,
       penalty: runtimeSourcePenalty(source),
       reason: source.reason
@@ -272,6 +284,68 @@ function buildRuntimeReliabilityAdjustment(runtimeReliabilitySnapshot) {
     })),
     reason_codes: reasonCodes
   };
+}
+
+function buildDecisionBlockers({ action, longScore, shortScore, longThreshold, shortThreshold }) {
+  if (action === "long" || action === "short") {
+    return [];
+  }
+
+  const blockers = [];
+  const longGapTarget = shortScore + DIRECTION_GAP_MINIMUM;
+  const shortGapTarget = longScore + DIRECTION_GAP_MINIMUM;
+
+  if (longScore < longThreshold) {
+    blockers.push({
+      key: "long_below_threshold",
+      detail: "Long score is below the current market-regime threshold.",
+      value: round(longScore, 3),
+      threshold: round(longThreshold, 3),
+      gap: round(longThreshold - longScore, 3)
+    });
+  }
+
+  if (longScore < longGapTarget) {
+    blockers.push({
+      key: "long_direction_gap_too_small",
+      detail: "Long score does not exceed short score by the required decision gap.",
+      value: round(longScore, 3),
+      threshold: round(longGapTarget, 3),
+      gap: round(longGapTarget - longScore, 3)
+    });
+  }
+
+  if (shortScore < shortThreshold) {
+    blockers.push({
+      key: "short_below_threshold",
+      detail: "Short score is below the current market-regime threshold.",
+      value: round(shortScore, 3),
+      threshold: round(shortThreshold, 3),
+      gap: round(shortThreshold - shortScore, 3)
+    });
+  }
+
+  if (shortScore < shortGapTarget) {
+    blockers.push({
+      key: "short_direction_gap_too_small",
+      detail: "Short score does not exceed long score by the required decision gap.",
+      value: round(shortScore, 3),
+      threshold: round(shortGapTarget, 3),
+      gap: round(shortGapTarget - shortScore, 3)
+    });
+  }
+
+  if (Math.max(longScore, shortScore) < WATCH_SCORE_THRESHOLD) {
+    blockers.push({
+      key: "below_watch_threshold",
+      detail: "Best directional score is below the watch threshold.",
+      value: round(Math.max(longScore, shortScore), 3),
+      threshold: WATCH_SCORE_THRESHOLD,
+      gap: round(WATCH_SCORE_THRESHOLD - Math.max(longScore, shortScore), 3)
+    });
+  }
+
+  return blockers;
 }
 
 function computeSetup({
@@ -471,11 +545,11 @@ function computeSetup({
   const shortThreshold = Number(macroRegimeSnapshot?.short_threshold || 0.56);
   let action = "no_trade";
 
-  if (longScore >= longThreshold && longScore >= shortScore + 0.08) {
+  if (longScore >= longThreshold && longScore >= shortScore + DIRECTION_GAP_MINIMUM) {
     action = "long";
-  } else if (shortScore >= shortThreshold && shortScore >= longScore + 0.08) {
+  } else if (shortScore >= shortThreshold && shortScore >= longScore + DIRECTION_GAP_MINIMUM) {
     action = "short";
-  } else if (bestScore >= 0.38) {
+  } else if (bestScore >= WATCH_SCORE_THRESHOLD) {
     action = "watch";
   }
 
@@ -483,6 +557,7 @@ function computeSetup({
   const hasFundamentalSupport = screenStage === "eligible" && directionLabel !== "bearish_headwind";
   const tradePlan = pricePlan(action, currentPrice, conviction, beta);
   const setupLabelValue = setupLabel(action, longScore, shortScore, screenStage);
+  const decisionBlockers = buildDecisionBlockers({ action, longScore, shortScore, longThreshold, shortThreshold });
 
   return {
     ticker,
@@ -512,6 +587,17 @@ function computeSetup({
       raw_short: rawShortScore,
       runtime_multiplier: runtimeMultiplier
     },
+    decision_thresholds: {
+      long_threshold: round(longThreshold, 3),
+      short_threshold: round(shortThreshold, 3),
+      direction_gap_minimum: DIRECTION_GAP_MINIMUM,
+      watch_threshold: WATCH_SCORE_THRESHOLD,
+      best_score: bestScore,
+      score_gap: scoreGap,
+      long_missing_to_threshold: round(Math.max(0, longThreshold - longScore), 3),
+      short_missing_to_threshold: round(Math.max(0, shortThreshold - shortScore), 3)
+    },
+    decision_blockers: decisionBlockers,
     runtime_reliability: runtimeAdjustment,
     macro_regime: macroRegimeSnapshot
       ? {

@@ -4,6 +4,10 @@ function isTradable(action) {
   return action === "long" || action === "short";
 }
 
+function runtimeStatusNeedsConcern(status) {
+  return Boolean(status && !["healthy", "optimal"].includes(status));
+}
+
 function confidenceDeltaFromSetup(setup) {
   let delta = 0;
   const fundamentals = setup.fundamentals || {};
@@ -96,7 +100,7 @@ function summarizeConcerns(setup, llmAction) {
   if (!setup.recent_documents?.length) {
     concerns.push("limited recent ticker-level evidence");
   }
-  if (setup.runtime_reliability?.status && setup.runtime_reliability.status !== "healthy") {
+  if (runtimeStatusNeedsConcern(setup.runtime_reliability?.status)) {
     concerns.push(`runtime status is ${setup.runtime_reliability.status}`);
   }
 

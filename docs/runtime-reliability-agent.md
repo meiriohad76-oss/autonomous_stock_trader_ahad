@@ -30,7 +30,7 @@ Collectors and persistence
 Downstream components should use it as a guardrail:
 
 - dashboards show whether data is live, stale, fallback, unconfigured, disabled, or manual
-- trade setup logic reduces conviction when key sources are degraded, fallback, stale, unconfigured, disabled, or intentionally manual
+- trade setup logic reduces conviction when key sources are degraded, fallback, stale, unconfigured, or intentionally manual; intentionally disabled optional sources and active `polling` states stay visible but do not reduce conviction
 - deploy scripts can check whether the Pi is safe before enabling heavy collectors
 - future scheduler/orchestrator logic can use the `collector_plan`
 
@@ -176,7 +176,7 @@ For each setup, the agent calculates a runtime adjustment from:
 - runtime pressure: Pi performance mode, memory pressure, and load pressure
 - overall runtime status: optimal, caution, constrained, or degraded
 
-Storage-only sources are excluded from the trade penalty, because a disabled database changes durability, not current signal quality.
+Storage-only sources are excluded from the trade penalty, because a disabled database changes durability, not current signal quality. Planned optional sources that are disabled in `.env`, such as StockTwits or delayed trade prints, are also excluded from the trade penalty. A source that is currently `polling` is treated as in progress, not degraded.
 
 The final setup contains:
 
