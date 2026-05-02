@@ -205,17 +205,25 @@ export function createRiskAgent({ config, broker, getRuntimeReliability }) {
       };
     }
 
-    const [account, positions, orders] = await Promise.all([
+    const [accountResult, positionsResult, ordersResult] = await Promise.allSettled([
       broker.getAccount(),
       broker.getPositions(),
       broker.getOrders({ status: "open", limit: config.riskMaxOpenOrders + 10 })
     ]);
+    const errors = [accountResult, positionsResult, ordersResult]
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason?.message || String(result.reason));
 
     return {
-      account,
-      positions: Array.isArray(positions) ? positions : [],
-      orders: Array.isArray(orders) ? orders : [],
-      broker_status: status
+      account: accountResult.status === "fulfilled" ? accountResult.value : null,
+      positions: positionsResult.status === "fulfilled" && Array.isArray(positionsResult.value) ? positionsResult.value : [],
+      orders: ordersResult.status === "fulfilled" && Array.isArray(ordersResult.value) ? ordersResult.value : [],
+      broker_status: {
+        ...status,
+        degraded: errors.length > 0,
+        last_error: errors[0] || status.last_error || null,
+        errors
+      }
     };
   }
 

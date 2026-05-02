@@ -786,6 +786,12 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     const risk = await app.getRiskSnapshot();
     agent.output_summary = sanitize(risk);
     addCheck(agent, "risk_status", risk.status === "blocked" ? "fail" : "pass", risk.blocked_reason || `Risk status: ${risk.status || "ok"}.`);
+    addCheck(
+      agent,
+      "broker_read",
+      risk.broker?.degraded ? "warning" : "pass",
+      risk.broker?.degraded ? `Broker read degraded: ${risk.broker.last_error || "unknown error"}` : "Broker risk read completed or was not required."
+    );
   }
 
   if (agent.key === "execution") {
@@ -823,7 +829,16 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
       open_orders: (monitor.open_orders || []).slice(0, 10)
     });
     addCheck(agent, "portfolio_monitor", "pass", `${monitor.position_count || 0} position(s), ${monitor.open_order_count || 0} open order(s).`);
-    addCheck(agent, "broker_monitor", monitor.broker?.configured ? "pass" : "warning", monitor.broker?.configured ? "Broker monitor configured." : "Broker monitor is waiting for credentials/config.");
+    addCheck(
+      agent,
+      "broker_monitor",
+      monitor.broker?.degraded || !monitor.broker?.configured ? "warning" : "pass",
+      monitor.broker?.degraded
+        ? `Broker monitor degraded: ${monitor.broker.last_error || "unknown error"}`
+        : monitor.broker?.configured
+          ? "Broker monitor configured."
+          : "Broker monitor is waiting for credentials/config."
+    );
   }
 
   if (agent.key === "learning") {

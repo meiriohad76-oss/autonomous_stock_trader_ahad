@@ -221,17 +221,25 @@ export function createPositionMonitorAgent({ broker, getTradeSetups, getRiskSnap
       });
     }
 
-    const [account, positions, orders] = await Promise.all([
+    const [accountResult, positionsResult, ordersResult] = await Promise.allSettled([
       broker.getAccount(),
       broker.getPositions(),
       broker.getOrders({ status: "open", limit: 100 })
     ]);
+    const errors = [accountResult, positionsResult, ordersResult]
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason?.message || String(result.reason));
 
     return buildPositionMonitorSnapshot({
-      brokerStatus,
-      account,
-      positions: Array.isArray(positions) ? positions : [],
-      orders: Array.isArray(orders) ? orders : [],
+      brokerStatus: {
+        ...brokerStatus,
+        degraded: errors.length > 0,
+        last_error: errors[0] || brokerStatus.last_error || null,
+        errors
+      },
+      account: accountResult.status === "fulfilled" ? accountResult.value : null,
+      positions: positionsResult.status === "fulfilled" && Array.isArray(positionsResult.value) ? positionsResult.value : [],
+      orders: ordersResult.status === "fulfilled" && Array.isArray(ordersResult.value) ? ordersResult.value : [],
       tradeSetups,
       riskSnapshot,
       portfolioPolicy
