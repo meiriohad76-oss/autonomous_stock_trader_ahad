@@ -912,9 +912,9 @@ export function buildAgencyCycleStatus({
   const policyBaselineReady = Boolean(portfolioPolicy);
   const upstreamBaselineReady =
     universeBaselineReady && fundamentalsBaselineReady && marketBaselineReady && signalsBaselineReady && policyBaselineReady;
-  const deterministicBaselineReady = selectorRan && upstreamBaselineReady;
+  const deterministicBaselineReady = Boolean(selectorRan);
   const llmBaselineReady = Boolean(llmSelection) && deterministicBaselineReady;
-  const finalBaselineReady = Boolean(finalSelection) && deterministicBaselineReady;
+  const finalBaselineReady = Boolean(finalSelection) && deterministicBaselineReady && llmBaselineReady;
   const riskBaselineReady = Boolean(riskSnapshot);
   const executionBaselineReady = Boolean(broker.configured || broker.ready_for_order_submission);
   const portfolioBaselineReady = Boolean(positionMonitor && (broker.configured || positionCount || openOrderCount));
