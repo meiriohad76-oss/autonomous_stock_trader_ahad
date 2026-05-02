@@ -113,7 +113,7 @@ export const config = {
   seedDataOnEmpty: String(process.env.SEED_DATA_ON_EMPTY || "false").toLowerCase() === "true",
   seedDataInDecisions: String(process.env.SEED_DATA_IN_DECISIONS || "false").toLowerCase() === "true",
   liveNewsEnabled: String(process.env.LIVE_NEWS_ENABLED || "true").toLowerCase() !== "false",
-  liveNewsPollMs: envNumber("LIVE_NEWS_POLL_MS", 300000, 900000),
+  liveNewsPollMs: envNumber("LIVE_NEWS_POLL_MS", 900000, 900000),
   liveNewsMaxItemsPerTicker: envNumber("LIVE_NEWS_MAX_ITEMS_PER_TICKER", 3, 2),
   liveNewsLookbackHours: Number(process.env.LIVE_NEWS_LOOKBACK_HOURS || 24),
   liveNewsUniverseMode: process.env.LIVE_NEWS_UNIVERSE_MODE || "full",
