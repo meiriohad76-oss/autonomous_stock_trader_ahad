@@ -1,4 +1,10 @@
 import { clamp, fingerprint, round } from "../utils/helpers.js";
+import {
+  alpacaHeaders,
+  isLiveMarketProviderConfigured,
+  liveMarketDataStatus,
+  trimTrailingSlash
+} from "./market-providers.js";
 
 function deterministicUnit(value) {
   const hex = fingerprint(value).slice(0, 8);
@@ -32,6 +38,9 @@ function marketHealth(store, config) {
       last_error: null,
       cache_entries: 0,
       fallback_mode: config.fundamentalMarketDataProvider === "synthetic",
+      configured: isLiveMarketProviderConfigured(config, config.fundamentalMarketDataProvider),
+      feed: null,
+      missing_config_reason: null,
       last_batch_size: 0
     };
   }
@@ -41,10 +50,15 @@ function marketHealth(store, config) {
 
 function updateHealthSnapshot(store, config, cacheSize) {
   const health = marketHealth(store, config);
+  const providerStatus = liveMarketDataStatus(config, config.fundamentalMarketDataProvider);
   health.provider = config.fundamentalMarketDataProvider;
   health.enabled = config.fundamentalMarketDataProvider !== "synthetic";
   health.cache_entries = cacheSize;
-  health.fallback_mode = config.fundamentalMarketDataProvider === "synthetic" || !config.twelveDataApiKey;
+  health.configured = providerStatus.configured;
+  health.feed = providerStatus.feed;
+  health.fallback_mode = providerStatus.fallback_mode;
+  health.missing_config_reason = providerStatus.configured ? null : providerStatus.missing_config_reason;
+  health.decision_status = providerStatus.fallback_mode ? "fallback" : "partial_live";
   return health;
 }
 
@@ -145,6 +159,39 @@ async function fetchStatistics(config, ticker) {
   }
 }
 
+async function fetchAlpacaDailyBars(config, ticker) {
+  const params = new URLSearchParams({
+    timeframe: "1Day",
+    limit: "2",
+    adjustment: "raw",
+    sort: "asc",
+    feed: config.alpacaMarketDataFeed || "iex"
+  });
+  const request = withTimeout(config.fundamentalMarketDataRequestTimeoutMs);
+  const base = trimTrailingSlash(config.alpacaMarketDataBaseUrl || "https://data.alpaca.markets");
+
+  try {
+    const response = await fetch(`${base}/v2/stocks/${encodeURIComponent(ticker)}/bars?${params.toString()}`, {
+      signal: request.signal,
+      headers: alpacaHeaders(config)
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Alpaca daily bars request failed with ${response.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
+    }
+
+    const payload = await response.json();
+    if (!Array.isArray(payload.bars) || !payload.bars.length) {
+      throw new Error("Alpaca returned no daily bars");
+    }
+
+    return payload;
+  } finally {
+    request.clear();
+  }
+}
+
 function mapLiveReference(ticker, quotePayload, statsPayload, fallbackCompany) {
   const valuations = statsPayload?.statistics?.valuations_metrics || {};
   const financials = statsPayload?.statistics?.financials || {};
@@ -188,6 +235,46 @@ function mapLiveReference(ticker, quotePayload, statsPayload, fallbackCompany) {
   };
 }
 
+function mapAlpacaReference(ticker, barsPayload, fallbackCompany) {
+  const bars = Array.isArray(barsPayload?.bars) ? barsPayload.bars : [];
+  const latest = bars.at(-1) || {};
+  const previous = bars.at(-2) || {};
+  const fallbackMetrics = fallbackCompany?.metrics || {};
+  const currentPrice = asNumber(latest.c) ?? fallbackCompany?.market_reference?.current_price ?? null;
+  const previousClose = asNumber(previous.c) ?? asNumber(latest.o);
+  const absoluteChange = currentPrice !== null && previousClose !== null ? currentPrice - previousClose : null;
+  const percentChange =
+    currentPrice !== null && previousClose !== null
+      ? (currentPrice - previousClose) / Math.max(1, previousClose)
+      : null;
+
+  return {
+    ticker,
+    provider: "alpaca",
+    live: true,
+    partial_live: true,
+    as_of: latest.t ? new Date(latest.t).toISOString() : new Date().toISOString(),
+    current_price: currentPrice,
+    absolute_change: absoluteChange === null ? null : round(absoluteChange, 2),
+    percent_change: percentChange === null ? null : round(percentChange, 4),
+    market_cap: fallbackCompany?.market_reference?.market_cap ?? null,
+    enterprise_value: fallbackCompany?.market_reference?.enterprise_value ?? null,
+    shares_outstanding: fallbackCompany?.market_reference?.shares_outstanding ?? null,
+    beta: fallbackCompany?.market_reference?.beta ?? null,
+    trailing_pe: fallbackMetrics.pe_ttm ?? fallbackCompany?.market_reference?.trailing_pe ?? null,
+    price_to_sales_ttm: fallbackMetrics.price_to_sales_ttm ?? fallbackCompany?.market_reference?.price_to_sales_ttm ?? null,
+    enterprise_to_ebitda: fallbackMetrics.ev_to_ebitda_ttm ?? fallbackCompany?.market_reference?.enterprise_to_ebitda ?? null,
+    peg: fallbackMetrics.peg ?? fallbackCompany?.market_reference?.peg ?? null,
+    gross_margin: fallbackMetrics.gross_margin ?? fallbackCompany?.market_reference?.gross_margin ?? null,
+    operating_margin: fallbackMetrics.operating_margin ?? fallbackCompany?.market_reference?.operating_margin ?? null,
+    net_margin: fallbackMetrics.net_margin ?? fallbackCompany?.market_reference?.net_margin ?? null,
+    return_on_equity_ttm: fallbackMetrics.roe ?? fallbackCompany?.market_reference?.return_on_equity_ttm ?? null,
+    quarterly_revenue_growth: fallbackMetrics.revenue_growth_yoy ?? fallbackCompany?.market_reference?.quarterly_revenue_growth ?? null,
+    levered_free_cash_flow_ttm: fallbackCompany?.market_reference?.levered_free_cash_flow_ttm ?? null,
+    fcf_yield: fallbackMetrics.fcf_yield ?? fallbackCompany?.market_reference?.fcf_yield ?? null
+  };
+}
+
 export function createFundamentalMarketDataService({ config, store }) {
   const cache = new Map();
   let timer = null;
@@ -210,7 +297,7 @@ export function createFundamentalMarketDataService({ config, store }) {
       return cached.payload;
     }
 
-    if (config.fundamentalMarketDataProvider !== "twelvedata" || !config.twelveDataApiKey) {
+    if (!isLiveMarketProviderConfigured(config, config.fundamentalMarketDataProvider)) {
       const synthetic = buildSyntheticReference(company);
       cache.set(key, { fetchedAt: now, payload: synthetic });
       updateHealthSnapshot(store, config, cache.size);
@@ -221,6 +308,17 @@ export function createFundamentalMarketDataService({ config, store }) {
     health.last_poll_at = new Date().toISOString();
 
     try {
+      if (config.fundamentalMarketDataProvider === "alpaca") {
+        const barsPayload = await fetchAlpacaDailyBars(config, company.ticker);
+        const payload = mapAlpacaReference(company.ticker, barsPayload, company);
+        cache.set(key, { fetchedAt: now, payload });
+        health.last_success_at = new Date().toISOString();
+        health.last_error = null;
+        health.partial_error = "Alpaca market data updates price/change only; SEC and bootstrap metrics still provide fundamentals.";
+        updateHealthSnapshot(store, config, cache.size);
+        return payload;
+      }
+
       const quotePayload = await fetchQuote(config, company.ticker);
       let statsPayload = null;
       let partialError = null;

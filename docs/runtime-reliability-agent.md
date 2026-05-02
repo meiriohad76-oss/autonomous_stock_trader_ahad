@@ -74,10 +74,13 @@ When `AGENCY_AUTONOMOUS_DATA_ENABLED=true`, enabled live-data workers auto-start
 
 ## Autonomous Live Data
 
-The `autonomous_live` runtime profile is the default target once a Twelve Data key is available. It keeps lightweight JSON persistence for the Pi, starts live news, market data, market flow, earnings, SEC fundamentals, Form 4, 13F, and fundamental market-reference refreshes, and keeps broker submission guarded.
+The `alpaca_marketaux_live` runtime profile is the preferred low-budget target once Alpaca market-data credentials are available. It keeps lightweight JSON persistence for the Pi, starts linked news, Alpaca market data, market flow, earnings, SEC fundamentals, Form 4, 13F, and fundamental market-reference refreshes, and keeps broker submission guarded.
+
+The `autonomous_live` profile remains available for a Twelve Data-first setup. Use it when Twelve Data is the only configured pricing provider.
 
 Expected optional gaps:
 
+- `marketaux_news` is `unconfigured` until `MARKETAUX_API_KEY` is set. RSS fallback can still feed the Live News source.
 - `stocktwits_stream` is `unconfigured` until `STOCKTWITS_API_KEY` is set, because unauthenticated server requests are commonly blocked.
 - `trade_prints` is `unconfigured` until `POLYGON_API_KEY`, `IEX_API_KEY`, or `TRADE_PRINTS_API_KEY` is set.
 - Earnings use Yahoo with a crumb/cookie handshake by default. Twelve Data can be selected with `EARNINGS_PROVIDER=twelvedata`, but some earnings endpoints are plan-gated.
@@ -110,6 +113,7 @@ Supported payloads:
 { "action": "apply_profile", "profile": "emergency", "apply": false }
 { "action": "apply_profile", "profile": "live_news_only", "apply": true }
 { "action": "apply_profile", "profile": "autonomous_live", "apply": true }
+{ "action": "apply_profile", "profile": "alpaca_marketaux_live", "apply": true }
 { "action": "poll_once", "source": "live_news" }
 { "action": "poll_once", "source": "market_flow" }
 { "action": "poll_once", "source": "earnings_calendar" }

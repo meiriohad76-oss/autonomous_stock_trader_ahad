@@ -156,8 +156,9 @@ The endpoint returns:
 
 The agent does not fetch data directly. It evaluates evidence produced by the current collectors:
 
-- Google News RSS: ticker and company news.
-- Market-data provider: synthetic fallback or Twelve Data when configured.
+- Marketaux linked news: ticker/entity news with source URLs when configured.
+- Google News RSS and Yahoo Finance RSS: no-key ticker/company news fallbacks.
+- Market-data provider: Alpaca or Twelve Data when configured, with synthetic fallback.
 - Market Flow Monitor: abnormal volume and block-style tape anomaly events.
 - SEC Form 4 Collector: official insider transaction filings.
 - SEC 13F Collector: institutional holdings changes from tracked managers.

@@ -1,4 +1,9 @@
 import os from "node:os";
+import {
+  hasAlpacaMarketDataAccess,
+  isLiveMarketProviderConfigured,
+  marketProviderMissingConfigReason
+} from "./market-providers.js";
 import { differenceInHours, round } from "../utils/helpers.js";
 
 const HOUR_MS = 3_600_000;
@@ -15,7 +20,9 @@ export const RUNTIME_PROFILES = {
       SQLITE_BACKUP_ON_STARTUP: "false",
       AGENCY_AUTONOMOUS_DATA_ENABLED: "false",
       LIVE_NEWS_ENABLED: "false",
+      MARKETAUX_ENABLED: "false",
       MARKET_DATA_PROVIDER: "synthetic",
+      ALPACA_MARKET_DATA_ENABLED: "false",
       MARKET_FLOW_ENABLED: "false",
       AUTO_START_MARKET_FLOW: "false",
       EARNINGS_ENABLED: "false",
@@ -43,7 +50,9 @@ export const RUNTIME_PROFILES = {
       LIVE_NEWS_ENABLED: "true",
       LIVE_NEWS_POLL_MS: "900000",
       LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
+      MARKETAUX_ENABLED: "false",
       MARKET_DATA_PROVIDER: "synthetic",
+      ALPACA_MARKET_DATA_ENABLED: "false",
       MARKET_FLOW_ENABLED: "false",
       AUTO_START_MARKET_FLOW: "false",
       EARNINGS_ENABLED: "false",
@@ -71,7 +80,9 @@ export const RUNTIME_PROFILES = {
       LIVE_NEWS_ENABLED: "true",
       LIVE_NEWS_POLL_MS: "900000",
       LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
+      MARKETAUX_ENABLED: "false",
       MARKET_DATA_PROVIDER: "synthetic",
+      ALPACA_MARKET_DATA_ENABLED: "false",
       MARKET_DATA_REFRESH_MS: "300000",
       MARKET_FLOW_ENABLED: "true",
       AUTO_START_MARKET_FLOW: "false",
@@ -103,7 +114,10 @@ export const RUNTIME_PROFILES = {
       LIVE_NEWS_ENABLED: "true",
       LIVE_NEWS_POLL_MS: "600000",
       LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
+      MARKETAUX_ENABLED: "true",
+      MARKETAUX_SYMBOLS_PER_REQUEST: "20",
       MARKET_DATA_PROVIDER: "twelvedata",
+      ALPACA_MARKET_DATA_ENABLED: "true",
       MARKET_DATA_REFRESH_MS: "300000",
       MARKET_FLOW_ENABLED: "true",
       AUTO_START_MARKET_FLOW: "true",
@@ -130,6 +144,50 @@ export const RUNTIME_PROFILES = {
       SEC_REQUEST_RETRIES: "1"
     }
   },
+  alpaca_marketaux_live: {
+    label: "Alpaca + Marketaux Live",
+    description: "Low-budget agent-ready mode. Uses Alpaca market data for bars/flow and Marketaux for linked news while keeping paper submission supervised.",
+    env: {
+      PI_PERFORMANCE_MODE: "false",
+      DATABASE_ENABLED: "false",
+      LIGHTWEIGHT_STATE_ENABLED: "true",
+      SQLITE_BACKUP_ENABLED: "false",
+      SQLITE_BACKUP_ON_STARTUP: "false",
+      AGENCY_AUTONOMOUS_DATA_ENABLED: "true",
+      LIVE_NEWS_ENABLED: "true",
+      LIVE_NEWS_POLL_MS: "600000",
+      LIVE_NEWS_MAX_ITEMS_PER_TICKER: "2",
+      MARKETAUX_ENABLED: "true",
+      MARKETAUX_SYMBOLS_PER_REQUEST: "20",
+      MARKET_DATA_PROVIDER: "alpaca",
+      ALPACA_MARKET_DATA_ENABLED: "true",
+      ALPACA_MARKET_DATA_FEED: "iex",
+      MARKET_DATA_REFRESH_MS: "300000",
+      MARKET_FLOW_ENABLED: "true",
+      AUTO_START_MARKET_FLOW: "true",
+      MARKET_FLOW_POLL_MS: "300000",
+      EARNINGS_ENABLED: "true",
+      EARNINGS_PROVIDER: "yahoo",
+      EARNINGS_MAX_TICKERS_PER_POLL: "9",
+      EARNINGS_POLL_MS: "14400000",
+      STOCKTWITS_ENABLED: "false",
+      STOCKTWITS_POLL_MS: "900000",
+      TRADE_PRINTS_ENABLED: "false",
+      TRADE_PRINTS_PROVIDER: "polygon",
+      TRADE_PRINTS_POLL_MS: "300000",
+      FUNDAMENTAL_MARKET_DATA_PROVIDER: "alpaca",
+      AUTO_START_FUNDAMENTAL_MARKET_DATA: "true",
+      FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL: "12",
+      FUNDAMENTAL_SEC_ENABLED: "true",
+      AUTO_START_SEC_FUNDAMENTALS: "true",
+      FUNDAMENTAL_SEC_CONCURRENCY: "1",
+      FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL: "8",
+      SEC_FORM4_ENABLED: "true",
+      SEC_13F_ENABLED: "true",
+      AUTO_START_SEC_13F: "true",
+      SEC_REQUEST_RETRIES: "1"
+    }
+  },
   full_live: {
     label: "Full Live",
     description: "Maximum live coverage. Use only after the Pi is stable or persistence/collectors are moved off-Pi.",
@@ -142,7 +200,10 @@ export const RUNTIME_PROFILES = {
       AGENCY_AUTONOMOUS_DATA_ENABLED: "true",
       LIVE_NEWS_ENABLED: "true",
       LIVE_NEWS_POLL_MS: "300000",
+      MARKETAUX_ENABLED: "true",
+      MARKETAUX_SYMBOLS_PER_REQUEST: "20",
       MARKET_DATA_PROVIDER: "twelvedata",
+      ALPACA_MARKET_DATA_ENABLED: "true",
       MARKET_DATA_REFRESH_MS: "60000",
       MARKET_FLOW_ENABLED: "true",
       AUTO_START_MARKET_FLOW: "true",
@@ -180,7 +241,11 @@ const PROFILE_CONFIG_READERS = {
   LIVE_NEWS_ENABLED: (config) => config.liveNewsEnabled,
   LIVE_NEWS_POLL_MS: (config) => config.liveNewsPollMs,
   LIVE_NEWS_MAX_ITEMS_PER_TICKER: (config) => config.liveNewsMaxItemsPerTicker,
+  MARKETAUX_ENABLED: (config) => config.marketauxEnabled,
+  MARKETAUX_SYMBOLS_PER_REQUEST: (config) => config.marketauxSymbolsPerRequest,
   MARKET_DATA_PROVIDER: (config) => config.marketDataProvider,
+  ALPACA_MARKET_DATA_ENABLED: (config) => config.alpacaMarketDataEnabled,
+  ALPACA_MARKET_DATA_FEED: (config) => config.alpacaMarketDataFeed,
   MARKET_DATA_REFRESH_MS: (config) => config.marketDataRefreshMs,
   MARKET_FLOW_ENABLED: (config) => config.marketFlowEnabled,
   AUTO_START_MARKET_FLOW: (config) => config.autoStartMarketFlow,
@@ -213,10 +278,6 @@ function enabledLabel(enabled) {
 
 function dataAutoStart(config, enabled, explicitAutoStart = true) {
   return Boolean(enabled && (config.autonomousDataEnabled || explicitAutoStart));
-}
-
-function hasTwelveData(config) {
-  return Boolean(config.twelveDataApiKey);
 }
 
 function hasEarningsAccess(config) {
@@ -252,30 +313,44 @@ function sourceSpecs(config) {
       autoStart: config.liveNewsEnabled,
       intervalMs: config.liveNewsPollMs,
       criticality: "high",
-      notes: "Feeds the sentiment engine with Google/Yahoo RSS headlines."
+      notes: "Feeds the sentiment engine with Marketaux when configured, then Google/Yahoo RSS fallbacks."
+    },
+    {
+      key: "marketaux_news",
+      label: "Marketaux Linked News",
+      category: "news",
+      enabled: config.liveNewsEnabled && config.marketauxEnabled,
+      autoStart: config.liveNewsEnabled && config.marketauxEnabled,
+      intervalMs: config.liveNewsPollMs,
+      criticality: "medium",
+      configured: Boolean(config.marketauxApiKey),
+      missingConfigReason: "MARKETAUX_API_KEY is required for Marketaux linked market news.",
+      notes: "Adds source-linked market news, entity matching, and sentiment fields before RSS fallback."
     },
     {
       key: "market_data",
       label: "Market Data",
       category: "prices",
+      provider: config.marketDataProvider,
       enabled: true,
       autoStart: true,
       intervalMs: config.marketDataRefreshMs,
       criticality: "high",
-      configured: config.marketDataProvider === "synthetic" || hasTwelveData(config),
-      missingConfigReason: "TWELVE_DATA_API_KEY is required for live Twelve Data pricing.",
+      configured: isLiveMarketProviderConfigured(config, config.marketDataProvider),
+      missingConfigReason: marketProviderMissingConfigReason(config.marketDataProvider, "Live pricing"),
       notes: `Ticker charts and market snapshots use ${config.marketDataProvider}.`
     },
     {
       key: "market_flow",
       label: "Market Flow",
       category: "money_flow",
+      provider: config.marketDataProvider,
       enabled: config.marketFlowEnabled,
       autoStart: dataAutoStart(config, config.marketFlowEnabled, config.autoStartMarketFlow),
       intervalMs: config.marketFlowPollMs,
       criticality: "medium",
-      configured: config.marketDataProvider !== "twelvedata" || hasTwelveData(config),
-      missingConfigReason: "Market Flow needs live market bars. Set TWELVE_DATA_API_KEY and MARKET_DATA_PROVIDER=twelvedata.",
+      configured: config.marketDataProvider !== "synthetic" && isLiveMarketProviderConfigured(config, config.marketDataProvider),
+      missingConfigReason: marketProviderMissingConfigReason(config.marketDataProvider, "Market Flow") || "Market Flow needs MARKET_DATA_PROVIDER=alpaca or twelvedata.",
       notes: "Turns abnormal volume and price shocks into money-flow events."
     },
     {
@@ -320,12 +395,13 @@ function sourceSpecs(config) {
       key: "fundamental_market_data",
       label: "Fundamental Market Reference",
       category: "fundamentals",
+      provider: config.fundamentalMarketDataProvider,
       enabled: true,
       autoStart: dataAutoStart(config, true, config.autoStartFundamentalMarketData),
       intervalMs: config.fundamentalMarketDataRefreshMs,
       criticality: "medium",
-      configured: config.fundamentalMarketDataProvider === "synthetic" || hasTwelveData(config),
-      missingConfigReason: "Live fundamental market reference needs TWELVE_DATA_API_KEY and FUNDAMENTAL_MARKET_DATA_PROVIDER=twelvedata.",
+      configured: isLiveMarketProviderConfigured(config, config.fundamentalMarketDataProvider),
+      missingConfigReason: marketProviderMissingConfigReason(config.fundamentalMarketDataProvider, "Live fundamental market reference"),
       notes: `Valuation/reference fields use ${config.fundamentalMarketDataProvider} in batches of ${config.fundamentalMarketDataMaxCompaniesPerPoll || "all"}.`
     },
     {
@@ -395,9 +471,10 @@ function classifySource(spec, health, pressure) {
   const lastError = errorMessage(health);
   const ageHours = lastSuccessAt ? differenceInHours(lastSuccessAt) : null;
   const staleAfterHours = Math.max(1, round(((spec.intervalMs || HOUR_MS) * 2.5) / HOUR_MS, 2));
+  const providerName = String(health?.provider || spec.provider || "");
   const hasLiveProvider =
-    !["market_data", "fundamental_market_data"].includes(spec.key) ||
-    !String(health?.provider || "").includes("synthetic");
+    !["market_data", "market_flow", "fundamental_market_data"].includes(spec.key) ||
+    (providerName && !providerName.includes("synthetic") && !health?.fallback_mode);
 
   if (!spec.enabled) {
     return {
@@ -763,6 +840,8 @@ function buildRuntimeProfiles(config, pressure) {
     recommended = "emergency";
   } else if (!config.databaseEnabled && config.liveNewsEnabled && !config.marketFlowEnabled && !config.secForm4Enabled) {
     recommended = "live_news_only";
+  } else if (hasAlpacaMarketDataAccess(config) && !config.databaseEnabled) {
+    recommended = "alpaca_marketaux_live";
   } else if (config.twelveDataApiKey && !config.databaseEnabled) {
     recommended = "autonomous_live";
   } else if (!pressure.isConstrained && config.databaseEnabled) {
@@ -817,7 +896,7 @@ export function createRuntimeReliabilityAgent({ config, store }) {
         severity: classification.severity,
         reason: classification.reason,
         notes: spec.notes,
-        provider: health.provider || null,
+        provider: health.provider || spec.provider || null,
         polling: Boolean(health.polling),
         last_poll_at: health.last_poll_at || null,
         last_success_at: lastSuccessAt,

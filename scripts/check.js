@@ -11,7 +11,8 @@ const {
   getFundamentalPersistenceFilings,
   materializeFundamentalPersistence
 } = await import("../src/domain/fundamental-persistence.js");
-const { createLiveNewsCollector, parseGoogleNewsRss } = await import("../src/domain/live-news.js");
+const { createLiveNewsCollector, mapMarketauxArticles, parseGoogleNewsRss } = await import("../src/domain/live-news.js");
+const { createMarketDataService } = await import("../src/domain/market-data.js");
 const { detectMarketFlowSignal } = await import("../src/domain/market-flow.js");
 const {
   computeLiveMetricsFromCompanyFacts,
@@ -76,6 +77,28 @@ if (yahooRssItems.length !== 1 || !yahooRssItems[0].title || !yahooRssItems[0].l
   throw new Error("RSS parser failed to extract a valid Yahoo Finance fallback item.");
 }
 
+const marketauxMapped = mapMarketauxArticles(
+  {
+    data: [
+      {
+        uuid: "marketaux-aapl-1",
+        title: "Apple supplier checks improve",
+        description: "Apple supplier checks improved into the quarter.",
+        url: "https://example.com/marketaux-aapl",
+        published_at: "2026-04-25T14:00:00Z",
+        source: "Example Market Wire",
+        sentiment_score: 0.42,
+        entities: [{ symbol: "AAPL", name: "Apple Inc.", sentiment_score: 0.44, match_score: 0.96 }]
+      }
+    ]
+  },
+  [{ ticker: "AAPL", company: "Apple", sector: "Technology" }]
+);
+
+if (marketauxMapped.length !== 1 || marketauxMapped[0].items[0].link !== "https://example.com/marketaux-aapl") {
+  throw new Error("Marketaux mapper failed to preserve linked article evidence.");
+}
+
 const originalFetch = globalThis.fetch;
 const fallbackDocuments = [];
 globalThis.fetch = async (url) => {
@@ -127,6 +150,143 @@ try {
   const fallbackResult = await fallbackCollector.pollOnce();
   if (!fallbackResult.ingested || !fallbackDocuments.every((item) => item.source_name === "yahoo_finance")) {
     throw new Error("Live news fallback failed to ingest Yahoo Finance RSS items when Google News failed.");
+  }
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
+const marketauxDocuments = [];
+globalThis.fetch = async (url) => {
+  if (String(url).includes("marketaux")) {
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          data: [
+            {
+              uuid: "marketaux-live-aapl",
+              title: "Marketaux live headline for AAPL",
+              description: "Linked Marketaux test headline.",
+              url: "https://example.com/marketaux-live-aapl",
+              published_at: new Date().toISOString(),
+              source: "Marketaux Test",
+              sentiment_score: 0.31,
+              entities: [{ symbol: "AAPL", sentiment_score: 0.33, match_score: 0.91 }]
+            }
+          ]
+        });
+      }
+    };
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    async text() {
+      return `
+        <rss>
+          <channel>
+            <item>
+              <title>RSS fallback headline</title>
+              <link>https://finance.yahoo.com/news/rss-fallback</link>
+              <guid>${url}</guid>
+              <description>Fallback item from RSS.</description>
+              <pubDate>${new Date().toUTCString()}</pubDate>
+            </item>
+          </channel>
+        </rss>
+      `;
+    }
+  };
+};
+
+try {
+  const marketauxCollector = createLiveNewsCollector({
+    config: {
+      liveNewsEnabled: true,
+      liveNewsRequestTimeoutMs: 100,
+      liveNewsRequestRetries: 0,
+      liveNewsMaxItemsPerTicker: 1,
+      liveNewsLookbackHours: 24,
+      liveNewsPollMs: 60000,
+      marketauxEnabled: true,
+      marketauxApiKey: "test",
+      marketauxBaseUrl: "https://api.marketaux.com/v1/news/all",
+      marketauxMaxItemsPerTicker: 1,
+      marketauxSymbolsPerRequest: 20,
+      marketauxRequestTimeoutMs: 100,
+      marketauxRequestRetries: 0
+    },
+    store: {
+      health: { liveSources: {} },
+      seenExternalDocuments: new Set()
+    },
+    pipeline: {
+      async processRawDocument(raw) {
+        marketauxDocuments.push(raw);
+      }
+    }
+  });
+  const marketauxResult = await marketauxCollector.pollOnce();
+  if (
+    !marketauxResult.ingested ||
+    !marketauxDocuments.some((item) => item.source_name === "marketaux" && item.url === "https://example.com/marketaux-live-aapl")
+  ) {
+    throw new Error("Live news collector failed to ingest linked Marketaux items before RSS fallback.");
+  }
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
+const alpacaMarketStore = { health: { liveSources: {} }, bus: { emit() {} } };
+globalThis.fetch = async (url) => {
+  if (!String(url).includes("data.alpaca.markets")) {
+    throw new Error(`Unexpected mock market data URL: ${url}`);
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        bars: Array.from({ length: 8 }, (_, index) => ({
+          t: new Date(Date.UTC(2026, 3, 25, 14, index * 15)).toISOString(),
+          o: 100 + index,
+          h: 101 + index,
+          l: 99 + index,
+          c: 100.5 + index,
+          v: 1_000_000 + index * 100_000
+        }))
+      };
+    }
+  };
+};
+
+try {
+  const marketDataService = createMarketDataService({
+    config: {
+      marketDataProvider: "alpaca",
+      marketDataInterval: "15min",
+      marketDataHistoryPoints: 8,
+      marketDataCacheMs: 0,
+      marketDataRefreshMs: 60000,
+      marketDataRequestTimeoutMs: 100,
+      alpacaMarketDataEnabled: true,
+      alpacaMarketDataApiKeyId: "test",
+      alpacaMarketDataApiSecretKey: "test",
+      alpacaMarketDataBaseUrl: "https://data.alpaca.markets",
+      alpacaMarketDataFeed: "iex"
+    },
+    store: alpacaMarketStore
+  });
+  const alpacaSeries = await marketDataService.getTickerSeries("AAPL", [], new Date().toISOString());
+  if (
+    alpacaSeries.bar_history.length !== 8 ||
+    alpacaMarketStore.health.liveSources.market_data.provider !== "alpaca" ||
+    alpacaMarketStore.health.liveSources.market_data.fallback_mode
+  ) {
+    throw new Error("Alpaca market-data adapter did not produce live bar history.");
   }
 } finally {
   globalThis.fetch = originalFetch;
@@ -510,7 +670,10 @@ console.log(
       parsed_files: filesToParse.length,
       rss_items_parsed: rssItems.length,
       yahoo_rss_items_parsed: yahooRssItems.length,
+      marketaux_items_mapped: marketauxMapped.length,
       yahoo_fallback_documents: fallbackDocuments.length,
+      marketaux_documents: marketauxDocuments.filter((item) => item.source_name === "marketaux").length,
+      alpaca_bar_history: alpacaMarketStore.health.liveSources.market_data.cache_entries ? 8 : 0,
       insider_transactions_parsed: insiderForm.transactions.length,
       institutional_rows_parsed: institutionalTable.length,
       market_flow_signal: flowSignal.eventType,

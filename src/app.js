@@ -18,6 +18,7 @@ import {
 import { createLiveNewsCollector } from "./domain/live-news.js";
 import { createMarketDataService } from "./domain/market-data.js";
 import { createMarketFlowMonitor } from "./domain/market-flow.js";
+import { isLiveMarketProviderConfigured } from "./domain/market-providers.js";
 import { createPersistence } from "./domain/persistence.js";
 import { createPipeline } from "./domain/pipeline.js";
 import { replaySampleEvents } from "./domain/replay.js";
@@ -473,7 +474,11 @@ const RUNTIME_PROFILE_CONFIG_FIELDS = {
   LIVE_NEWS_ENABLED: { key: "liveNewsEnabled", type: "boolean" },
   LIVE_NEWS_POLL_MS: { key: "liveNewsPollMs", type: "number" },
   LIVE_NEWS_MAX_ITEMS_PER_TICKER: { key: "liveNewsMaxItemsPerTicker", type: "number" },
+  MARKETAUX_ENABLED: { key: "marketauxEnabled", type: "boolean" },
+  MARKETAUX_SYMBOLS_PER_REQUEST: { key: "marketauxSymbolsPerRequest", type: "number" },
   MARKET_DATA_PROVIDER: { key: "marketDataProvider", type: "string" },
+  ALPACA_MARKET_DATA_ENABLED: { key: "alpacaMarketDataEnabled", type: "boolean" },
+  ALPACA_MARKET_DATA_FEED: { key: "alpacaMarketDataFeed", type: "string" },
   MARKET_DATA_REFRESH_MS: { key: "marketDataRefreshMs", type: "number" },
   MARKET_FLOW_ENABLED: { key: "marketFlowEnabled", type: "boolean" },
   AUTO_START_MARKET_FLOW: { key: "autoStartMarketFlow", type: "boolean" },
@@ -1214,8 +1219,14 @@ export function createSentimentApp() {
         seed_data_on_empty: config.seedDataOnEmpty,
         seed_data_in_decisions: config.seedDataInDecisions,
         live_news_enabled: config.liveNewsEnabled,
+        marketaux_enabled: config.marketauxEnabled,
+        marketaux_configured: Boolean(config.marketauxApiKey),
+        marketaux_symbols_per_request: config.marketauxSymbolsPerRequest,
         autonomous_data_enabled: config.autonomousDataEnabled,
         market_data_provider: config.marketDataProvider,
+        alpaca_market_data_enabled: config.alpacaMarketDataEnabled,
+        alpaca_market_data_configured: Boolean(config.alpacaMarketDataApiKeyId && config.alpacaMarketDataApiSecretKey),
+        alpaca_market_data_feed: config.alpacaMarketDataFeed,
         market_flow_enabled: config.marketFlowEnabled,
         auto_start_market_flow: config.autoStartMarketFlow,
         market_flow_settings: readMarketFlowSettings(config),
@@ -2208,7 +2219,8 @@ export function createSentimentApp() {
     }
 
     const fundamentalMarketConfigured =
-      config.fundamentalMarketDataProvider !== "twelvedata" || Boolean(config.twelveDataApiKey);
+      config.fundamentalMarketDataProvider === "synthetic" ||
+      isLiveMarketProviderConfigured(config, config.fundamentalMarketDataProvider);
     if ((config.autoStartFundamentalMarketData || autonomous) && fundamentalMarketConfigured) {
       starts.push(fundamentalMarketDataService.start({
         getCompanies: () => fundamentals.getTrackedCompanies(),

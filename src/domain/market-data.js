@@ -1,4 +1,11 @@
 import { TICKER_LOOKUP, WINDOWS } from "./taxonomy.js";
+import {
+  alpacaHeaders,
+  isLiveMarketProviderConfigured,
+  liveMarketDataStatus,
+  normalizeAlpacaTimeframe,
+  trimTrailingSlash
+} from "./market-providers.js";
 import { clamp, fingerprint, round } from "../utils/helpers.js";
 
 function deterministicUnit(value) {
@@ -27,7 +34,10 @@ function marketHealth(store, config) {
       last_success_at: null,
       last_error: null,
       cache_entries: 0,
-      fallback_mode: config.marketDataProvider === "synthetic"
+      fallback_mode: config.marketDataProvider === "synthetic",
+      configured: isLiveMarketProviderConfigured(config, config.marketDataProvider),
+      feed: null,
+      missing_config_reason: null
     };
   }
 
@@ -196,6 +206,39 @@ async function fetchTwelveDataSeries(config, ticker) {
   }
 }
 
+async function fetchAlpacaSeries(config, ticker) {
+  const params = new URLSearchParams({
+    timeframe: normalizeAlpacaTimeframe(config.marketDataInterval),
+    limit: String(config.marketDataHistoryPoints),
+    adjustment: "raw",
+    sort: "asc",
+    feed: config.alpacaMarketDataFeed || "iex"
+  });
+  const request = withTimeout(config.marketDataRequestTimeoutMs);
+  const base = trimTrailingSlash(config.alpacaMarketDataBaseUrl || "https://data.alpaca.markets");
+
+  try {
+    const response = await fetch(`${base}/v2/stocks/${encodeURIComponent(ticker)}/bars?${params.toString()}`, {
+      signal: request.signal,
+      headers: alpacaHeaders(config)
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Alpaca bars request failed with ${response.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
+    }
+
+    const payload = await response.json();
+    if (!Array.isArray(payload.bars) || !payload.bars.length) {
+      throw new Error("Alpaca returned no price bars");
+    }
+
+    return payload;
+  } finally {
+    request.clear();
+  }
+}
+
 function mapTwelveDataSeries(payload, scoredDocs) {
   const values = payload.values.map((point) => ({
     timestamp: parseSeriesTimestamp(point.datetime),
@@ -231,6 +274,41 @@ function mapTwelveDataSeries(payload, scoredDocs) {
   })));
 }
 
+function mapAlpacaSeries(payload, scoredDocs, config) {
+  const values = payload.bars.map((point) => ({
+    timestamp: parseSeriesTimestamp(point.t),
+    open: Number(point.o),
+    high: Number(point.h),
+    low: Number(point.l),
+    close: Number(point.c),
+    volume: Number(point.v || 0)
+  }));
+
+  const sentimentHistory = values.map((point) => {
+    const signal = buildSeriesSignal(scoredDocs, new Date(point.timestamp));
+    return {
+      timestamp: point.timestamp,
+      sentiment: round(signal.sentiment, 4),
+      confidence: round(signal.confidence, 4)
+    };
+  });
+
+  const priceHistory = values.map((point) => ({
+    timestamp: point.timestamp,
+    price: round(point.close, 2)
+  }));
+
+  const baselineWindow = WINDOWS.find((window) => window.key === "1d")?.label || normalizeAlpacaTimeframe(config.marketDataInterval);
+  return buildSeriesPayload(priceHistory, sentimentHistory, baselineWindow, values.map((point) => ({
+    timestamp: point.timestamp,
+    open: round(point.open, 2),
+    high: round(point.high, 2),
+    low: round(point.low, 2),
+    close: round(point.close, 2),
+    volume: Math.round(point.volume || 0)
+  })));
+}
+
 export function createMarketDataService({ config, store }) {
   const cache = new Map();
   let timer = null;
@@ -238,10 +316,15 @@ export function createMarketDataService({ config, store }) {
 
   function updateHealthFromCache() {
     const health = marketHealth(store, config);
+    const providerStatus = liveMarketDataStatus(config, config.marketDataProvider);
     health.cache_entries = cache.size;
     health.provider = config.marketDataProvider;
     health.enabled = config.marketDataProvider !== "synthetic";
-    health.fallback_mode = config.marketDataProvider === "synthetic" || !config.twelveDataApiKey;
+    health.configured = providerStatus.configured;
+    health.feed = providerStatus.feed;
+    health.fallback_mode = providerStatus.fallback_mode;
+    health.missing_config_reason = providerStatus.configured ? null : providerStatus.missing_config_reason;
+    health.decision_status = providerStatus.fallback_mode ? "fallback" : "live";
     return health;
   }
 
@@ -255,7 +338,7 @@ export function createMarketDataService({ config, store }) {
       return cached.payload;
     }
 
-    if (config.marketDataProvider !== "twelvedata" || !config.twelveDataApiKey) {
+    if (!isLiveMarketProviderConfigured(config, config.marketDataProvider)) {
       const payload = buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints);
       cache.set(cacheKey, { fetchedAt: now, payload });
       updateHealthFromCache();
@@ -266,8 +349,14 @@ export function createMarketDataService({ config, store }) {
     health.last_poll_at = new Date().toISOString();
 
     try {
-      const rawPayload = await fetchTwelveDataSeries(config, ticker);
-      const payload = mapTwelveDataSeries(rawPayload, scoredDocs);
+      const rawPayload =
+        config.marketDataProvider === "alpaca"
+          ? await fetchAlpacaSeries(config, ticker)
+          : await fetchTwelveDataSeries(config, ticker);
+      const payload =
+        config.marketDataProvider === "alpaca"
+          ? mapAlpacaSeries(rawPayload, scoredDocs, config)
+          : mapTwelveDataSeries(rawPayload, scoredDocs);
       cache.set(cacheKey, { fetchedAt: now, payload });
       health.last_success_at = new Date().toISOString();
       health.last_error = null;

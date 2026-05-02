@@ -62,13 +62,28 @@ function envBoolean(name, fallback, piFallback = fallback) {
 
 const autonomousDataEnabled = envBoolean("AGENCY_AUTONOMOUS_DATA_ENABLED", "true", "true");
 const hasTwelveDataKey = Boolean(process.env.TWELVE_DATA_API_KEY);
+const hasAlpacaMarketDataKey = Boolean(
+  (process.env.ALPACA_MARKET_DATA_API_KEY_ID || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) &&
+    (process.env.ALPACA_MARKET_DATA_API_SECRET_KEY ||
+      process.env.ALPACA_API_SECRET_KEY ||
+      process.env.ALPACA_SECRET_KEY)
+);
+const alpacaMarketDataEnabled =
+  String(process.env.ALPACA_MARKET_DATA_ENABLED || (hasAlpacaMarketDataKey ? "true" : "false")).toLowerCase() !==
+  "false";
+const marketauxEnabled =
+  String(process.env.MARKETAUX_ENABLED || (process.env.MARKETAUX_API_KEY ? "true" : "false")).toLowerCase() !==
+  "false";
 
-function marketProvider(envName) {
+function marketProvider(envName, { allowAlpaca = true } = {}) {
   const requested = process.env[envName];
+  if (autonomousDataEnabled && allowAlpaca && alpacaMarketDataEnabled && hasAlpacaMarketDataKey && (!requested || requested === "synthetic")) {
+    return "alpaca";
+  }
   if (autonomousDataEnabled && hasTwelveDataKey && (!requested || requested === "synthetic")) {
     return "twelvedata";
   }
-  return requested || (hasTwelveDataKey ? "twelvedata" : "synthetic");
+  return requested || (allowAlpaca && alpacaMarketDataEnabled && hasAlpacaMarketDataKey ? "alpaca" : hasTwelveDataKey ? "twelvedata" : "synthetic");
 }
 
 export const config = {
@@ -103,6 +118,13 @@ export const config = {
   liveNewsLookbackHours: Number(process.env.LIVE_NEWS_LOOKBACK_HOURS || 24),
   liveNewsRequestTimeoutMs: Number(process.env.LIVE_NEWS_REQUEST_TIMEOUT_MS || 12000),
   liveNewsRequestRetries: envNumber("LIVE_NEWS_REQUEST_RETRIES", 1, 0),
+  marketauxEnabled,
+  marketauxApiKey: process.env.MARKETAUX_API_KEY || "",
+  marketauxBaseUrl: process.env.MARKETAUX_BASE_URL || "https://api.marketaux.com/v1/news/all",
+  marketauxMaxItemsPerTicker: envNumber("MARKETAUX_MAX_ITEMS_PER_TICKER", 3, 2),
+  marketauxSymbolsPerRequest: envNumber("MARKETAUX_SYMBOLS_PER_REQUEST", 20, 10),
+  marketauxRequestTimeoutMs: Number(process.env.MARKETAUX_REQUEST_TIMEOUT_MS || 12000),
+  marketauxRequestRetries: envNumber("MARKETAUX_REQUEST_RETRIES", 1, 0),
   autonomousDataEnabled,
   marketDataProvider: marketProvider("MARKET_DATA_PROVIDER"),
   marketDataInterval: process.env.MARKET_DATA_INTERVAL || "15min",
@@ -111,6 +133,19 @@ export const config = {
   marketDataRefreshMs: envNumber("MARKET_DATA_REFRESH_MS", 60000, 300000),
   marketDataRequestTimeoutMs: Number(process.env.MARKET_DATA_REQUEST_TIMEOUT_MS || 12000),
   twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || "",
+  alpacaMarketDataEnabled,
+  alpacaMarketDataApiKeyId:
+    process.env.ALPACA_MARKET_DATA_API_KEY_ID ||
+    process.env.ALPACA_API_KEY_ID ||
+    process.env.ALPACA_API_KEY ||
+    "",
+  alpacaMarketDataApiSecretKey:
+    process.env.ALPACA_MARKET_DATA_API_SECRET_KEY ||
+    process.env.ALPACA_API_SECRET_KEY ||
+    process.env.ALPACA_SECRET_KEY ||
+    "",
+  alpacaMarketDataBaseUrl: process.env.ALPACA_MARKET_DATA_BASE_URL || "https://data.alpaca.markets",
+  alpacaMarketDataFeed: process.env.ALPACA_MARKET_DATA_FEED || "iex",
   marketFlowEnabled: String(process.env.MARKET_FLOW_ENABLED || "true").toLowerCase() !== "false",
   autoStartMarketFlow: envBoolean("AUTO_START_MARKET_FLOW", "true", "false"),
   marketFlowPollMs: envNumber("MARKET_FLOW_POLL_MS", 60000, 300000),
@@ -157,8 +192,8 @@ export const config = {
   brokerTradingMode: process.env.BROKER_TRADING_MODE || "paper",
   brokerSubmitEnabled: String(process.env.BROKER_SUBMIT_ENABLED || "false").toLowerCase() === "true",
   brokerRequestTimeoutMs: Number(process.env.BROKER_REQUEST_TIMEOUT_MS || 12000),
-  alpacaApiKeyId: process.env.ALPACA_API_KEY_ID || "",
-  alpacaApiSecretKey: process.env.ALPACA_API_SECRET_KEY || "",
+  alpacaApiKeyId: process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY || "",
+  alpacaApiSecretKey: process.env.ALPACA_API_SECRET_KEY || process.env.ALPACA_SECRET_KEY || "",
   alpacaPaperBaseUrl: process.env.ALPACA_PAPER_BASE_URL || "https://paper-api.alpaca.markets",
   alpacaLiveBaseUrl: process.env.ALPACA_LIVE_BASE_URL || "https://api.alpaca.markets",
   alpacaAllowLiveTrading: String(process.env.ALPACA_ALLOW_LIVE_TRADING || "false").toLowerCase() === "true",

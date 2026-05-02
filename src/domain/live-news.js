@@ -1,6 +1,6 @@
 import { WATCHLIST } from "./taxonomy.js";
 import { dedupeKey, normalizeWhitespace } from "../utils/helpers.js";
-import { fetchTextWithRetry } from "../utils/http.js";
+import { fetchJsonWithRetry, fetchTextWithRetry } from "../utils/http.js";
 
 function decodeHtmlEntities(value) {
   return String(value || "")
@@ -76,7 +76,13 @@ function buildRawDocument(entry, item, provider) {
       sector_hint: entry.sector,
       collector: provider.collector,
       upstream_source: item.source || provider.label,
-      query: provider.query || createTickerQuery(entry)
+      query: provider.query || createTickerQuery(entry),
+      source_url: item.link,
+      marketaux_uuid: item.marketauxUuid || null,
+      marketaux_entity_symbol: item.marketauxEntity?.symbol || null,
+      marketaux_sentiment_score: item.marketauxSentiment ?? null,
+      marketaux_entity_sentiment_score: item.marketauxEntity?.sentiment_score ?? null,
+      marketaux_entity_match_score: item.marketauxEntity?.match_score ?? null
     },
     raw_payload: item
   };
@@ -105,6 +111,85 @@ function feedProviders(entry) {
   ];
 }
 
+function chunkArray(items, size) {
+  const chunks = [];
+  const chunkSize = Math.max(1, Number(size || 20));
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function marketauxProvider(symbols) {
+  return {
+    key: "marketaux",
+    label: "Marketaux",
+    sourceName: "marketaux",
+    sourcePriority: 0.84,
+    collector: "marketaux_news",
+    query: symbols.join(",")
+  };
+}
+
+function buildMarketauxUrl(config, entries) {
+  const lookbackHours = Number(config.liveNewsLookbackHours || 24);
+  const limit = Math.min(100, Math.max(1, entries.length * Number(config.marketauxMaxItemsPerTicker || 3)));
+  const params = new URLSearchParams({
+    api_token: config.marketauxApiKey,
+    symbols: entries.map((entry) => entry.ticker).join(","),
+    filter_entities: "true",
+    language: "en",
+    limit: String(limit),
+    published_after: new Date(Date.now() - lookbackHours * 3_600_000).toISOString()
+  });
+
+  return `${config.marketauxBaseUrl || "https://api.marketaux.com/v1/news/all"}?${params.toString()}`;
+}
+
+export function mapMarketauxArticles(payload, entries, maxItemsPerTicker = 3) {
+  const bySymbol = new Map(entries.map((entry) => [entry.ticker, entry]));
+  const provider = marketauxProvider(entries.map((entry) => entry.ticker));
+  const grouped = new Map(entries.map((entry) => [entry.ticker, { entry, provider, items: [], attempts: [], error: null }]));
+  const perTickerLimit = Math.max(1, Number(maxItemsPerTicker || 3));
+
+  for (const article of Array.isArray(payload?.data) ? payload.data : []) {
+    const articleUrl = article.url || article.source_url || "";
+    const entities = Array.isArray(article.entities) ? article.entities : [];
+    const matchingEntities = entities.filter((entity) => bySymbol.has(String(entity.symbol || "").toUpperCase()));
+    const targets = matchingEntities.length
+      ? matchingEntities
+      : article.symbols?.length
+        ? article.symbols.map((symbol) => ({ symbol })).filter((entity) => bySymbol.has(String(entity.symbol || "").toUpperCase()))
+        : [];
+
+    for (const entity of targets) {
+      const symbol = String(entity.symbol || "").toUpperCase();
+      const group = grouped.get(symbol);
+      if (!group || group.items.length >= perTickerLimit) {
+        continue;
+      }
+
+      group.items.push({
+        title: article.title || "",
+        link: articleUrl,
+        guid: article.uuid || articleUrl || `${symbol}:${article.title}`,
+        description: article.description || article.snippet || article.title || "",
+        pubDate: article.published_at || article.published_on || new Date().toISOString(),
+        source:
+          typeof article.source === "string"
+            ? article.source
+            : article.source?.name || article.source_name || "Marketaux",
+        marketauxUuid: article.uuid || null,
+        marketauxSentiment: article.sentiment_score ?? null,
+        marketauxEntity: entity,
+        raw: article
+      });
+    }
+  }
+
+  return [...grouped.values()].filter((result) => result.items.length);
+}
+
 export function createLiveNewsCollector(app) {
   const { config, pipeline, store } = app;
   let timer = null;
@@ -129,6 +214,87 @@ export function createLiveNewsCollector(app) {
     store.health.liveSources.google_news_rss.provider_success ||= {};
     store.health.liveSources.google_news_rss.provider_failures ||= {};
     return store.health.liveSources.google_news_rss;
+  }
+
+  function ensureMarketauxHealthEntry() {
+    if (!store.health.liveSources.marketaux_news) {
+      store.health.liveSources.marketaux_news = {
+        provider: "marketaux",
+        enabled: Boolean(config.liveNewsEnabled && config.marketauxEnabled),
+        configured: Boolean(config.marketauxApiKey),
+        polling: false,
+        last_poll_at: null,
+        last_success_at: null,
+        last_empty_at: null,
+        last_error: null,
+        polls: 0,
+        consecutive_failures: 0,
+        ingested_documents: 0,
+        requested_symbols: 0,
+        fetched_articles: 0
+      };
+    }
+    store.health.liveSources.marketaux_news.enabled = Boolean(config.liveNewsEnabled && config.marketauxEnabled);
+    store.health.liveSources.marketaux_news.configured = Boolean(config.marketauxApiKey);
+    return store.health.liveSources.marketaux_news;
+  }
+
+  async function fetchMarketauxFeeds(entries) {
+    const aggregateHealth = ensureHealthEntry();
+    const marketauxHealth = ensureMarketauxHealthEntry();
+    if (!config.marketauxEnabled || !config.marketauxApiKey || !entries.length) {
+      if (config.marketauxEnabled && !config.marketauxApiKey) {
+        marketauxHealth.last_error = "MARKETAUX_API_KEY is not configured.";
+        aggregateHealth.provider_failures.marketaux = (aggregateHealth.provider_failures.marketaux || 0) + 1;
+      }
+      return [];
+    }
+
+    marketauxHealth.polling = true;
+    marketauxHealth.last_poll_at = new Date().toISOString();
+    marketauxHealth.polls += 1;
+    marketauxHealth.requested_symbols = entries.length;
+
+    const results = [];
+    let fetchedArticles = 0;
+    let failedChunks = 0;
+    const chunks = chunkArray(entries, config.marketauxSymbolsPerRequest);
+
+    try {
+      for (const chunk of chunks) {
+        try {
+          const payload = await fetchJsonWithRetry(buildMarketauxUrl(config, chunk), {
+            timeoutMs: config.marketauxRequestTimeoutMs,
+            retries: config.marketauxRequestRetries,
+            label: `Marketaux news ${chunk.map((entry) => entry.ticker).join(",")}`,
+            headers: {
+              "User-Agent": "SentimentAnalyst/1.0 (+marketaux news)",
+              Accept: "application/json"
+            }
+          });
+          fetchedArticles += Array.isArray(payload?.data) ? payload.data.length : 0;
+          results.push(...mapMarketauxArticles(payload, chunk, config.marketauxMaxItemsPerTicker));
+        } catch (error) {
+          failedChunks += 1;
+          marketauxHealth.last_error = error.message;
+          aggregateHealth.provider_failures.marketaux = (aggregateHealth.provider_failures.marketaux || 0) + 1;
+        }
+      }
+
+      marketauxHealth.fetched_articles += fetchedArticles;
+      if (results.length) {
+        marketauxHealth.last_success_at = new Date().toISOString();
+        marketauxHealth.last_error = null;
+      } else if (!failedChunks) {
+        marketauxHealth.last_success_at = new Date().toISOString();
+        marketauxHealth.last_empty_at = marketauxHealth.last_success_at;
+        marketauxHealth.last_error = null;
+      }
+      marketauxHealth.consecutive_failures = failedChunks === chunks.length ? marketauxHealth.consecutive_failures + 1 : 0;
+      return results;
+    } finally {
+      marketauxHealth.polling = false;
+    }
   }
 
   async function fetchTickerFeed(entry) {
@@ -169,6 +335,7 @@ export function createLiveNewsCollector(app) {
 
     inFlight = true;
     const health = ensureHealthEntry();
+    const marketauxHealth = ensureMarketauxHealthEntry();
     health.polling = true;
     health.last_poll_at = new Date().toISOString();
     health.polls += 1;
@@ -177,7 +344,11 @@ export function createLiveNewsCollector(app) {
     let skipped = 0;
 
     try {
-      const fetchedFeeds = await Promise.all(WATCHLIST.map((entry) => fetchTickerFeed(entry)));
+      const marketauxFeeds = await fetchMarketauxFeeds(WATCHLIST);
+      const marketauxTickers = new Set(marketauxFeeds.map((result) => result.entry.ticker));
+      const rssFallbackEntries = WATCHLIST.filter((entry) => !marketauxTickers.has(entry.ticker));
+      const rssFeeds = await Promise.all(rssFallbackEntries.map((entry) => fetchTickerFeed(entry)));
+      const fetchedFeeds = [...marketauxFeeds, ...rssFeeds];
 
       const errors = fetchedFeeds.filter((result) => result.error);
 
@@ -215,6 +386,9 @@ export function createLiveNewsCollector(app) {
           store.seenExternalDocuments.add(seenKey);
           await pipeline.processRawDocument(buildRawDocument(entry, item, provider));
           ingested += 1;
+          if (provider?.key === "marketaux") {
+            marketauxHealth.ingested_documents += 1;
+          }
         }
       }
 

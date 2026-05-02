@@ -1,5 +1,6 @@
 import { WATCHLIST } from "./taxonomy.js";
 import { shouldUseEvidence } from "./freshness-policy.js";
+import { isLiveMarketProviderConfigured, liveMarketDataStatus } from "./market-providers.js";
 import { dedupeKey, round } from "../utils/helpers.js";
 
 function ensureHealthEntry(store, config) {
@@ -12,10 +13,22 @@ function ensureHealthEntry(store, config) {
       last_error: null,
       polls: 0,
       ingested_documents: 0,
-      fallback_mode: config.marketDataProvider === "synthetic" || !config.twelveDataApiKey
+      provider: config.marketDataProvider,
+      fallback_mode: config.marketDataProvider === "synthetic" || !isLiveMarketProviderConfigured(config, config.marketDataProvider),
+      configured: isLiveMarketProviderConfigured(config, config.marketDataProvider),
+      feed: null,
+      missing_config_reason: null
     };
   }
 
+  const providerStatus = liveMarketDataStatus(config, config.marketDataProvider);
+  store.health.liveSources.market_flow.provider = config.marketDataProvider;
+  store.health.liveSources.market_flow.configured = providerStatus.configured;
+  store.health.liveSources.market_flow.feed = providerStatus.feed;
+  store.health.liveSources.market_flow.fallback_mode = providerStatus.fallback_mode;
+  store.health.liveSources.market_flow.missing_config_reason = providerStatus.configured
+    ? null
+    : providerStatus.missing_config_reason;
   return store.health.liveSources.market_flow;
 }
 
@@ -165,7 +178,7 @@ export function createMarketFlowMonitor({ config, store, pipeline, marketDataSer
     health.polling = true;
     health.last_poll_at = new Date().toISOString();
     health.polls += 1;
-    health.fallback_mode = config.marketDataProvider === "synthetic" || !config.twelveDataApiKey;
+    health.fallback_mode = config.marketDataProvider === "synthetic" || !isLiveMarketProviderConfigured(config, config.marketDataProvider);
 
     let ingested = 0;
 

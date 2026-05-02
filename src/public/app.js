@@ -4638,6 +4638,7 @@ function renderSystemView() {
   const allUniverse = screenerOverview.all_universe || fullUniverse || {};
   const totalUniverse = secQueue?.tracked_companies || allUniverse.tracked || fullUniverse.tracked || state.health?.fundamental_companies_scored || 0;
   const liveNews = state.health?.live_sources?.google_news_rss || null;
+  const marketauxNews = state.health?.live_sources?.marketaux_news || null;
   const marketData = state.health?.live_sources?.market_data || null;
   const marketFlow = state.health?.live_sources?.market_flow || null;
   const earningsCalendar = state.health?.live_sources?.yahoo_earnings_calendar || null;
@@ -4817,8 +4818,10 @@ function renderSystemView() {
       <div class="workspace-stat-card"><span>Price Adapter</span><strong>${state.config?.market_data_provider || "synthetic"}</strong></div>
       <div class="workspace-stat-card"><span>Scorer</span><strong>Hybrid Mock</strong></div>
       <div class="workspace-stat-card"><span>Live News</span><strong>${state.config?.live_news_enabled ? "Enabled" : "Disabled"}</strong></div>
+      <div class="workspace-stat-card"><span>Marketaux</span><strong>${state.config?.marketaux_configured ? "Configured" : state.config?.marketaux_enabled ? "Needs key" : "Disabled"}</strong></div>
+      <div class="workspace-stat-card"><span>Marketaux Poll</span><strong>${marketauxNews?.last_success_at ? formatTime(marketauxNews.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Last Poll</span><strong>${liveNews?.last_success_at ? formatTime(liveNews.last_success_at) : "n/a"}</strong></div>
-      <div class="workspace-stat-card"><span>Market Data</span><strong>${marketData?.fallback_mode ? "Fallback" : "Live"}</strong></div>
+      <div class="workspace-stat-card"><span>Market Data</span><strong>${marketData?.fallback_mode ? "Fallback" : `${prettyLabel(marketData?.provider || state.config?.market_data_provider || "live")} ${marketData?.feed ? `(${marketData.feed})` : ""}`}</strong></div>
       <div class="workspace-stat-card"><span>Market Refresh</span><strong>${marketData?.last_success_at ? formatTime(marketData.last_success_at) : "n/a"}</strong></div>
       <div class="workspace-stat-card"><span>Market Flow</span><strong>${state.config?.market_flow_enabled ? "Enabled" : "Disabled"}</strong></div>
       <div class="workspace-stat-card"><span>Flow Poll</span><strong>${marketFlow?.last_success_at ? formatTime(marketFlow.last_success_at) : "n/a"}</strong></div>
@@ -4899,7 +4902,7 @@ function renderSystemView() {
         : ""
     }
     <ul class="workspace-list">
-      <li>News sentiment source: Google News RSS with Yahoo Finance RSS fallback, scored through the same normalization and sentiment pipeline as other live events.</li>
+      <li>News sentiment source: Marketaux linked market news when configured, with Google News RSS and Yahoo Finance RSS fallback, scored through the same normalization and sentiment pipeline as other live events.</li>
       <li>Event and social sources: earnings calendar risk checks and StockTwits crowd-skew evidence when enabled.</li>
       <li>Money-flow sources: inferred tape anomalies from live market bars, delayed trade prints, SEC Form 4 insider filings, and SEC 13F institutional holdings changes.</li>
       <li>The sentiment watchlist is signal-first. Fundamentals enrich those rows, but the full allowed universe lives in the Fundamentals dashboard and the Selection Agent.</li>

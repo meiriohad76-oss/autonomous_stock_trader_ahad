@@ -282,7 +282,7 @@ The compact summary is also embedded in `/api/health` as `runtime_reliability`.
 
 The action endpoint supports guarded one-shot operations such as `poll_once` for a single source, `refresh_universe`, and `backup_now`. It does not enable permanent background polling or rewrite `.env`.
 
-It also exposes runtime profile previews for `emergency`, `live_news_only`, `pi_light`, and `full_live`. Profile application requires an explicit `apply=true` payload and a service restart afterward.
+It also exposes runtime profile previews for `emergency`, `live_news_only`, `pi_light`, `autonomous_live`, `alpaca_marketaux_live`, and `full_live`. Profile application requires an explicit `apply=true` payload and a service restart afterward.
 
 Pi-oriented profiles keep SQLite off and use `LIGHTWEIGHT_STATE_ENABLED=true`, writing a compact JSON state file to `data/runtime-state.json`. This preserves SEC fundamentals batch progress and recent runtime context across restarts without reintroducing heavy SQLite writes or backups.
 
@@ -413,14 +413,36 @@ SEED_DATA_ON_EMPTY=false
 SEED_DATA_IN_DECISIONS=false
 ```
 
-## Market data provider
+## Live news provider
 
-The ticker detail chart and market snapshot now support a real market data provider using Twelve Data's time series API, with automatic fallback to the synthetic local series if no key is configured or the provider request fails.
+The live news collector tries Marketaux first when a key is present, then falls back to Google News RSS and Yahoo Finance RSS. Marketaux articles preserve their source URLs, entity symbols, match scores, and sentiment fields so the Signals Agent can explain where each alert came from.
 
 Useful environment variables:
 
 ```bash
-MARKET_DATA_PROVIDER=twelvedata
+MARKETAUX_ENABLED=true
+MARKETAUX_API_KEY=your_key_here
+MARKETAUX_SYMBOLS_PER_REQUEST=20
+MARKETAUX_MAX_ITEMS_PER_TICKER=3
+LIVE_NEWS_POLL_MS=600000
+```
+
+Leave `MARKETAUX_API_KEY` empty to use the no-key RSS fallback path.
+
+## Market data provider
+
+The ticker detail chart and market snapshot now support Alpaca Market Data and Twelve Data, with automatic fallback to the synthetic local series if no live provider is configured or the provider request fails. Alpaca is preferred automatically when Alpaca keys are present and `MARKET_DATA_PROVIDER` is not explicitly set.
+
+Useful environment variables:
+
+```bash
+MARKET_DATA_PROVIDER=alpaca
+ALPACA_MARKET_DATA_ENABLED=true
+ALPACA_MARKET_DATA_FEED=iex
+ALPACA_API_KEY=your_alpaca_key
+ALPACA_SECRET_KEY=your_alpaca_secret
+
+# Optional backup provider
 TWELVE_DATA_API_KEY=your_key_here
 MARKET_DATA_INTERVAL=15min
 MARKET_DATA_HISTORY_POINTS=18
@@ -450,12 +472,16 @@ This monitor only produces meaningful live signals when a real market data provi
 
 ## Fundamental market/reference data
 
-The Fundamental Analyst now supports a live-capable market/reference adapter for valuation and reference fields such as current price, market capitalization, enterprise value, shares outstanding, beta, trailing P/E, EV/EBITDA, price-to-sales, and PEG. The current implementation uses Twelve Data's `quote` and `statistics` endpoints when enabled, with automatic fallback to synthetic reference data if the provider is unavailable or no key is configured.
+The Fundamental Analyst now supports a live-capable market/reference adapter for valuation and reference fields such as current price, market capitalization, enterprise value, shares outstanding, beta, trailing P/E, EV/EBITDA, price-to-sales, and PEG. Twelve Data can provide a broader reference payload through `quote` and `statistics`; Alpaca can provide partial live price/change fields while SEC and the local fundamental model keep supplying business metrics. Both paths fall back to synthetic reference data if the provider is unavailable or no key is configured.
 
 Useful environment variables:
 
 ```bash
-FUNDAMENTAL_MARKET_DATA_PROVIDER=twelvedata
+FUNDAMENTAL_MARKET_DATA_PROVIDER=alpaca
+ALPACA_API_KEY=your_alpaca_key
+ALPACA_SECRET_KEY=your_alpaca_secret
+
+# Optional broader reference provider
 TWELVE_DATA_API_KEY=your_key_here
 FUNDAMENTAL_MARKET_DATA_CACHE_MS=900000
 FUNDAMENTAL_MARKET_DATA_REFRESH_MS=900000
