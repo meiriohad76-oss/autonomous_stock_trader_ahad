@@ -26,9 +26,21 @@ The policy is consumed by:
 The system now has two selection lanes:
 
 - Deterministic Selection Agent: rules-based scoring from fundamentals, market regime, signals, money flow, runtime reliability, and price plan.
-- LLM Selection Agent: qualitative parallel reviewer. By default it runs in local shadow mode, explains support and concerns, and can be connected to an LLM provider later through configuration.
+- LLM Selection Agent: qualitative parallel reviewer. By default it runs in local shadow mode; when `LLM_SELECTION_PROVIDER=openai` and `OPENAI_API_KEY` or `LLM_SELECTION_API_KEY` is configured, it calls OpenAI in strict JSON-review mode and falls back to the local shadow reviewer if the provider errors.
 
 Both lanes explain each ticker decision.
+
+OpenAI configuration:
+
+```env
+LLM_SELECTION_ENABLED=true
+LLM_SELECTION_PROVIDER=openai
+LLM_SELECTION_MODEL=gpt-5-mini
+LLM_SELECTION_API_URL=https://api.openai.com/v1/responses
+LLM_SELECTION_MAX_CANDIDATES=12
+LLM_SELECTION_REQUEST_TIMEOUT_MS=30000
+OPENAI_API_KEY=
+```
 
 ## Final Selection Procedure
 

@@ -132,6 +132,11 @@ const alpacaMarketDataApiSecretKey = firstCredential(
 const alpacaApiKeyId = firstCredential("ALPACA_API_KEY_ID", "ALPACA_API_KEY");
 const alpacaApiSecretKey = firstCredential("ALPACA_API_SECRET_KEY", "ALPACA_SECRET_KEY");
 const llmSelectionApiKey = firstCredential("LLM_SELECTION_API_KEY", "OPENAI_API_KEY");
+const llmSelectionProvider = String(process.env.LLM_SELECTION_PROVIDER || (llmSelectionApiKey ? "openai" : "shadow")).toLowerCase();
+const llmSelectionModel =
+  process.env.LLM_SELECTION_MODEL || (llmSelectionProvider === "openai" ? "gpt-5-mini" : "policy-aware-shadow-reviewer");
+const llmSelectionApiUrl =
+  process.env.LLM_SELECTION_API_URL || (llmSelectionProvider === "openai" ? "https://api.openai.com/v1/responses" : "");
 const earningsApiKey = firstCredential("EARNINGS_API_KEY", "TWELVE_DATA_API_KEY");
 const hasTwelveDataKey = Boolean(twelveDataApiKey);
 const hasStocktwitsKey = Boolean(stocktwitsApiKey);
@@ -326,10 +331,13 @@ export const config = {
   portfolioAllowAdds: String(process.env.PORTFOLIO_ALLOW_ADDS || "false").toLowerCase() === "true",
   portfolioAllowReductions: String(process.env.PORTFOLIO_ALLOW_REDUCTIONS || "true").toLowerCase() !== "false",
   llmSelectionEnabled: String(process.env.LLM_SELECTION_ENABLED || "false").toLowerCase() === "true",
-  llmSelectionProvider: process.env.LLM_SELECTION_PROVIDER || "shadow",
-  llmSelectionModel: process.env.LLM_SELECTION_MODEL || "policy-aware-shadow-reviewer",
+  llmSelectionProvider,
+  llmSelectionModel,
   llmSelectionMinConfidence: Number(process.env.LLM_SELECTION_MIN_CONFIDENCE || 0.58),
-  llmSelectionApiUrl: process.env.LLM_SELECTION_API_URL || "",
+  llmSelectionMaxCandidates: Number(process.env.LLM_SELECTION_MAX_CANDIDATES || 12),
+  llmSelectionMaxOutputTokens: Number(process.env.LLM_SELECTION_MAX_OUTPUT_TOKENS || 2500),
+  llmSelectionRequestTimeoutMs: Number(process.env.LLM_SELECTION_REQUEST_TIMEOUT_MS || 30000),
+  llmSelectionApiUrl,
   llmSelectionApiKey,
   riskMaxGrossExposurePct: Number(process.env.RISK_MAX_GROSS_EXPOSURE_PCT || 0.35),
   riskMaxSingleNameExposurePct: Number(process.env.RISK_MAX_SINGLE_NAME_EXPOSURE_PCT || 0.08),

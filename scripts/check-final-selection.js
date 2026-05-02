@@ -125,7 +125,7 @@ const tradeSetups = {
   ]
 };
 
-const llmSelection = buildLlmSelectionSnapshot({
+const llmSelection = await buildLlmSelectionSnapshot({
   config,
   tradeSetups,
   portfolioPolicy

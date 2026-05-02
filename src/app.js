@@ -1292,7 +1292,9 @@ export function createSentimentApp() {
           provider: config.llmSelectionProvider,
           model: config.llmSelectionModel,
           configured: Boolean(config.llmSelectionApiUrl && config.llmSelectionApiKey),
-          min_confidence: config.llmSelectionMinConfidence
+          min_confidence: config.llmSelectionMinConfidence,
+          max_candidates: config.llmSelectionMaxCandidates,
+          request_timeout_ms: config.llmSelectionRequestTimeoutMs
         },
         fundamental_market_data_provider: config.fundamentalMarketDataProvider,
         auto_start_fundamental_market_data: config.autoStartFundamentalMarketData,
@@ -1762,7 +1764,7 @@ export function createSentimentApp() {
         })
       ]);
       const portfolioPolicy = readPortfolioPolicy(config);
-      const llmSelection = buildLlmSelectionSnapshot({
+      const llmSelection = await buildLlmSelectionSnapshot({
         config,
         tradeSetups,
         portfolioPolicy,
@@ -1848,7 +1850,7 @@ export function createSentimentApp() {
         riskSnapshot,
         positionMonitor
       });
-      const llmSelection = buildLlmSelectionSnapshot({
+      const llmSelection = await buildLlmSelectionSnapshot({
         config,
         tradeSetups,
         portfolioPolicy: rawPortfolioPolicy,
