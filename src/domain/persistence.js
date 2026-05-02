@@ -668,12 +668,35 @@ function reviveFundamentals(snapshot) {
   if (!snapshot?.asOf) {
     return createEmptyFundamentalsState();
   }
+  const liveLeaderboard = (snapshot.leaderboard || []).filter(
+    (item) => item?.data_source !== "bootstrap_placeholder" && item?.form_type !== "BOOTSTRAP"
+  ).map((item) => ({
+    ...item,
+    initial_screen: item.initial_screen
+      ? {
+          ...item.initial_screen,
+          provisional: item.data_source === "live_sec_filing" ? false : Boolean(item.initial_screen.provisional)
+        }
+      : item.initial_screen,
+    quality_flags: item.quality_flags
+      ? {
+          ...item.quality_flags,
+          anomaly_flags: (item.quality_flags.anomaly_flags || []).filter(
+            (flag) => !["bootstrap_placeholder", "awaiting_sec_refresh"].includes(flag)
+          )
+        }
+      : item.quality_flags
+  }));
+  const removedRows = liveLeaderboard.length !== (snapshot.leaderboard || []).length;
 
   return {
     ...snapshot,
-    screener: snapshot.screener || buildInitialScreenerSnapshot(snapshot.leaderboard || []),
-    byTicker: new Map((snapshot.leaderboard || []).map((item) => [item.ticker, item])),
-    bySector: new Map((snapshot.sectors || []).map((item) => [item.sector, item]))
+    leaderboard: liveLeaderboard,
+    sectors: removedRows ? [] : snapshot.sectors || [],
+    changes: removedRows ? [] : snapshot.changes || [],
+    screener: buildInitialScreenerSnapshot(liveLeaderboard),
+    byTicker: new Map(liveLeaderboard.map((item) => [item.ticker, item])),
+    bySector: new Map((removedRows ? [] : snapshot.sectors || []).map((item) => [item.sector, item]))
   };
 }
 
@@ -958,6 +981,7 @@ function hydrateStoreFromRows(store, rows) {
   const runtimeMap = new Map(rows.runtimeState.map((row) => [row.state_key, parsePayload(row.payload_json, null)]));
   const persistedHealth = runtimeMap.get("health");
   const persistedFundamentals = runtimeMap.get("fundamentals");
+  const persistedFundamentalUniverse = runtimeMap.get("fundamentalUniverse");
   if (persistedHealth) {
     store.health = {
       ...store.health,
@@ -968,6 +992,9 @@ function hydrateStoreFromRows(store, rows) {
 
   if (persistedFundamentals) {
     store.fundamentals = reviveFundamentals(persistedFundamentals);
+  }
+  if (persistedFundamentalUniverse?.companies?.length) {
+    store.fundamentalUniverse = persistedFundamentalUniverse;
   }
 
   const persistedEarnings = runtimeMap.get("earningsCalendar");
@@ -1228,6 +1255,17 @@ function saveSqliteFundamentalWarehouse(db, store, now) {
       state_metadata = excluded.state_metadata
   `);
 
+  db.exec(`
+    DELETE FROM financial_facts;
+    DELETE FROM financial_periods;
+    DELETE FROM filing_events;
+    DELETE FROM fundamental_states;
+    DELETE FROM fundamental_scores;
+    DELETE FROM fundamental_features;
+    DELETE FROM market_reference;
+    DELETE FROM coverage_universe;
+  `);
+
   for (const row of rows.coverageUniverse) {
     insertCoverage.run(row.ticker, row.company_name, row.cik || null, row.exchange || null, row.country || "US", row.sector, row.industry, row.market_cap_bucket || null, row.benchmark_group || null, row.is_active ? 1 : 0, JSON.stringify(row.metadata || {}), now);
   }
@@ -1256,6 +1294,17 @@ function saveSqliteFundamentalWarehouse(db, store, now) {
 
 async function savePostgresFundamentalWarehouse(client, store, now) {
   const rows = buildFundamentalWarehouseRows(store);
+
+  await client.query(`
+    DELETE FROM financial_facts;
+    DELETE FROM financial_periods;
+    DELETE FROM filing_events;
+    DELETE FROM fundamental_states;
+    DELETE FROM fundamental_scores;
+    DELETE FROM fundamental_features;
+    DELETE FROM market_reference;
+    DELETE FROM coverage_universe;
+  `);
 
   for (const row of rows.coverageUniverse) {
     await client.query(
@@ -1692,7 +1741,8 @@ function buildLightweightRows(store, config) {
     seenExternalDocuments: [...store.seenExternalDocuments].slice(-maxDocuments).map((seen_key) => ({ seen_key })),
     runtimeState: [
       { state_key: "health", payload_json: store.health },
-      { state_key: "fundamentals", payload_json: buildRuntimeFundamentals(store) }
+      { state_key: "fundamentals", payload_json: buildRuntimeFundamentals(store) },
+      { state_key: "fundamentalUniverse", payload_json: store.fundamentalUniverse }
     ],
     fundamentals: buildFundamentalWarehouseRows(store),
     agents: buildAgentRows(store, config)
@@ -2002,6 +2052,7 @@ function createSqlitePersistence(config) {
         store.tradeSetupHistory = reviveAgentRows({ tradeSetupStates: agentRows.tradeSetupStates }).tradeSetupHistory;
         insertRuntime.run("health", now, JSON.stringify(store.health));
         insertRuntime.run("fundamentals", now, JSON.stringify(buildRuntimeFundamentals(store)));
+        insertRuntime.run("fundamentalUniverse", now, JSON.stringify(store.fundamentalUniverse));
         insertRuntime.run("earningsCalendar", now, JSON.stringify(Array.from(store.earningsCalendar.entries())));
         insertRuntime.run("pendingApprovals", now, JSON.stringify(Array.from(store.pendingApprovals.entries())));
         insertRuntime.run("positions", now, JSON.stringify(Array.from(store.positions.entries())));
@@ -2252,6 +2303,14 @@ function createPostgresPersistence(config) {
           SET updated_at = EXCLUDED.updated_at,
               payload_json = EXCLUDED.payload_json`,
           ["fundamentals", now, JSON.stringify(buildRuntimeFundamentals(store))]
+        );
+        await client.query(
+          `INSERT INTO runtime_state (state_key, updated_at, payload_json)
+           VALUES ($1, $2, $3::jsonb)
+          ON CONFLICT (state_key) DO UPDATE
+          SET updated_at = EXCLUDED.updated_at,
+              payload_json = EXCLUDED.payload_json`,
+          ["fundamentalUniverse", now, JSON.stringify(store.fundamentalUniverse)]
         );
 
         await client.query("COMMIT");

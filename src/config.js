@@ -209,7 +209,7 @@ export const config = {
   agencyOngoingCycleMs: envNumber("AGENCY_ONGOING_CYCLE_MS", 900000, 900000),
   agencyBaselineUniverseMinCount: Number(process.env.AGENCY_BASELINE_UNIVERSE_MIN_COUNT || 160),
   agencyBaselineRequireFullSec:
-    String(process.env.AGENCY_BASELINE_REQUIRE_FULL_SEC || "false").toLowerCase() === "true",
+    String(process.env.AGENCY_BASELINE_REQUIRE_FULL_SEC || "true").toLowerCase() === "true",
   agencyBaselineMinSecCoveragePct: Number(process.env.AGENCY_BASELINE_MIN_SEC_COVERAGE_PCT || 0.99),
   agencyBaselineMinSignalSources: Number(process.env.AGENCY_BASELINE_MIN_SIGNAL_SOURCES || 3),
   agencyBaselineSecBatchesPerRun: envNumber("AGENCY_BASELINE_SEC_BATCHES_PER_RUN", 4, 3),
@@ -270,7 +270,7 @@ export const config = {
   fundamentalSecConcurrency: envNumber("FUNDAMENTAL_SEC_CONCURRENCY", 4, 1),
   fundamentalSecMaxCompaniesPerPoll: envNumber("FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL", 0, 8),
   screenerRequireLiveSecForEligible:
-    String(process.env.SCREENER_REQUIRE_LIVE_SEC_FOR_ELIGIBLE || "false").toLowerCase() === "true",
+    String(process.env.SCREENER_REQUIRE_LIVE_SEC_FOR_ELIGIBLE || "true").toLowerCase() === "true",
   screenerMinReportingConfidence: Number(process.env.SCREENER_MIN_REPORTING_CONFIDENCE || 0.85),
   screenerMinDataFreshness: Number(process.env.SCREENER_MIN_DATA_FRESHNESS || 0.85),
   screenerMaxMissingFields: Number(process.env.SCREENER_MAX_MISSING_FIELDS || 2),

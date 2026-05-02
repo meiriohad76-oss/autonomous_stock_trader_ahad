@@ -604,7 +604,6 @@ function buildScreenerView(leaderboard, baseScreener = {}, screenerSettings = sc
   const eligible = leaderboard.filter((item) => item.initial_screen?.stage === "eligible");
   const watch = leaderboard.filter((item) => item.initial_screen?.stage === "watch");
   const rejected = leaderboard.filter((item) => item.initial_screen?.stage === "reject");
-  const bootstrapPlaceholders = leaderboard.filter((item) => item.data_source === "bootstrap_placeholder");
   const liveSecBacked = leaderboard.filter((item) => item.data_source === "live_sec_filing");
   const criteria = baseScreener.criteria || buildScreenerCriteria(screenerSettings);
 
@@ -616,7 +615,7 @@ function buildScreenerView(leaderboard, baseScreener = {}, screenerSettings = sc
       baseScreener.explanation || {
         headline: "Stage one is a first-pass gate, not the final ranking model.",
         eligible: "Eligible names pass most checks, avoid hard failures, and are backed by live SEC filing data.",
-        watch: "Watch names either miss several checks or are still waiting for live SEC refresh to replace bootstrap placeholders.",
+        watch: "Watch names either miss several checks or need stronger live SEC-backed support.",
         reject: "Rejected names fail too many checks or trip a hard failure."
       },
     tracked_count: leaderboard.length,
@@ -624,7 +623,8 @@ function buildScreenerView(leaderboard, baseScreener = {}, screenerSettings = sc
     watch_count: watch.length,
     rejected_count: rejected.length,
     live_sec_backed_count: liveSecBacked.length,
-    bootstrap_placeholder_count: bootstrapPlaceholders.length,
+    bootstrap_placeholder_count: 0,
+    pending_live_sec_count: 0,
     pass_rate: leaderboard.length ? round(eligible.length / leaderboard.length, 3) : 0,
     candidates: eligible.map((item) => ({
       ticker: item.ticker,
@@ -1000,7 +1000,7 @@ function evaluateInitialScreener(company, settings) {
       stage === "eligible"
         ? "Passes the initial liquidity, quality, growth, and tradability gate with live filing-backed support."
         : awaitingSecRefresh
-          ? "Looks broadly investable, but stays in watch until a live SEC filing refresh replaces the bootstrap placeholder metrics."
+          ? "Looks broadly investable, but stays in watch until live SEC filing data is available."
         : stage === "watch"
           ? "Shows some strong traits but misses enough baseline checks to stay on watch rather than pass."
           : "Fails the current first-pass screen and should not enter the ranked candidate set yet."
@@ -1388,7 +1388,7 @@ export function createEmptyFundamentalsState() {
       explanation: {
         headline: "Stage one is a first-pass gate, not the final ranking model.",
         eligible: "Eligible names pass most checks, avoid hard failures, and are backed by live SEC filing data.",
-        watch: "Watch names either miss several checks or are still waiting for live SEC refresh to replace bootstrap placeholders.",
+        watch: "Watch names either miss several checks or need stronger live SEC-backed support.",
         reject: "Rejected names fail too many checks or trip a hard failure."
       },
       tracked_count: 0,
@@ -1606,7 +1606,8 @@ export function createFundamentalsEngine({ store, config, marketReferenceService
 
     samplePayload = {
       ...samplePayload,
-      as_of: asOf
+      as_of: asOf,
+      sector_inputs: nextCompanies.length ? samplePayload.sector_inputs || [] : []
     };
     baseCompanies = nextCompanies.map((company) => ({
       ...company,

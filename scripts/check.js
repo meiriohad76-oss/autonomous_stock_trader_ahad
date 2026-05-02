@@ -579,9 +579,9 @@ if (
 const secBatchOne = selectSecFundamentalsRefreshBatch(
   [
     { ticker: "LIVE1", data_source: "live_sec_filing" },
-    { ticker: "BOOT1", data_source: "bootstrap_placeholder" },
-    { ticker: "BOOT2", data_source: "bootstrap_placeholder" },
-    { ticker: "BOOT3", data_source: "bootstrap_placeholder" }
+    { ticker: "PEND1", data_source: "universe_membership" },
+    { ticker: "PEND2", data_source: "universe_membership" },
+    { ticker: "PEND3", data_source: "universe_membership" }
   ],
   { fundamentalSecMaxCompaniesPerPoll: 2 },
   0
@@ -589,16 +589,16 @@ const secBatchOne = selectSecFundamentalsRefreshBatch(
 const secBatchTwo = selectSecFundamentalsRefreshBatch(
   [
     { ticker: "LIVE1", data_source: "live_sec_filing" },
-    { ticker: "BOOT1", data_source: "bootstrap_placeholder" },
-    { ticker: "BOOT2", data_source: "bootstrap_placeholder" },
-    { ticker: "BOOT3", data_source: "bootstrap_placeholder" }
+    { ticker: "PEND1", data_source: "universe_membership" },
+    { ticker: "PEND2", data_source: "universe_membership" },
+    { ticker: "PEND3", data_source: "universe_membership" }
   ],
   { fundamentalSecMaxCompaniesPerPoll: 2 },
   2
 );
 
-if (secBatchOne.map((item) => item.ticker).join(",") !== "BOOT1,BOOT2") {
-  throw new Error("SEC fundamentals batch selector should prioritize bootstrap placeholders.");
+if (secBatchOne.map((item) => item.ticker).join(",") !== "PEND1,PEND2") {
+  throw new Error("SEC fundamentals batch selector should prioritize names awaiting live SEC data.");
 }
 
 if (secBatchTwo.length !== 2 || secBatchTwo[0].ticker === secBatchOne[0].ticker) {
@@ -612,7 +612,7 @@ const bootFirstTicker = bootSnapshot.leaderboard[0]?.entity_key;
 const bootTickerDetail = bootFirstTicker ? await app.getTickerDetail(bootFirstTicker) : null;
 
 if (!bootSnapshot.leaderboard.length || !bootTickerDetail) {
-  throw new Error("Dashboard bootstrap should render a fundamentals-only ticker detail before sentiment replay.");
+  throw new Error("Dashboard should render an allowed-universe ticker detail before sentiment replay.");
 }
 
 await app.replay({ reset: true, intervalMs: 0 });
@@ -757,8 +757,8 @@ console.log(
       market_flow_signal: flowSignal.eventType,
       sec_live_metric_keys: Object.keys(liveMetrics).length,
       sec_fundamentals_batch_size: secBatchOne.length,
-      bootstrap_dashboard_rows: bootSnapshot.leaderboard.length,
-      bootstrap_ticker_detail_mode: bootTickerDetail.data_mode,
+      allowed_universe_dashboard_rows: bootSnapshot.leaderboard.length,
+      allowed_universe_ticker_detail_mode: bootTickerDetail.data_mode,
       leaderboard_count: snapshot.leaderboard.length,
       recent_documents: app.getRecentDocuments({ limit: 5 }).length,
       alerts: app.store.alertHistory.length,

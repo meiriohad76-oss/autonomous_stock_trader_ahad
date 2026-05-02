@@ -45,7 +45,7 @@ const cycle = buildAgencyCycleStatus({
   },
   secQueue: {
     tracked_companies: 168,
-    pending_bootstrap_companies: 80,
+    pending_live_sec_companies: 80,
     coverage_ratio: 0.52
   },
   executionLog: []
@@ -145,7 +145,7 @@ const readyCycle = buildAgencyCycleStatus({
   },
   secQueue: {
     tracked_companies: 168,
-    pending_bootstrap_companies: 0,
+    pending_live_sec_companies: 0,
     coverage_ratio: 1
   },
   executionLog: Array.from({ length: 12 }, (_, index) => ({ id: index }))
@@ -205,7 +205,7 @@ const noCandidateCycle = buildAgencyCycleStatus({
   },
   secQueue: {
     tracked_companies: 168,
-    pending_bootstrap_companies: 144,
+    pending_live_sec_companies: 144,
     live_sec_companies: 24,
     coverage_ratio: 0.143
   },

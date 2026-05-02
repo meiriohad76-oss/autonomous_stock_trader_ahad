@@ -397,8 +397,8 @@ function sourceLabel(value) {
   if (value === "live_sec_filing") {
     return "SEC live";
   }
-  if (value === "bootstrap_placeholder") {
-    return "Bootstrap";
+  if (value === "universe_membership") {
+    return "Awaiting SEC";
   }
   return "Sentiment only";
 }
@@ -454,7 +454,7 @@ function sourceStatusMeaning(status) {
 function runtimeActionSummary(action, result = {}) {
   const savedSuffix = result.lightweight_state_saved ? " Lightweight state saved." : "";
   if (action === "poll_once" && result.refreshBatchSize !== undefined) {
-    return `SEC batch refreshed ${result.ingested || 0}/${result.refreshBatchSize} names. ${result.liveCompanies || 0} live SEC-backed, ${result.pendingBootstrapCompanies || 0} still bootstrap.${savedSuffix}`;
+    return `SEC batch refreshed ${result.ingested || 0}/${result.refreshBatchSize} names. ${result.liveCompanies || 0} live SEC-backed, ${result.pendingLiveSecCompanies ?? 0} still awaiting live SEC.${savedSuffix}`;
   }
   if (action === "poll_once" && result.ingested_documents !== undefined) {
     return `Poll completed with ${result.ingested_documents} ingested document${result.ingested_documents === 1 ? "" : "s"}.${savedSuffix}`;
@@ -597,7 +597,7 @@ function renderSecQueuePanel(secQueue) {
       <div class="workspace-detail-grid">
         <div class="workspace-stat-card"><span>Tracked</span><strong>${secQueue.tracked_companies || 0}</strong></div>
         <div class="workspace-stat-card"><span>SEC Live</span><strong>${secQueue.live_sec_companies || 0}</strong></div>
-        <div class="workspace-stat-card"><span>Bootstrap Pending</span><strong>${secQueue.pending_bootstrap_companies || 0}</strong></div>
+        <div class="workspace-stat-card"><span>Awaiting SEC</span><strong>${secQueue.pending_live_sec_companies ?? secQueue.pending_bootstrap_companies ?? 0}</strong></div>
         <div class="workspace-stat-card"><span>Coverage</span><strong>${coveragePct}%</strong></div>
         <div class="workspace-stat-card"><span>Next Batch</span><strong>${secQueue.next_batch_size || 0}</strong></div>
         <div class="workspace-stat-card"><span>Last SEC Run</span><strong>${lastRun}</strong></div>
@@ -958,7 +958,7 @@ function secCoverageSummary() {
   const secQueue = state.secQueue || {};
   const overview = state.snapshot?.screener_overview || {};
   const secLive = secQueue.live_sec_companies ?? overview.fundamental_sec_live ?? 0;
-  const pending = secQueue.pending_bootstrap_companies ?? Math.max(0, counts.tracked - secLive);
+  const pending = secQueue.pending_live_sec_companies ?? secQueue.pending_bootstrap_companies ?? Math.max(0, counts.tracked - secLive);
   const percent = secQueue.coverage_ratio !== undefined
     ? Math.round(secQueue.coverage_ratio * 100)
     : counts.tracked
@@ -1151,7 +1151,7 @@ function buildLearningAnalysis() {
       "Fundamentals Agent",
       "High",
       "Increase SEC coverage before trusting factor rankings for larger paper sizes.",
-      "Bootstrap rows remain visible, but their confidence is weaker than official SEC-derived rows.",
+      "Pending names are excluded from ranked fundamentals until official SEC-derived rows exist.",
       `${secCoverage.secLive} live / ${secCoverage.pending} pending`,
       secCoverage.percent < 50 ? "bearish" : "neutral"
     );
@@ -1294,7 +1294,7 @@ function buildLearningAnalysis() {
     "Fundamentals Agent",
     secCoverage.pending ? "High" : "Low",
     secCoverage.pending
-      ? "Keep bootstrap rows visible, but avoid raising paper size until SEC-backed factor confidence improves."
+      ? "Keep pending names out of ranked fundamentals until SEC-backed factor data is available."
       : "Keep current factor thresholds stable while Learning gathers more outcome evidence.",
     secCoverage.pending
       ? "Pending SEC rows reduce confidence in factor rankings."
@@ -1678,7 +1678,7 @@ function buildAgentProcess(agentKey) {
       inputs: [
         `Scope rule: ${AGENCY_UNIVERSE_LABEL}`,
         `${counts.tracked || 0} tracked rows in the current dashboard payload`,
-        `${secCoverage.secLive} SEC-backed rows and ${secCoverage.pending} bootstrap rows`
+        `${secCoverage.secLive} SEC-backed rows and ${secCoverage.pending} names awaiting live SEC`
       ],
       checks: [
         processCheck("Universe loaded", `${counts.tracked || 0} names`, statusFromBoolean(counts.tracked > 0)),
@@ -1713,7 +1713,7 @@ function buildAgentProcess(agentKey) {
       ],
       checks: [
         processCheck("Composite score", `${rankedRows.length} ranked rows`, statusFromBoolean(rankedRows.length > 0)),
-        processCheck("Reporting confidence", `${secCoverage.pending} pending`, secCoverage.pending ? "neutral" : "bullish", "Bootstrap rows stay visible but lower confidence."),
+        processCheck("Reporting confidence", `${secCoverage.pending} pending`, secCoverage.pending ? "neutral" : "bullish", "Pending names stay out of ranked fundamentals until live SEC data arrives."),
         processCheck("Eligible supply", `${counts.eligible || 0} pass`, statusFromBoolean(counts.eligible > 0))
       ],
       outputs: [
@@ -5073,7 +5073,13 @@ function renderSystemView() {
   const evidenceQuality = state.health?.evidence_quality || null;
   const backup = state.health?.database_backup || state.config?.database_backup || null;
   const secLiveCount = secQueue?.live_sec_companies ?? secFundamentals?.live_companies ?? screenerOverview.fundamental_sec_live ?? 0;
-  const pendingBootstrap = secQueue?.pending_bootstrap_companies ?? secFundamentals?.pending_bootstrap_companies ?? screenerOverview.bootstrap ?? 0;
+  const pendingLiveSec =
+    secQueue?.pending_live_sec_companies ??
+    secFundamentals?.pending_live_sec_companies ??
+    secQueue?.pending_bootstrap_companies ??
+    secFundamentals?.pending_bootstrap_companies ??
+    screenerOverview.pending_live_sec ??
+    0;
   const secProgress = secQueue?.coverage_ratio !== undefined
     ? Math.round(secQueue.coverage_ratio * 100)
     : totalUniverse
@@ -5101,7 +5107,7 @@ function renderSystemView() {
     <div class="workspace-stat-card"><span>Last State Save</span><strong>${backup?.last_backup_at ? relativeTime(backup.last_backup_at) : "n/a"}</strong></div>
     <div class="workspace-stat-card"><span>SEC Live Coverage</span><strong>${secLiveCount}/${totalUniverse || 0}</strong></div>
     <div class="workspace-stat-card"><span>SEC Progress</span><strong>${secProgress}%</strong></div>
-    <div class="workspace-stat-card"><span>Bootstrap Pending</span><strong>${pendingBootstrap}</strong></div>
+    <div class="workspace-stat-card"><span>Awaiting SEC</span><strong>${pendingLiveSec}</strong></div>
     <div class="workspace-stat-card"><span>Evidence Items</span><strong>${evidenceQuality?.total_evidence_items || 0}</strong></div>
     <div class="workspace-stat-card"><span>Avg Evidence Weight</span><strong>${evidenceQuality ? formatNumber(evidenceQuality.average_downstream_weight, 2) : "n/a"}</strong></div>
     <div class="workspace-stat-card"><span>Runtime Reliability</span><strong>${prettyLabel(runtimeReliability?.status || "unknown")}</strong></div>
@@ -5169,7 +5175,7 @@ function renderSystemView() {
           title: "SEC fundamentals batch",
           body: "Refresh the next slice of companies from SEC submissions and Company Facts.",
           metric: `${secLiveCount}/${totalUniverse || 0}`,
-          submetric: `${pendingBootstrap} names still bootstrap. Next batch size: ${secQueue?.next_batch_size || secFundamentals?.refresh_batch_size || state.config?.fundamental_sec_max_companies_per_poll || 8}.`,
+          submetric: `${pendingLiveSec} names awaiting live SEC. Next batch size: ${secQueue?.next_batch_size || secFundamentals?.refresh_batch_size || state.config?.fundamental_sec_max_companies_per_poll || 8}.`,
           action: "poll_once",
           source: "sec_fundamentals",
           label: "Poll SEC Batch",
@@ -5658,7 +5664,7 @@ function renderUniverseAgentView() {
     elements.fundamentalsAgentSummary.innerHTML = `
       ${agentMetricCard("Top Ranked Rows", rankedRows.length, "Sorted by stage and score")}
       ${agentMetricCard("Live SEC Rows", secCoverage.secLive, "Official filings backed")}
-      ${agentMetricCard("Bootstrap Pending", secCoverage.pending, "Still needs SEC refresh")}
+      ${agentMetricCard("Awaiting SEC", secCoverage.pending, "Still needs SEC refresh")}
       ${agentMetricCard("Fundamental Gate", `${counts.eligible}/${counts.tracked}`, "Eligible over tracked")}
     `;
   }

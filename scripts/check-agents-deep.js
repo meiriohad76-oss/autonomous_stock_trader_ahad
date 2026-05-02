@@ -264,7 +264,7 @@ function stateCounters(app) {
     source_stats: store.sourceStats.size,
     fundamentals_total: companies.length,
     fundamentals_live_sec: liveSec,
-    fundamentals_bootstrap: Math.max(0, companies.length - liveSec),
+    fundamentals_awaiting_live_sec: Math.max(0, (app.getSecFundamentalsQueue?.().tracked_companies || companies.length) - liveSec),
     macro_history: store.macroRegimeHistory.length,
     trade_setups: store.tradeSetups?.length || 0,
     trade_setup_history: store.tradeSetupHistory.length,
@@ -315,6 +315,7 @@ function actionResultSummary(result = {}) {
     effective_limit: result.effective_limit ?? null,
     liveCompanies: result.liveCompanies ?? null,
     pendingBootstrapCompanies: result.pendingBootstrapCompanies ?? null,
+    pendingLiveSecCompanies: result.pendingLiveSecCompanies ?? null,
     refreshBatchSize: result.refreshBatchSize ?? null,
     trackedCompanies: result.trackedCompanies ?? null,
     marketReferenceRefreshSkipped: result.marketReferenceRefreshSkipped ?? null,
@@ -594,7 +595,7 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     agent.output_summary = {
       tracked_companies: queue.tracked_companies,
       live_sec_companies: queue.live_sec_companies,
-      pending_bootstrap_companies: queue.pending_bootstrap_companies,
+      pending_live_sec_companies: queue.pending_live_sec_companies ?? queue.pending_bootstrap_companies ?? 0,
       coverage_ratio: queue.coverage_ratio
     };
     addCheck(agent, "tracked_universe", queue.tracked_companies >= app.config.agencyBaselineUniverseMinCount ? "pass" : "fail", `${queue.tracked_companies} tracked names loaded.`);
@@ -625,7 +626,13 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
             emit,
             { checkpoint }
           );
-          const pending = Number(response?.result?.pendingBootstrapCompanies ?? app.getSecFundamentalsQueue().pending_bootstrap_companies ?? 0);
+          const pending = Number(
+            response?.result?.pendingLiveSecCompanies ??
+              response?.result?.pendingBootstrapCompanies ??
+              app.getSecFundamentalsQueue().pending_live_sec_companies ??
+              app.getSecFundamentalsQueue().pending_bootstrap_companies ??
+              0
+          );
           if (pending === 0) {
             break;
           }
@@ -640,7 +647,7 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     agent.output_summary = {
       tracked_companies: queue.tracked_companies,
       live_sec_companies: queue.live_sec_companies,
-      pending_bootstrap_companies: queue.pending_bootstrap_companies,
+      pending_live_sec_companies: queue.pending_live_sec_companies ?? queue.pending_bootstrap_companies ?? 0,
       coverage_ratio: queue.coverage_ratio,
       next_batch_size: queue.next_batch_size,
       next_batch: queue.next_batch
@@ -648,9 +655,9 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     addCheck(
       agent,
       "sec_coverage",
-      queue.pending_bootstrap_companies === 0 ? "pass" : queue.live_sec_companies > 0 ? "warning" : "fail",
+      (queue.pending_live_sec_companies ?? queue.pending_bootstrap_companies ?? 0) === 0 ? "pass" : queue.live_sec_companies > 0 ? "warning" : "fail",
       `${queue.live_sec_companies}/${queue.tracked_companies} companies are SEC-backed.`,
-      { pending_bootstrap_companies: queue.pending_bootstrap_companies }
+      { pending_live_sec_companies: queue.pending_live_sec_companies ?? queue.pending_bootstrap_companies ?? 0 }
     );
   }
 

@@ -341,7 +341,7 @@ export function createFundamentalMarketDataService({ config, store }) {
       const barsPayload = await fetchAlpacaDailyBars(config, company.ticker);
       return {
         payload: mapAlpacaReference(company.ticker, barsPayload, company),
-        partialError: "Alpaca market data updates price/change only; SEC and bootstrap metrics still provide fundamentals."
+        partialError: "Alpaca market data updates price/change only; live SEC metrics provide fundamentals."
       };
     }
 

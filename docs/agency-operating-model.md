@@ -97,7 +97,7 @@ Rank allowed stocks by business quality, valuation sanity, growth, stability, ba
 Inputs:
 
 - SEC fundamentals when available.
-- Bootstrap/fallback fundamentals only as provisional visibility, not as fully trusted production proof.
+- Live SEC fundamentals only. Pending names stay as allowed-universe metadata and are not scored as Fundamentals rows.
 - Market reference data such as price, beta, and valuation references.
 - User-editable screener thresholds.
 
@@ -107,7 +107,7 @@ Process:
 - Apply first-pass criteria.
 - Assign a stage such as eligible, watch, or reject.
 - Explain each criterion using the research-governed registry.
-- Track whether data is live SEC-backed or still bootstrap.
+- Track whether data is live SEC-backed; unrefreshed names remain outside the scored fundamentals table.
 
 Default factor families:
 
@@ -134,7 +134,7 @@ Output:
 - Screen stage.
 - Direction label, such as bullish_supportive, neutral, or bearish_headwind.
 - Reason codes.
-- Data source status, including SEC-backed versus bootstrap.
+- Data source status, with scored rows requiring SEC-backed fundamentals.
 - Criteria explanations.
 
 Dashboard role:
@@ -818,7 +818,7 @@ These are operational gaps, not design goals:
 - If `OPENAI_API_KEY` or `LLM_SELECTION_API_KEY` is blank, the LLM Selection Agent uses local shadow review.
 - If StockTwits is disabled, social/crowd sentiment is missing.
 - If trade prints are disabled, direct block-trade evidence is missing.
-- If a fundamentals row is still bootstrap, it should stay watch-only until live SEC data is available.
+- Pending fundamentals names should stay outside scored ranking until live SEC data is available.
 - Paper submission should remain gated until the user deliberately enables it.
 
 ## Glossary
@@ -828,6 +828,6 @@ These are operational gaps, not design goals:
 - Final selector: Arbitration layer combining deterministic, LLM, and portfolio policy.
 - Execution-ready: Candidate has passed final selection and can be sent to guarded Alpaca preview.
 - Paper submit ready: Broker is configured and submit gate is intentionally enabled.
-- Bootstrap fundamentals: Provisional fundamentals data that should not be treated as fully live SEC-backed.
+- Pending SEC fundamentals: Allowed-universe names that are waiting for SEC-backed metrics and are not scored yet.
 - Shadow review: Local non-OpenAI fallback reviewer used when the LLM provider is unavailable.
 - Evidence quality: Freshness, source reliability, classification confidence, and corroboration strength.

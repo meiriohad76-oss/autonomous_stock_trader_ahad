@@ -90,8 +90,12 @@ function summarizeBatch(batchNumber, response) {
     ingested: Number(result.ingested || 0),
     errors: Number(result.errors || 0),
     live_companies: Number(result.liveCompanies ?? secHealth.live_companies ?? 0),
-    pending_bootstrap_companies: Number(
-      result.pendingBootstrapCompanies ?? secHealth.pending_bootstrap_companies ?? 0
+    pending_live_sec_companies: Number(
+      result.pendingLiveSecCompanies ??
+        secHealth.pending_live_sec_companies ??
+        result.pendingBootstrapCompanies ??
+        secHealth.pending_bootstrap_companies ??
+        0
     ),
     refresh_batch_size: Number(result.refreshBatchSize ?? secHealth.refresh_batch_size ?? 0),
     refresh_limit: Number(result.refreshLimit ?? secHealth.refresh_limit ?? 0),
@@ -107,7 +111,7 @@ function logBatchProgress(summary) {
       `ingested=${summary.ingested}`,
       `errors=${summary.errors}`,
       `live=${summary.live_companies}`,
-      `pending=${summary.pending_bootstrap_companies}`,
+      `pending=${summary.pending_live_sec_companies}`,
       `selected=${summary.refresh_batch_size}/${summary.refresh_limit || "?"}`,
       `runtime=${summary.runtime_status || "unknown"}`,
       summary.lightweight_state_saved ? "state=saved" : "state=not-saved"
@@ -135,7 +139,7 @@ async function runCatchup(options) {
       batches.push(summary);
       logBatchProgress(summary);
 
-      if (summary.pending_bootstrap_companies === 0) {
+      if (summary.pending_live_sec_companies === 0) {
         stopReason = "complete";
         break;
       }

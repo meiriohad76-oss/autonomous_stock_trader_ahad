@@ -1,5 +1,3 @@
-import { fingerprint, round } from "../utils/helpers.js";
-
 const OEF_HOLDINGS_URL =
   "https://www.ishares.com/us/products/239723/ishares-sp-100-etf/1467271812596.ajax?dataType=fund&fileName=OEF_holdings&fileType=csv";
 
@@ -329,75 +327,6 @@ function normalizeSectorLabel(value) {
   return normalized;
 }
 
-function deterministicUnit(value) {
-  const hex = fingerprint(value).slice(0, 8);
-  return parseInt(hex, 16) / 0xffffffff;
-}
-
-function rangeValue(seed, min, max, digits = 6) {
-  return round(min + deterministicUnit(seed) * (max - min), digits);
-}
-
-function metricRangesForSector(sector) {
-  return {
-    ...DEFAULT_METRIC_RANGES,
-    ...(SECTOR_METRIC_RANGES[sector] || {})
-  };
-}
-
-function buildPlaceholderMetrics({ ticker, sector, inSp100, inQqq }) {
-  const ranges = metricRangesForSector(sector);
-  const sizeLift = inSp100 ? 0.01 : 0;
-  const qqqGrowthLift = inQqq ? 0.015 : 0;
-
-  return {
-    revenue_growth_yoy: round(rangeValue(`${ticker}:revenue_growth`, ...ranges.revenue_growth_yoy) + qqqGrowthLift, 6),
-    eps_growth_yoy: rangeValue(`${ticker}:eps_growth`, ...ranges.eps_growth_yoy),
-    fcf_growth_yoy: rangeValue(`${ticker}:fcf_growth`, ...ranges.fcf_growth_yoy),
-    gross_margin: rangeValue(`${ticker}:gross_margin`, ...ranges.gross_margin),
-    operating_margin: rangeValue(`${ticker}:operating_margin`, ...ranges.operating_margin),
-    net_margin: rangeValue(`${ticker}:net_margin`, ...ranges.net_margin),
-    roe: rangeValue(`${ticker}:roe`, ...ranges.roe),
-    roic: rangeValue(`${ticker}:roic`, ...ranges.roic),
-    debt_to_equity: rangeValue(`${ticker}:debt_to_equity`, ...ranges.debt_to_equity),
-    net_debt_to_ebitda: rangeValue(`${ticker}:net_debt_to_ebitda`, ...ranges.net_debt_to_ebitda),
-    current_ratio: round(rangeValue(`${ticker}:current_ratio`, ...ranges.current_ratio) + sizeLift, 6),
-    interest_coverage: rangeValue(`${ticker}:interest_coverage`, ...ranges.interest_coverage),
-    fcf_margin: rangeValue(`${ticker}:fcf_margin`, ...ranges.fcf_margin),
-    fcf_conversion: rangeValue(`${ticker}:fcf_conversion`, ...ranges.fcf_conversion),
-    asset_turnover: rangeValue(`${ticker}:asset_turnover`, ...ranges.asset_turnover),
-    margin_stability: rangeValue(`${ticker}:margin_stability`, ...ranges.margin_stability),
-    revenue_consistency: rangeValue(`${ticker}:revenue_consistency`, ...ranges.revenue_consistency),
-    pe_ttm: rangeValue(`${ticker}:pe_ttm`, ...ranges.pe_ttm),
-    ev_to_ebitda_ttm: rangeValue(`${ticker}:ev_to_ebitda_ttm`, ...ranges.ev_to_ebitda_ttm),
-    price_to_sales_ttm: rangeValue(`${ticker}:price_to_sales_ttm`, ...ranges.price_to_sales_ttm),
-    peg: rangeValue(`${ticker}:peg`, ...ranges.peg),
-    fcf_yield: rangeValue(`${ticker}:fcf_yield`, ...ranges.fcf_yield)
-  };
-}
-
-function buildPlaceholderQualityFlags({ ticker, inSp100, inQqq }) {
-  const missingFields = Math.round(
-    rangeValue(`${ticker}:missing_fields_count`, ...DEFAULT_QUALITY_FLAG_RANGES.missing_fields_count, 0)
-  );
-  const anomalyFlags = ["awaiting_sec_refresh", "bootstrap_placeholder"];
-
-  if (!inSp100 && inQqq) {
-    anomalyFlags.push("qqq_seed_only");
-  }
-
-  return {
-    restatement_flag: false,
-    missing_fields_count: missingFields,
-    anomaly_flags: anomalyFlags,
-    reporting_confidence_score: rangeValue(`${ticker}:reporting_confidence`, ...DEFAULT_QUALITY_FLAG_RANGES.reporting_confidence_score),
-    data_freshness_score: rangeValue(`${ticker}:data_freshness`, ...DEFAULT_QUALITY_FLAG_RANGES.data_freshness_score),
-    peer_comparability_score: rangeValue(`${ticker}:peer_comparability`, ...DEFAULT_QUALITY_FLAG_RANGES.peer_comparability_score),
-    rule_confidence: rangeValue(`${ticker}:rule_confidence`, ...DEFAULT_QUALITY_FLAG_RANGES.rule_confidence),
-    llm_confidence: rangeValue(`${ticker}:llm_confidence`, ...DEFAULT_QUALITY_FLAG_RANGES.llm_confidence)
-  };
-}
-
 function parseCsvLine(line) {
   return [...line.matchAll(/"([^"]*)"|([^,]+)/g)].map((match) => (match[1] ?? match[2] ?? "").trim());
 }
@@ -489,7 +418,7 @@ function buildFallbackSp100Map() {
   );
 }
 
-function buildPlaceholderCompany({
+function buildUniverseCompany({
   asOf,
   ticker,
   sp100Record,
@@ -518,28 +447,37 @@ function buildPlaceholderCompany({
     market_cap_bucket: inSp100 ? "mega_cap" : "large_cap",
     cik: secRecord?.cik || null,
     as_of: asOf,
-    filing_date: asOf.slice(0, 10),
-    period_end: asOf.slice(0, 10),
-    form_type: "BOOTSTRAP",
-    filing_url: "",
+    filing_date: null,
+    period_end: null,
+    form_type: null,
+    filing_url: null,
     summary:
       inSp100 && inQqq
-        ? "Bootstrapped into coverage from the S&P 100 and QQQ universe while the live SEC filing refresh catches up."
+        ? "Included in the S&P 100 and QQQ allowed universe while the live SEC filing refresh catches up."
         : inSp100
-          ? "Bootstrapped into coverage from the S&P 100 universe while the live SEC filing refresh catches up."
-          : "Bootstrapped into coverage from the QQQ universe while the live SEC filing refresh catches up.",
+          ? "Included in the S&P 100 allowed universe while the live SEC filing refresh catches up."
+          : "Included in the QQQ allowed universe while the live SEC filing refresh catches up.",
     notes: [
       inSp100 && inQqq
         ? "This company sits in both the S&P 100 and QQQ coverage universes."
         : inSp100
-          ? "This company is seeded from the S&P 100 coverage universe."
-          : "This company is seeded from the QQQ coverage universe.",
-      "Live SEC filings will replace this placeholder classification and metric pack after startup."
+          ? "This company is sourced from the S&P 100 coverage universe."
+          : "This company is sourced from the QQQ coverage universe.",
+      "No fundamental score is produced until live SEC filing data is available."
     ],
-    data_source: "bootstrap_placeholder",
-    metrics: buildPlaceholderMetrics({ ticker, sector, inSp100, inQqq }),
-    quality_flags: buildPlaceholderQualityFlags({ ticker, inSp100, inQqq }),
-    previous_composite_score: rangeValue(`${ticker}:previous_composite_score`, 0.36, 0.66, 3)
+    data_source: "universe_membership",
+    metrics: {},
+    quality_flags: {
+      restatement_flag: false,
+      missing_fields_count: null,
+      anomaly_flags: ["awaiting_live_sec"],
+      reporting_confidence_score: 0,
+      data_freshness_score: 0,
+      peer_comparability_score: 0,
+      rule_confidence: 0,
+      llm_confidence: 0
+    },
+    previous_composite_score: 0
   };
 }
 
@@ -567,7 +505,7 @@ export async function loadFundamentalUniverse({ config }) {
   const sp100Set = new Set(sp100Map.keys());
   const orderedTickers = [...new Set([...sp100Map.keys(), ...QQQ_TICKERS])];
   const companies = orderedTickers.map((ticker) =>
-    buildPlaceholderCompany({
+    buildUniverseCompany({
       asOf,
       ticker,
       sp100Record: sp100Map.get(ticker) || null,

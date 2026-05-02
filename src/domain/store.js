@@ -36,6 +36,7 @@ export function createStore(config) {
     pendingApprovals: new Map(),
     positions: new Map(),
     orders: new Map(),
+    fundamentalUniverse: null,
     agencyCycleLog: [],
     executionState: {
       enabled: false,
@@ -94,6 +95,7 @@ export function resetStore(store) {
   store.pendingApprovals = new Map();
   store.positions = new Map();
   store.orders = new Map();
+  store.fundamentalUniverse = null;
   store.agencyCycleLog = [];
   store.executionState = {
     enabled: false,

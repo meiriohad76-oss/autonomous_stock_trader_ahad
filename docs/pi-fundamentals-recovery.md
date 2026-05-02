@@ -28,5 +28,5 @@ What should change after restart:
 
 Notes:
 
-- The app now self-bootstraps the broader `S&P 100 + QQQ Holdings` universe during startup.
+- The app now loads the broader `S&P 100 + QQQ Holdings` universe during startup without creating scored placeholder fundamentals.
 - Live SEC enrichment will continue to improve those names after boot, so the first post-restart snapshot may broaden immediately and then get more detailed over time.

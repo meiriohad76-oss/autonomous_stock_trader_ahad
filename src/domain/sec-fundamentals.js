@@ -62,6 +62,7 @@ function buildEmptyResult() {
     refreshBatchSize: 0,
     refreshLimit: null,
     pendingBootstrapCompanies: 0,
+    pendingLiveSecCompanies: 0,
     marketReferenceRefreshSkipped: false
   };
 }
@@ -438,7 +439,7 @@ function buildSummary(companyName, computed, filing) {
   return `${companyName} was refreshed from the latest SEC filing and Company Facts dataset for the Fundamental Analyst.`;
 }
 
-export function computeLiveMetricsFromCompanyFacts(companyFacts, fallbackMetrics) {
+export function computeLiveMetricsFromCompanyFacts(companyFacts, fallbackMetrics = {}) {
   const revenueSeries = chooseConcept(companyFacts, [
     "RevenueFromContractWithCustomerExcludingAssessedTax",
     "RevenueFromContractWithCustomerIncludingAssessedTax",
@@ -551,7 +552,19 @@ function mergeLiveCompany(baseCompany, submissions, companyFacts, lookbackHours)
     return null;
   }
 
-  const liveMetrics = computeLiveMetricsFromCompanyFacts(companyFacts, baseCompany.metrics);
+  const priorLiveMetrics = baseCompany.data_source === "live_sec_filing" ? baseCompany.metrics || {} : {};
+  const baseQualityFlags = {
+    restatement_flag: false,
+    missing_fields_count: 0,
+    anomaly_flags: [],
+    reporting_confidence_score: 0.7,
+    data_freshness_score: 0.7,
+    peer_comparability_score: 0.7,
+    rule_confidence: 0.7,
+    llm_confidence: 0.65,
+    ...(baseCompany.quality_flags || {})
+  };
+  const liveMetrics = computeLiveMetricsFromCompanyFacts(companyFacts, priorLiveMetrics);
   const criticalFields = [
     "revenue_growth_yoy",
     "gross_margin",
@@ -564,23 +577,25 @@ function mergeLiveCompany(baseCompany, submissions, companyFacts, lookbackHours)
   const filingAgeDays = Math.max(0, Math.round((Date.now() - new Date(`${filing.filing_date}T00:00:00Z`).getTime()) / 86400000));
   const freshnessPenalty = Math.min(0.25, filingAgeDays / 540);
   const comparabilityPenalty = filing.form_type.startsWith("6-K") ? 0.16 : filing.form_type.startsWith("20-F") || filing.form_type.startsWith("40-F") ? 0.08 : 0;
-  const notes = buildNotes(filing.form_type, filing.filing_date, { ...baseCompany.metrics, ...liveMetrics });
+  const notes = buildNotes(filing.form_type, filing.filing_date, { ...priorLiveMetrics, ...liveMetrics });
 
   return {
     ...hydrateCompanyIdentity(baseCompany, submissions, submissions?.cik, filing),
     as_of: new Date().toISOString(),
     data_source: "live_sec_filing",
-    summary: buildSummary(baseCompany.company_name, { ...baseCompany.metrics, ...liveMetrics }, filing),
+    summary: buildSummary(baseCompany.company_name, { ...priorLiveMetrics, ...liveMetrics }, filing),
     notes,
     metrics: {
-      ...baseCompany.metrics,
+      ...priorLiveMetrics,
       ...liveMetrics
     },
     quality_flags: {
-      ...baseCompany.quality_flags,
+      ...baseQualityFlags,
       missing_fields_count: missingLiveFields.length,
       anomaly_flags: [
-        ...baseCompany.quality_flags.anomaly_flags.filter((item) => item !== "sec_data_gap" && item !== "stale_filing"),
+        ...(baseQualityFlags.anomaly_flags || []).filter(
+          (item) => !["sec_data_gap", "stale_filing", "awaiting_live_sec", "awaiting_sec_refresh", "bootstrap_placeholder"].includes(item)
+        ),
         ...(missingLiveFields.length ? ["sec_data_gap"] : []),
         ...(filingAgeDays > 180 ? ["stale_filing"] : [])
       ],
@@ -613,6 +628,7 @@ export function createSecFundamentalsCollector(app) {
         refresh_batch_size: 0,
         refresh_cursor: 0,
         pending_bootstrap_companies: 0,
+        pending_live_sec_companies: 0,
         next_poll_at: null
       };
     }
@@ -628,7 +644,7 @@ export function createSecFundamentalsCollector(app) {
 
   function currentPollMs() {
     const health = ensureHealthEntry();
-    const pending = Number(health.pending_bootstrap_companies || 0);
+    const pending = Number(health.pending_live_sec_companies || health.pending_bootstrap_companies || 0);
     if (pending > 0) {
       return Math.max(60_000, Number(config.fundamentalSecBaselinePollMs || config.fundamentalSecPollMs || 900_000));
     }
@@ -661,10 +677,12 @@ export function createSecFundamentalsCollector(app) {
       const refreshLimit = maxCompaniesPerPoll(config, trackedCompanies.length);
       health.refresh_limit = refreshLimit;
       health.refresh_batch_size = refreshBatch.length;
-      health.pending_bootstrap_companies = trackedCompanies.filter((company) => company.data_source !== "live_sec_filing").length;
+      health.pending_bootstrap_companies = 0;
+      health.pending_live_sec_companies = trackedCompanies.filter((company) => company.data_source !== "live_sec_filing").length;
       result.refreshLimit = refreshLimit;
       result.refreshBatchSize = refreshBatch.length;
-      result.pendingBootstrapCompanies = health.pending_bootstrap_companies;
+      result.pendingBootstrapCompanies = 0;
+      result.pendingLiveSecCompanies = health.pending_live_sec_companies;
 
       const tickerMap = await loadTickerCikMap(config, store);
       const persistenceArtifactsByTicker = new Map();
@@ -733,6 +751,7 @@ export function createSecFundamentalsCollector(app) {
 
       const processedByTicker = new Map(processed.map((entry) => [entry.company.ticker, entry]));
       const nextCompanies = trackedCompanies.map((company) => processedByTicker.get(company.ticker)?.company || company);
+      const liveCompaniesOnly = nextCompanies.filter((company) => company.data_source === "live_sec_filing");
       for (const entry of processed) {
         if (entry.error) {
           result.errors += 1;
@@ -746,25 +765,27 @@ export function createSecFundamentalsCollector(app) {
         }
       }
 
-      if (nextCompanies.length && app.replaceFundamentalCompanies) {
-        await app.replaceFundamentalCompanies(nextCompanies, {
+      if (app.replaceFundamentalCompanies) {
+        await app.replaceFundamentalCompanies(liveCompaniesOnly, {
           persistenceArtifactsByTicker,
           refreshMarketReference: false
         });
         result.marketReferenceRefreshSkipped = true;
       }
 
-      const totalLiveCompanyCount = nextCompanies.filter((company) => company.data_source === "live_sec_filing").length;
-      const pendingBootstrapCompanies = nextCompanies.filter((company) => company.data_source !== "live_sec_filing").length;
+      const totalLiveCompanyCount = liveCompaniesOnly.length;
+      const pendingLiveSecCompanies = nextCompanies.filter((company) => company.data_source !== "live_sec_filing").length;
       result.ingested = refreshedLiveCompanyCount;
       result.liveCompanies = totalLiveCompanyCount;
-      result.pendingBootstrapCompanies = pendingBootstrapCompanies;
+      result.pendingBootstrapCompanies = 0;
+      result.pendingLiveSecCompanies = pendingLiveSecCompanies;
       health.live_companies = totalLiveCompanyCount;
-      health.pending_bootstrap_companies = pendingBootstrapCompanies;
+      health.pending_bootstrap_companies = 0;
+      health.pending_live_sec_companies = pendingLiveSecCompanies;
       health.refresh_cursor =
-        pendingBootstrapCompanies === 0 || refreshedLiveCompanyCount > 0
+        pendingLiveSecCompanies === 0 || refreshedLiveCompanyCount > 0
           ? 0
-          : (Number(health.refresh_cursor || 0) + refreshBatch.length) % pendingBootstrapCompanies;
+          : (Number(health.refresh_cursor || 0) + refreshBatch.length) % pendingLiveSecCompanies;
       health.last_success_at = new Date().toISOString();
       if (refreshedLiveCompanyCount || !result.errors) {
         health.last_error = null;

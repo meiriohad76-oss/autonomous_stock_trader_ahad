@@ -187,10 +187,10 @@ function sourceLabel(value) {
   if (value === "live_sec_filing") {
     return "SEC live";
   }
-  if (value === "bootstrap_placeholder") {
-    return "Bootstrap";
+  if (value === "universe_membership") {
+    return "Awaiting SEC";
   }
-  return "Sample";
+  return "Not live";
 }
 
 function screenStageLabel(initialScreen = {}) {
@@ -430,7 +430,7 @@ function renderScreener() {
   ];
 
   const liveSecBacked = screener.live_sec_backed_count || 0;
-  const bootstrapCount = screener.bootstrap_placeholder_count || 0;
+  const pendingLiveSec = screener.pending_live_sec_count || 0;
   const healthLiveCompanies = state.health?.live_sources?.sec_fundamentals?.live_companies || 0;
 
   elements.screenerExplainer.innerHTML = `
@@ -448,7 +448,7 @@ function renderScreener() {
     </article>
     <article class="explain-card">
       <span>Data quality note</span>
-      <p>${bootstrapCount ? `${bootstrapCount} names are still bootstrap placeholders awaiting live SEC refresh. Only ${liveSecBacked || healthLiveCompanies} names are fully SEC-backed right now.` : "All displayed names are currently backed by live SEC refresh."}</p>
+      <p>${pendingLiveSec ? `${pendingLiveSec} names are awaiting live SEC refresh and are excluded from ranked fundamentals. ${liveSecBacked || healthLiveCompanies} names are fully SEC-backed right now.` : "All displayed names are currently backed by live SEC refresh."}</p>
     </article>
   `;
 
@@ -460,7 +460,7 @@ function renderScreener() {
     <article class="summary-card"><span>Pass Rate</span><strong>${pct(screener.pass_rate || 0, 0)}</strong></article>
     <article class="summary-card"><span>Criteria</span><strong>${(screener.criteria || []).length}</strong></article>
     <article class="summary-card"><span>SEC Live</span><strong>${liveSecBacked || healthLiveCompanies}</strong></article>
-    <article class="summary-card"><span>Bootstrap</span><strong>${bootstrapCount}</strong></article>
+    <article class="summary-card"><span>Awaiting SEC</span><strong>${pendingLiveSec}</strong></article>
   `;
 
   elements.screenerCriteria.innerHTML = (screener.criteria || []).length

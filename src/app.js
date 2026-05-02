@@ -75,7 +75,7 @@ const FUNDAMENTAL_SCREENER_FIELDS = {
     env: "SCREENER_REQUIRE_LIVE_SEC_FOR_ELIGIBLE",
     type: "boolean",
     label: "Require Live SEC For Eligible",
-    help: "When enabled, bootstrap placeholders can only reach Watch until live SEC filing data arrives."
+    help: "When enabled, only live SEC-backed fundamentals can become Eligible."
   },
   screenerMinReportingConfidence: {
     env: "SCREENER_MIN_REPORTING_CONFIDENCE",
@@ -591,7 +591,7 @@ async function persistEnvUpdates(filePath, updates) {
 }
 
 function buildWatchlistSnapshot(store, windowKey, filters = {}) {
-  const fullFundamentalRows = store.fundamentals?.leaderboard || [];
+  const fullFundamentalRows = trackedFundamentalCompanies(store);
   const fundamentalsByTicker = new Map(fullFundamentalRows.map((row) => [row.ticker, row]));
   const dedupedStates = new Map();
   const dedupedSectorStates = new Map();
@@ -757,7 +757,12 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         sentiment_visible_universe: sentimentVisibleScreening,
         filtered_sentiment_visible_universe: filteredSentimentVisibleScreening,
         fundamental_sec_live: fullFundamentalRows.filter((row) => row.data_source === "live_sec_filing").length,
-        bootstrap: fullFundamentalRows.filter((row) => row.data_source === "bootstrap_placeholder").length
+        bootstrap: 0,
+        pending_live_sec: Math.max(
+          0,
+          (store.fundamentalUniverse?.companies?.length || fullFundamentalRows.length) -
+            fullFundamentalRows.filter((row) => row.data_source === "live_sec_filing").length
+        )
       },
       sectors,
       alerts: buildActiveAlerts(store, 10),
@@ -794,13 +799,37 @@ function summarizePendingBySector(companies) {
     .sort((a, b) => b.count - a.count || a.sector.localeCompare(b.sector));
 }
 
+function isLiveSecCompany(company) {
+  return company?.data_source === "live_sec_filing";
+}
+
+function liveFundamentalRows(store) {
+  return (store.fundamentals?.leaderboard || []).filter(isLiveSecCompany);
+}
+
+function allowedUniverseCompanies(store) {
+  return store.fundamentalUniverse?.companies?.length
+    ? store.fundamentalUniverse.companies
+    : store.fundamentals?.leaderboard || [];
+}
+
+function trackedFundamentalCompanies(store) {
+  const liveByTicker = new Map(liveFundamentalRows(store).map((company) => [company.ticker, company]));
+  const universe = allowedUniverseCompanies(store);
+  if (!universe.length) {
+    return liveFundamentalRows(store);
+  }
+
+  return universe.map((company) => liveByTicker.get(company.ticker) || company);
+}
+
 function buildSecFundamentalsQueue(store, config, options = {}) {
   const parsedLimit = Math.floor(Number(options.limit || 20));
   const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(100, parsedLimit)) : 20;
-  const companies = store.fundamentals?.leaderboard || [];
+  const companies = trackedFundamentalCompanies(store);
   const health = store.health.liveSources.sec_fundamentals || {};
-  const liveCompanies = companies.filter((company) => company.data_source === "live_sec_filing");
-  const pendingCompanies = companies.filter((company) => company.data_source !== "live_sec_filing");
+  const liveCompanies = companies.filter(isLiveSecCompany);
+  const pendingCompanies = companies.filter((company) => !isLiveSecCompany(company));
   const refreshCursor = Math.max(0, Math.floor(Number(health.refresh_cursor || 0)));
   const nextBatch = selectSecFundamentalsRefreshBatch(companies, config, refreshCursor);
   const configuredLimit = Number(config.fundamentalSecMaxCompaniesPerPoll || 0);
@@ -814,7 +843,8 @@ function buildSecFundamentalsQueue(store, config, options = {}) {
     auto_start: config.autoStartSecFundamentals,
     tracked_companies: companies.length,
     live_sec_companies: liveCompanies.length,
-    pending_bootstrap_companies: pendingCompanies.length,
+    pending_bootstrap_companies: 0,
+    pending_live_sec_companies: pendingCompanies.length,
     coverage_ratio: companies.length ? round(liveCompanies.length / companies.length, 3) : 0,
     refresh_limit: refreshLimit,
     refresh_cursor: refreshCursor,
@@ -832,14 +862,14 @@ function buildSecFundamentalsQueue(store, config, options = {}) {
     current_poll_ms: pendingCompanies.length ? config.fundamentalSecBaselinePollMs : config.fundamentalSecPollMs,
     last_error: health.last_error || null,
     explanation:
-      "SEC fundamentals refresh runs in bounded batches. Pending bootstrap names stay visible with provisional scores until a batch replaces them with live SEC-backed metrics."
+      "SEC fundamentals refresh runs in bounded batches. Pending names are tracked only as allowed-universe metadata until live SEC filings create real fundamental rows."
   };
 }
 
 function refreshSecFundamentalsHealthPreview(store, config) {
-  const companies = store.fundamentals?.leaderboard || [];
-  const liveCompanies = companies.filter((company) => company.data_source === "live_sec_filing");
-  const pendingCompanies = companies.filter((company) => company.data_source !== "live_sec_filing");
+  const companies = trackedFundamentalCompanies(store);
+  const liveCompanies = companies.filter(isLiveSecCompany);
+  const pendingCompanies = companies.filter((company) => !isLiveSecCompany(company));
   const existing = store.health.liveSources.sec_fundamentals || {};
   const refreshCursor = Math.max(0, Math.floor(Number(existing.refresh_cursor || 0)));
   const nextBatch = selectSecFundamentalsRefreshBatch(companies, config, refreshCursor);
@@ -862,7 +892,8 @@ function refreshSecFundamentalsHealthPreview(store, config) {
     refresh_limit: refreshLimit,
     refresh_batch_size: existing.polling ? Number(existing.refresh_batch_size || 0) : nextBatch.length,
     refresh_cursor: refreshCursor,
-    pending_bootstrap_companies: pendingCompanies.length
+    pending_bootstrap_companies: 0,
+    pending_live_sec_companies: pendingCompanies.length
   };
 
   return store.health.liveSources.sec_fundamentals;
@@ -870,7 +901,7 @@ function refreshSecFundamentalsHealthPreview(store, config) {
 
 async function buildTickerDetail(store, marketDataService, ticker) {
   const fundamentalsByTicker = new Map((store.fundamentals?.leaderboard || []).map((row) => [row.ticker, row]));
-  const tickerMeta = lookupUniverseEntry(store.fundamentals?.leaderboard || [], ticker);
+  const tickerMeta = lookupUniverseEntry(trackedFundamentalCompanies(store), ticker);
   const fundamentalRow = fundamentalsByTicker.get(ticker) || null;
   const windows = Object.fromEntries(
     ["15m", "1h", "4h", "1d", "7d"].map((windowKey) => {
@@ -1058,10 +1089,10 @@ export function createSentimentApp() {
     config,
     store,
     pipeline,
-    getTrackedFundamentalCompanies: () => fundamentals.getTrackedCompanies()
+    getTrackedFundamentalCompanies: () => trackedFundamentalCompanies(store)
   });
   const marketDataService = createMarketDataService({ config, store });
-  const trackedUniverse = { getTrackedFundamentalCompanies: () => fundamentals.getTrackedCompanies() };
+  const trackedUniverse = { getTrackedFundamentalCompanies: () => trackedFundamentalCompanies(store) };
   const marketFlowMonitor = createMarketFlowMonitor({ config, store, pipeline, marketDataService, ...trackedUniverse });
   const secInsiderCollector = createSecInsiderCollector({ config, store, pipeline, ...trackedUniverse });
   const secInstitutionalCollector = createSecInstitutionalCollector({ config, store, pipeline, ...trackedUniverse });
@@ -1069,17 +1100,24 @@ export function createSentimentApp() {
   const socialSentimentCollector = createSocialSentimentCollector({ config, store, pipeline, ...trackedUniverse });
   const tradePrintsCollector = createTradePrintsCollector({ config, store, pipeline, ...trackedUniverse });
 
-  async function bootstrapFundamentalCoverage({ force = false } = {}) {
+  async function loadFundamentalCoverage({ force = false } = {}) {
     const targetUniverse = await loadFundamentalUniverse({ config });
-    const trackedTickers = fundamentals.getTrackedCompanies().map((company) => company.ticker).sort();
+    const previousUniverse = store.fundamentalUniverse?.companies || [];
+    store.fundamentalUniverse = targetUniverse;
+    const liveCompanies = fundamentals
+      .getTrackedCompanies()
+      .filter(isLiveSecCompany)
+      .filter((company) => targetUniverse.companies.some((universeCompany) => universeCompany.ticker === company.ticker));
+    const trackedTickers = previousUniverse.map((company) => company.ticker).sort();
     const nextTickers = targetUniverse.companies.map((company) => company.ticker).sort();
     const sameUniverse =
       trackedTickers.length === nextTickers.length &&
       trackedTickers.every((ticker, index) => ticker === nextTickers[index]);
+    const hadNonLiveFundamentals = fundamentals.getTrackedCompanies().some((company) => !isLiveSecCompany(company));
 
     store.health.liveSources.fundamental_universe = {
       enabled: true,
-      last_bootstrap_at: new Date().toISOString(),
+      last_loaded_at: new Date().toISOString(),
       universe_name: targetUniverse.universeName,
       tracked_companies: targetUniverse.counts.combined,
       sp100_constituents: targetUniverse.counts.sp100,
@@ -1087,14 +1125,17 @@ export function createSentimentApp() {
       sec_directory_source: targetUniverse.sources.sec_directory,
       sp100_source: targetUniverse.sources.sp100,
       qqq_source: targetUniverse.sources.qqq,
+      live_fundamental_rows: liveCompanies.length,
+      pending_live_sec_companies: Math.max(0, targetUniverse.companies.length - liveCompanies.length),
+      non_live_fundamental_rows: 0,
       last_error: null
     };
 
-    if (!force && sameUniverse) {
+    if (!force && sameUniverse && !hadNonLiveFundamentals) {
       return targetUniverse;
     }
 
-    await fundamentals.replaceCompanies(targetUniverse.companies, {
+    await fundamentals.replaceCompanies(liveCompanies, {
       asOf: targetUniverse.asOf,
       emitDiff: false
     });
@@ -1103,25 +1144,27 @@ export function createSentimentApp() {
 
   async function ensureFundamentalCoverage({ force = false, minTrackedCompanies = 25 } = {}) {
     const trackedCompanies = fundamentals.getTrackedCompanies();
-    const shouldBootstrap =
+    const shouldLoadUniverse =
       force ||
       trackedCompanies.length < minTrackedCompanies ||
+      !store.fundamentalUniverse?.companies?.length ||
       !store.health.liveSources.fundamental_universe;
 
-    if (!shouldBootstrap) {
+    if (!shouldLoadUniverse) {
       return null;
     }
 
     try {
-      return await bootstrapFundamentalCoverage({ force });
+      return await loadFundamentalCoverage({ force });
     } catch (error) {
       store.health.liveSources.fundamental_universe = {
         enabled: true,
-        last_bootstrap_at: new Date().toISOString(),
+        last_loaded_at: new Date().toISOString(),
         tracked_companies: trackedCompanies.length,
+        non_live_fundamental_rows: 0,
         last_error: error.message
       };
-      console.error("Fundamental universe bootstrap failed:", error);
+      console.error("Fundamental universe load failed:", error);
       return null;
     }
   }
@@ -1229,9 +1272,9 @@ export function createSentimentApp() {
       await persistence.saveStoreSnapshot(store);
       return { sentimentCount, fundamentalCount };
     },
-    async bootstrapFundamentalCoverage(options = {}) {
+    async loadFundamentalCoverage(options = {}) {
       await persistenceReady;
-      return bootstrapFundamentalCoverage(options);
+      return loadFundamentalCoverage(options);
     },
     getConfig() {
       return {
@@ -2117,7 +2160,7 @@ export function createSentimentApp() {
             if (
               item.payload.source === "sec_fundamentals" &&
               Number(response.result?.trackedCompanies || 0) > 0 &&
-              Number(response.result?.pendingBootstrapCompanies || 0) === 0
+              Number(response.result?.pendingLiveSecCompanies ?? response.result?.pendingBootstrapCompanies ?? 0) === 0
             ) {
               break;
             }
@@ -2299,7 +2342,7 @@ export function createSentimentApp() {
       return getFundamentalPersistenceFactSeries(store.fundamentalWarehouse, ticker, canonicalField, options);
     },
     getTrackedFundamentalCompanies() {
-      return fundamentals.getTrackedCompanies();
+      return trackedFundamentalCompanies(store);
     },
     async replaceFundamentalCompanies(companies, options = {}) {
       return fundamentals.replaceCompanies(companies, options);

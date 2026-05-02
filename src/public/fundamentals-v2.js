@@ -87,10 +87,10 @@ function sourceLabel(value) {
   if (value === "live_sec_filing") {
     return "SEC live";
   }
-  if (value === "bootstrap_placeholder") {
-    return "Bootstrap";
+  if (value === "universe_membership") {
+    return "Awaiting SEC";
   }
-  return "Sample";
+  return "Not live";
 }
 
 function screenStageLabel(initialScreen = {}) {
@@ -152,6 +152,7 @@ function buildEmptyDashboard() {
       rejected_count: 0,
       live_sec_backed_count: 0,
       bootstrap_placeholder_count: 0,
+      pending_live_sec_count: 0,
       pass_rate: 0,
       candidates: [],
       watchlist: []
@@ -251,7 +252,6 @@ function deriveScreener(rows) {
   const watch = rows.filter((item) => item.initial_screen?.stage === "watch");
   const rejected = rows.filter((item) => item.initial_screen?.stage === "reject");
   const liveSec = rows.filter((item) => item.data_source === "live_sec_filing");
-  const bootstrap = rows.filter((item) => item.data_source === "bootstrap_placeholder");
 
   return {
     criteria: base.criteria || [],
@@ -263,7 +263,8 @@ function deriveScreener(rows) {
     watch_count: watch.length,
     rejected_count: rejected.length,
     live_sec_backed_count: liveSec.length,
-    bootstrap_placeholder_count: bootstrap.length,
+    bootstrap_placeholder_count: 0,
+    pending_live_sec_count: 0,
     pass_rate: rows.length ? eligible.length / rows.length : 0,
     candidates: eligible.slice(0, 8),
     watchlist: watch.slice(0, 8)
@@ -386,7 +387,7 @@ function renderSummary() {
     <article class="summary-card"><span>Rejected In View</span><strong>${screener.rejected_count || 0}</strong><small>fails current gate</small></article>
     <article class="summary-card"><span>Avg Confidence</span><strong>${pct(summary.average_confidence || 0, 0)}</strong><small>${pct(summary.data_completeness || 0, 0)} complete</small></article>
     <article class="summary-card"><span>SEC Live In View</span><strong>${screener.live_sec_backed_count || 0}</strong><small>current filtered results</small></article>
-    <article class="summary-card"><span>Bootstrap In View</span><strong>${screener.bootstrap_placeholder_count || 0}</strong><small>provisional fundamentals</small></article>
+    <article class="summary-card"><span>Awaiting SEC</span><strong>${screener.pending_live_sec_count || 0}</strong><small>excluded until live</small></article>
   `;
 }
 

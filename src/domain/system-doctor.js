@@ -116,7 +116,9 @@ export function buildSystemDoctorSnapshot({
     workflowStatus?.trade_plan?.tracked_tickers ||
     0;
   const secLiveCount = secQueue?.live_sec_companies || health?.live_sources?.sec_fundamentals?.live_companies || 0;
-  const pendingBootstrap =
+  const pendingLiveSec =
+    secQueue?.pending_live_sec_companies ??
+    health?.live_sources?.sec_fundamentals?.pending_live_sec_companies ??
     secQueue?.pending_bootstrap_companies ??
     health?.live_sources?.sec_fundamentals?.pending_bootstrap_companies ??
     0;
@@ -181,11 +183,11 @@ export function buildSystemDoctorSnapshot({
     check(
       "fundamentals",
       "Fundamentals Agent",
-      pendingBootstrap ? "warning" : trackedCount ? "pass" : "fail",
+      pendingLiveSec ? "warning" : trackedCount ? "pass" : "fail",
       trackedCount
-        ? `${secLiveCount}/${trackedCount} names are SEC-backed; ${pendingBootstrap} bootstrap rows remain.`
+        ? `${secLiveCount}/${trackedCount} names are SEC-backed; ${pendingLiveSec} names are still awaiting live SEC data.`
         : "No fundamentals universe is available.",
-      { live_sec_count: secLiveCount, pending_bootstrap_count: pendingBootstrap }
+      { live_sec_count: secLiveCount, pending_live_sec_count: pendingLiveSec, pending_bootstrap_count: 0 }
     ),
     check(
       "live_pricing",
@@ -298,7 +300,7 @@ export function buildSystemDoctorSnapshot({
     credentialWarnings.length && "One or more placeholder credential values were ignored.",
     !livePricingReady && "Live pricing is not confirmed; paper submission remains gated.",
     marketauxSource?.last_error && `Marketaux needs attention: ${marketauxSource.last_error}`,
-    pendingBootstrap > 0 && `${pendingBootstrap} fundamentals rows still need live SEC confirmation.`,
+    pendingLiveSec > 0 && `${pendingLiveSec} allowed-universe names still need live SEC fundamentals.`,
     baseline && !baseline.ready && `${baseline.ready_count || 0}/${baseline.required_count || 12} agents have completed the first baseline load.`,
     counts.visible > 0 && !counts.executable && "Selection has review/watch candidates but no executable final candidate.",
     !broker.configured && "Alpaca broker credentials are missing.",

@@ -97,7 +97,7 @@ POST /api/runtime-reliability/actions
 
 `/api/health` includes a compact `runtime_reliability` section. `/api/runtime-reliability` returns the complete source-by-source view.
 `/api/ready` separates HTTP readiness from live-source warmup, which is useful on the Pi because the dashboard can be reachable while collectors are still starting.
-`/api/fundamentals/sec-queue` exposes SEC fundamentals coverage progress, pending bootstrap counts, pending sectors, and the next bounded refresh batch.
+`/api/fundamentals/sec-queue` exposes SEC fundamentals coverage progress, pending live-SEC counts, pending sectors, and the next bounded refresh batch.
 
 ## Operator actions
 
@@ -141,7 +141,7 @@ The expected Pi workflow is:
 1. Keep `pi_light` active.
 2. Run one SEC fundamentals batch.
 3. Watch runtime pressure and live SEC coverage.
-4. Repeat later until bootstrap names are replaced by SEC-backed fundamentals.
+4. Repeat later until pending names receive SEC-backed fundamentals.
 
 This gives the system forward progress without returning to the heavy SQLite backup loop that overloaded the Pi.
 
@@ -153,7 +153,7 @@ For hands-off but still bounded SEC progress, use the catch-up CLI instead of pr
 npm run sec:catchup -- --max-batches 5 --delay-ms 2000
 ```
 
-The helper calls the same one-shot runtime action as the dashboard. It does not enable background polling and it does not rewrite `.env`. On the Pi, each batch uses `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL`, so `pi_light` normally refreshes up to 8 names per batch. The command prints one progress line per batch, then a final JSON summary with live SEC count, remaining bootstrap count, runtime status, and lightweight-state save status.
+The helper calls the same one-shot runtime action as the dashboard. It does not enable background polling and it does not rewrite `.env`. On the Pi, each batch uses `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL`, so `pi_light` normally refreshes up to 8 names per batch. The command prints one progress line per batch, then a final JSON summary with live SEC count, remaining pending live-SEC count, runtime status, and lightweight-state save status.
 
 Useful variants:
 
@@ -196,7 +196,7 @@ SEC fundamentals is intentionally treated as a heavy source. The collector uses 
 - In `pi_light`, the profile sets `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL=8`.
 - In `full_live`, the profile sets `FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL=24`.
 
-Each bounded poll prioritizes bootstrap placeholders before already SEC-live companies, then rotates through the remaining list on later polls. The full 168-stock universe is preserved while the batch refresh is running; unprocessed names remain visible as bootstrap placeholders instead of disappearing from the dashboard.
+Each bounded poll prioritizes allowed-universe names that do not yet have SEC-backed fundamentals, then rotates through already SEC-live companies on later polls. The full 168-stock universe is preserved as metadata while the batch refresh is running; unprocessed names remain outside scored fundamentals until live SEC rows exist.
 
 Health fields exposed under `live_sources.sec_fundamentals`:
 
@@ -205,7 +205,7 @@ Health fields exposed under `live_sources.sec_fundamentals`:
 - `refresh_batch_size`: number selected for the current poll.
 - `refresh_cursor`: retry cursor used when a batch cannot advance because all selected names failed.
 - `live_companies`: total SEC-backed companies after the poll.
-- `pending_bootstrap_companies`: names still waiting for live SEC refresh.
+- `pending_live_sec_companies`: names still waiting for live SEC refresh.
 
 For a direct operator view of the SEC queue:
 
@@ -213,7 +213,7 @@ For a direct operator view of the SEC queue:
 curl -s "http://127.0.0.1:3000/api/fundamentals/sec-queue?limit=10"
 ```
 
-This returns the full tracked count, live SEC count, remaining bootstrap count, pending sector distribution, and a preview of the next names that a System tab SEC batch or `npm run sec:catchup` will attempt.
+This returns the full tracked count, live SEC count, remaining pending live-SEC count, pending sector distribution, and a preview of the next names that a System tab SEC batch or `npm run sec:catchup` will attempt.
 
 ## Runtime profiles
 

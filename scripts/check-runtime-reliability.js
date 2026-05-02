@@ -96,8 +96,8 @@ assert(
   "SEC fundamentals health should expose tracked company count before the first manual batch."
 );
 assert(
-  health.live_sources?.sec_fundamentals?.pending_bootstrap_companies === 168,
-  "SEC fundamentals health should expose pending bootstrap count before the first manual batch."
+  health.live_sources?.sec_fundamentals?.pending_live_sec_companies === 168,
+  "SEC fundamentals health should expose pending live-SEC count before the first manual batch."
 );
 assert(
   health.live_sources?.fundamental_universe?.sec_directory_source === "unavailable_fallback",
@@ -115,22 +115,23 @@ assert(
   "Sentiment watchlist should expose the full universe plus any sentiment-only rows."
 );
 const screenOnlyRows = watchlist.leaderboard.filter((row) => !row.sentiment_visible && row.doc_count === 0);
-assert(screenOnlyRows.length > 0, "Runtime check should include screen-only fundamentals rows.");
+assert(screenOnlyRows.length > 0, "Runtime check should include allowed-universe rows before live SEC scoring.");
 assert(
-  screenOnlyRows.every((row) => row.weighted_confidence === 0 && row.fundamental_confidence > 0),
-  "Screen-only rows must keep sentiment confidence at zero and expose fundamental confidence separately."
+  screenOnlyRows.every((row) => row.weighted_confidence === 0 && row.fundamental_confidence === null),
+  "Allowed-universe rows must keep sentiment confidence at zero and avoid provisional fundamental confidence."
 );
-const unknownBootstrapRows = watchlist.leaderboard.filter(
+const bootstrapRows = watchlist.leaderboard.filter(
   (row) => row.fundamental_data_source === "bootstrap_placeholder" && row.sector === "Unknown"
 );
 assert(
-  unknownBootstrapRows.length === 0,
-  "Bootstrap fallback should not leave tracked stocks with Unknown sectors."
+  bootstrapRows.length === 0,
+  "Bootstrap rows should not appear in the watchlist."
 );
 
 const secQueue = app.getSecFundamentalsQueue({ limit: 5 });
 assert(secQueue.tracked_companies === 168, "SEC queue should expose the full fundamentals universe.");
-assert(secQueue.pending_bootstrap_companies >= 0, "SEC queue should expose pending bootstrap count.");
+assert(secQueue.pending_bootstrap_companies === 0, "SEC queue should not expose active pending bootstrap rows.");
+assert(secQueue.pending_live_sec_companies >= 0, "SEC queue should expose pending live-SEC count.");
 assert(secQueue.next_batch.length <= 5, "SEC queue should honor preview limits.");
 assert(secQueue.next_batch_size > 0, "SEC queue should expose the next SEC refresh batch.");
 assert(
@@ -223,9 +224,9 @@ console.log(
       eligible_filter_rows: eligibleWatchlist.screener_overview.visible_universe.tracked,
       sector_count: watchlist.sectors.length,
       screen_only_rows: screenOnlyRows.length,
-      unknown_bootstrap_sector_rows: unknownBootstrapRows.length,
+      bootstrap_rows: bootstrapRows.length,
       sec_queue_next_batch: secQueue.next_batch.length,
-      sec_queue_pending: secQueue.pending_bootstrap_companies,
+      sec_queue_pending_live_sec: secQueue.pending_live_sec_companies,
       lightweight_state: health.database_backup.provider,
       blocked_disabled_source: Boolean(disabledError)
     },

@@ -11,7 +11,7 @@ const HOUR_MS = 3_600_000;
 export const RUNTIME_PROFILES = {
   emergency: {
     label: "Emergency",
-    description: "Lowest-load mode for recovering the Pi. Keeps the dashboard and bootstrap universe online without live collectors or SQLite writes.",
+    description: "Lowest-load mode for recovering the Pi. Keeps the dashboard and allowed universe online without live collectors or SQLite writes.",
     env: {
       PI_PERFORMANCE_MODE: "true",
       DATABASE_ENABLED: "false",
@@ -339,7 +339,7 @@ function sourceSpecs(config) {
       autoStart: true,
       intervalMs: 24 * HOUR_MS,
       criticality: "critical",
-      notes: "Bootstraps the tracked S&P 100 + QQQ coverage set."
+      notes: "Loads the tracked S&P 100 + QQQ coverage set without scored placeholder fundamentals."
     },
     {
       key: "live_news",

@@ -829,10 +829,10 @@ export function buildAgencyCycleStatus({
   const outcomeSample = decisionCount + positionCount;
   const secCoveragePct = Math.round(Number(secQueue?.coverage_ratio || 0) * 100);
   const trackedCount = secQueue?.tracked_companies || 0;
-  const pendingSec = secQueue?.pending_bootstrap_companies || 0;
+  const pendingSec = secQueue?.pending_live_sec_companies ?? secQueue?.pending_bootstrap_companies ?? 0;
   const freshDecisionEvidence = workflowStatus?.live_data?.fresh_decision_evidence_count || 0;
   const livePricingReady = Boolean(workflowStatus?.live_data?.live_pricing_ready);
-  const secLiveCount = Math.max(0, trackedCount - pendingSec);
+  const secLiveCount = secQueue?.live_sec_companies ?? Math.max(0, trackedCount - pendingSec);
   const secPolling = Boolean(secQueue?.polling);
   const selectorRan =
     Number(tradeSetups?.counts?.tracked_tickers || 0) > 0 ||
@@ -973,7 +973,7 @@ export function buildAgencyCycleStatus({
           cycleMs: cfg.agencyInitialBaselineCycleMs,
           cooldownMs: secCooldownMs
         }),
-        basis: `SEC catch-up still has ${pendingSec} bootstrap row(s): ${secBatchSize} companies/batch, ${secBatchesPerRun} batch(es)/baseline run, baseline cadence ${cadenceLabel(cfg.agencyInitialBaselineCycleMs)}${sourceCooldownLabel(secRuntimeSource) ? `, ${sourceCooldownLabel(secRuntimeSource)}` : ""}.`
+        basis: `SEC catch-up still has ${pendingSec} allowed-universe name(s) awaiting live SEC data: ${secBatchSize} companies/batch, ${secBatchesPerRun} batch(es)/baseline run, baseline cadence ${cadenceLabel(cfg.agencyInitialBaselineCycleMs)}${sourceCooldownLabel(secRuntimeSource) ? `, ${sourceCooldownLabel(secRuntimeSource)}` : ""}.`
       })
     : completionEstimate({ phase: "complete", ms: 0, basis: "All tracked companies are SEC-backed." });
   const secEstimate = fundamentalsBaselineReady
@@ -982,7 +982,7 @@ export function buildAgencyCycleStatus({
         ms: 0,
         label: pendingSec ? "baseline ready; background catch-up remains" : "complete",
         basis: pendingSec
-          ? `${secLiveCount}/${trackedCount} companies are SEC-backed, meeting the ${Math.round(minSecCoveragePct * 100)}% baseline threshold. Remaining rows continue as background catch-up.`
+          ? `${secLiveCount}/${trackedCount} companies are SEC-backed, meeting the ${Math.round(minSecCoveragePct * 100)}% baseline threshold. Remaining names continue as background SEC catch-up.`
           : "SEC-backed fundamentals baseline is complete."
       })
     : trackedCount
@@ -1260,7 +1260,7 @@ export function buildAgencyCycleStatus({
         }),
     fundamentals: trackedCount
       ? pendingSec
-        ? workerStatus("review", `${pendingSec} bootstrap rows still need SEC confirmation.`, {
+        ? workerStatus("review", `${pendingSec} names still need live SEC fundamentals.`, {
             data_state: secPolling ? "loading" : "review",
             loading: secPolling,
             data_ready: secLiveCount > 0,
@@ -1269,7 +1269,7 @@ export function buildAgencyCycleStatus({
             progress_target: trackedCount,
             progress_label: `${secLiveCount}/${trackedCount} SEC-backed${secPolling ? "; polling now" : "; background catch-up"}`,
             remaining: [
-              `${pendingSec} bootstrap fundamentals rows`,
+              `${pendingSec} names awaiting live SEC fundamentals`,
               secRunEstimate,
               secQueue?.next_poll_at ? `next auto SEC batch ${secQueue.next_poll_at}` : "run initial baseline to continue now"
             ]
