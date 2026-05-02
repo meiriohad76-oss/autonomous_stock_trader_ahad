@@ -13,6 +13,7 @@ This repository contains a buildable MVP of the Sentiment Analyst pipeline descr
 - Replayable sample market events in [data/sample-events.json](/C:/Users/meiri/OneDrive/Documents/trading%20system/data/sample-events.json)
 - Replayable sample fundamental coverage in [data/sample-fundamentals.json](/C:/Users/meiri/OneDrive/Documents/trading%20system/data/sample-fundamentals.json)
 - Extension docs in [docs/architecture.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/architecture.md) and [docs/prompt-pack.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/prompt-pack.md)
+- Plain user instructions for operating the 12-agent trading workflow in [docs/user-guide.md](docs/user-guide.md)
 
 ## Commands
 
