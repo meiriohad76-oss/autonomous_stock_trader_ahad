@@ -1,5 +1,7 @@
+import { normalizeTickerSymbol } from "../utils/helpers.js";
+
 function cleanTicker(value) {
-  return String(value || "").toUpperCase().trim();
+  return normalizeTickerSymbol(value);
 }
 
 function cleanCompanyName(entry, ticker) {

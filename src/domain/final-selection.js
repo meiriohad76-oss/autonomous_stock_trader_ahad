@@ -1,4 +1,4 @@
-import { clamp, round } from "../utils/helpers.js";
+import { clamp, normalizeTickerSymbol, round } from "../utils/helpers.js";
 import { buildPolicyAdjustedSetup } from "./portfolio-policy.js";
 
 function isTradable(action) {
@@ -6,7 +6,7 @@ function isTradable(action) {
 }
 
 function normalizeTicker(value) {
-  return String(value || "").trim().toUpperCase();
+  return normalizeTickerSymbol(value);
 }
 
 function agreementStatus(deterministicAction, llmAction) {

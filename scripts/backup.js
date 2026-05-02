@@ -16,7 +16,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createGzip } from "node:zlib";
 import { createReadStream, createWriteStream, existsSync, unlinkSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,7 +97,7 @@ async function run() {
   // 3. Upload to Google Drive
   const remotePath = `${RCLONE_REMOTE}:${GDRIVE_FOLDER}`;
   log(`Uploading to ${remotePath} …`);
-  execSync(`rclone copy "${tmpGz}" "${remotePath}"`, { stdio: "inherit" });
+  execFileSync("rclone", ["copy", tmpGz, remotePath], { stdio: "inherit" });
   silentUnlink(tmpGz);
   log("Upload complete.");
 
@@ -109,7 +109,7 @@ async function run() {
   log(`Pruning backups older than ${cutoffDate} from ${remotePath} …`);
   let listing = "";
   try {
-    listing = execSync(`rclone lsf "${remotePath}" --files-only`, { encoding: "utf8" });
+    listing = execFileSync("rclone", ["lsf", remotePath, "--files-only"], { encoding: "utf8" });
   } catch {
     log("Could not list remote files — skipping prune.");
   }
@@ -122,7 +122,7 @@ async function run() {
 
   for (const old of toDelete) {
     log(`Deleting old backup: ${old}`);
-    execSync(`rclone deletefile "${remotePath}/${old}"`, { stdio: "inherit" });
+    execFileSync("rclone", ["deletefile", `${remotePath}/${old}`], { stdio: "inherit" });
   }
 
   log(`Done. ${toDelete.length} old backup(s) removed. Current archive: ${remotePath}`);

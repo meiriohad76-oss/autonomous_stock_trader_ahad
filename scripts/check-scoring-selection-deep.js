@@ -3,6 +3,7 @@ process.env.BROKER_SUBMIT_ENABLED = "false";
 process.env.SEED_DATA_IN_DECISIONS = "false";
 
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 const { buildAgencyCycleStatus } = await import("../src/domain/agency-cycle.js");
 const { buildExecutionIntent } = await import("../src/domain/execution-agent.js");
@@ -27,6 +28,7 @@ const {
   rotateUniverseEntries,
   uniqueUniverseEntries
 } = await import("../src/domain/tracked-universe.js");
+const { normalizeTickerSymbol } = await import("../src/utils/helpers.js");
 
 const now = new Date("2026-05-02T13:30:00.000Z").toISOString();
 const old = new Date(Date.parse(now) - 120 * 3_600_000).toISOString();
@@ -313,14 +315,19 @@ async function testUniverseAgent() {
     { ticker: "aapl", company: "Apple Inc.", sector: "Information Technology" },
     { symbol: "AAPL", company_name: "Apple Duplicate" },
     { entity_key: "MSFT", entity_name: "Microsoft Corporation" },
+    { ticker: "AAPL; rm -rf /", company: "Command-shaped symbol" },
+    { ticker: "$(touch /tmp/pwned)", company: "Subshell-shaped symbol" },
+    { ticker: "BRK.B", company: "Berkshire Hathaway Class B" },
     { ticker: "" },
     null
   ]);
   const rotated = rotateUniverseEntries(entries, 1, 3);
 
-  assert.equal(entries.length, 2, "Universe should normalize and dedupe tickers.");
+  assert.equal(entries.length, 3, "Universe should normalize, dedupe, and reject unsafe tickers.");
   assert.equal(lookupUniverseEntry(entries, "msft")?.ticker, "MSFT", "Universe lookup should be case-insensitive.");
-  assert.deepEqual(rotated.selected.map((item) => item.ticker), ["MSFT", "AAPL"], "Universe rotation should wrap around without samples.");
+  assert.equal(lookupUniverseEntry(entries, "AAPL; rm -rf /"), null, "Command-shaped ticker input must not enter the universe.");
+  assert.equal(lookupUniverseEntry(entries, "brk.b")?.ticker, "BRK.B", "Normal dotted US tickers should remain valid.");
+  assert.deepEqual(rotated.selected.map((item) => item.ticker), ["MSFT", "BRK.B", "AAPL"], "Universe rotation should wrap around without unsafe rows.");
   record("Universe Agent", "dedupe_lookup_rotation", { universe_count: entries.length });
 }
 
@@ -765,6 +772,12 @@ async function testFinalSelectionPolicyRiskExecutionPortfolio(tradeSetups) {
   assert.equal(intent.order.order_class, "bracket", "Execution preview should use bracket legs when configured.");
   const blockedIntent = buildExecutionIntent({ ...win.setup_for_execution, conviction: 0.2 }, { equity: "100000", buying_power: "50000" }, config);
   assert.equal(blockedIntent.blocked_reason, "conviction_below_execution_minimum", "Execution should block below-threshold conviction.");
+  const maliciousTickerIntent = buildExecutionIntent(
+    { ...win.setup_for_execution, ticker: "AAPL; rm -rf /", action: "long", conviction: 0.9, current_price: 100 },
+    { equity: "100000", buying_power: "50000" },
+    config
+  );
+  assert.equal(maliciousTickerIntent.blocked_reason, "invalid_ticker", "Execution should reject command-shaped ticker strings.");
 
   const policySnapshot = buildPortfolioPolicySnapshot({
     config,
@@ -804,7 +817,7 @@ async function testFinalSelectionPolicyRiskExecutionPortfolio(tradeSetups) {
     win_final_conviction: win.final_conviction
   });
   record("Risk Manager", "hard_blocks_and_preview_risk", { blocked_reasons: blockedRisk.hard_blocks });
-  record("Execution Agent", "preview_bracket_and_threshold_blocks", { estimated_notional: intent.estimated_notional_usd });
+  record("Execution Agent", "preview_bracket_threshold_and_input_blocks", { estimated_notional: intent.estimated_notional_usd });
   record("Portfolio Policy Agent", "user_policy_caps_and_guardrails", { max_position_pct: portfolioPolicy.portfolioMaxPositionPct });
   record("Portfolio Monitor", "stops_targets_and_position_review", {
     close_candidates: monitor.close_candidate_count,
@@ -861,6 +874,60 @@ async function testAgencyCycleAndLearning({ tradeSetups, finalSelection, riskSna
   });
 }
 
+async function testSecurityAndUnusualDataHardening() {
+  const unusualValues = [
+    "",
+    "   ",
+    "AAPL; rm -rf /",
+    "MSFT && curl attacker",
+    "$(touch /tmp/pwned)",
+    "NVDA\nBROKER_SUBMIT_ENABLED=true",
+    "META`whoami`",
+    "BRK.B",
+    "GOOGL",
+    "QQQ"
+  ];
+  const normalized = unusualValues.map((value) => [value, normalizeTickerSymbol(value)]);
+  const allowed = normalized.filter(([, ticker]) => ticker).map(([, ticker]) => ticker);
+
+  assert.deepEqual(allowed, ["BRK.B", "GOOGL", "QQQ"], "Ticker sanitizer should allow normal symbols and reject command-shaped input.");
+
+  const backupScript = await readFile(new URL("./backup.js", import.meta.url), "utf8");
+  assert.ok(!/execSync\s*\(/.test(backupScript), "Backup helper should not use shell-interpolated execSync.");
+  assert.ok(/execFileSync\s*\(\s*"rclone"/.test(backupScript), "Backup helper should call rclone with argument arrays.");
+
+  const maliciousRuntimeCycle = buildAgencyCycleStatus({
+    config,
+    readiness: { ready: true },
+    runtimeReliability: { status: "healthy" },
+    workflowStatus: {
+      status: "review_required",
+      can_use_for_decisions: true,
+      can_preview_orders: false,
+      can_submit_orders: false,
+      live_data: { fresh_decision_evidence_count: 1, live_pricing_ready: true, sources: [] },
+      blockers: [],
+      warnings: [],
+      next_actions: []
+    },
+    tradeSetups: { counts: { long: 0, short: 0, watch: 1 }, setups: [{ ticker: "AAPL; rm -rf /", action: "watch" }] },
+    executionStatus: { broker: { configured: true, mode: "paper", submit_enabled: false, ready_for_order_submission: false } },
+    riskSnapshot: { status: "ok", hard_blocks: [] },
+    positionMonitor: { position_count: 0, open_order_count: 0 },
+    portfolioPolicy: { status: "ok", summary: "Policy clear.", hard_blocks: [] },
+    llmSelection: { status: "shadow", mode: "shadow", recommendations: [] },
+    finalSelection: { counts: { visible: 0, executable: 0, final_buy: 0, final_sell: 0, review: 0, watch: 0 }, candidates: [] },
+    secQueue: { tracked_companies: 168, live_sec_companies: 168, pending_live_sec_companies: 0, coverage_ratio: 1 },
+    executionLog: []
+  });
+  assert.ok(maliciousRuntimeCycle.workers.length === 12, "Command-shaped display data should not break agency-cycle rendering.");
+
+  record("System", "unusual_data_and_shell_command_hardening", {
+    rejected_ticker_inputs: unusualValues.length - allowed.length,
+    shell_interpolation_removed: true
+  });
+}
+
 async function testScoreEdgeCases() {
   let seed = 7;
   function random() {
@@ -911,6 +978,7 @@ await testLlmSelectionAgent(tradeSetups);
 const finalContext = await testFinalSelectionPolicyRiskExecutionPortfolio(tradeSetups);
 await testAgencyCycleAndLearning({ tradeSetups, ...finalContext });
 await testScoreEdgeCases();
+await testSecurityAndUnusualDataHardening();
 
 const byAgent = results.reduce((acc, item) => {
   acc[item.agent] = (acc[item.agent] || 0) + 1;

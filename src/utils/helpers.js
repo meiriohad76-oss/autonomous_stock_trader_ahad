@@ -18,6 +18,17 @@ export function normalizeWhitespace(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
+export const SAFE_TICKER_PATTERN = /^[A-Z0-9][A-Z0-9.-]{0,15}$/;
+
+export function normalizeTickerSymbol(value) {
+  const ticker = normalizeWhitespace(value).toUpperCase();
+  return SAFE_TICKER_PATTERN.test(ticker) ? ticker : "";
+}
+
+export function isSafeTickerSymbol(value) {
+  return Boolean(normalizeTickerSymbol(value));
+}
+
 export function toIsoString(value = new Date()) {
   return new Date(value).toISOString();
 }

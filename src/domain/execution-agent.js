@@ -1,4 +1,4 @@
-import { clamp, round } from "../utils/helpers.js";
+import { clamp, normalizeTickerSymbol, round } from "../utils/helpers.js";
 
 function numberOrNull(value) {
   const parsed = Number(value);
@@ -10,7 +10,7 @@ function accountNumber(account, key, fallback = null) {
 }
 
 function normalizeTicker(value) {
-  return String(value || "").trim().toUpperCase();
+  return normalizeTickerSymbol(value);
 }
 
 function orderSideForAction(action) {
@@ -98,15 +98,20 @@ export function buildExecutionIntent(setup, account, config, { now = new Date() 
     return block("missing_trade_setup");
   }
 
-  const ticker = normalizeTicker(setup.ticker);
+  const rawTicker = String(setup.ticker ?? "").trim();
+  const ticker = normalizeTicker(rawTicker);
   const action = setup.action;
   const side = orderSideForAction(action);
   const conviction = numberOrNull(setup.conviction) ?? 0;
   const currentPrice = numberOrNull(setup.current_price);
   const minConviction = effectiveExecutionMinConviction(config);
 
-  if (!ticker) {
+  if (!rawTicker) {
     return block("missing_ticker", { setup });
+  }
+
+  if (!ticker) {
+    return block("invalid_ticker", { setup });
   }
 
   if (!side) {
