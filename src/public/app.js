@@ -4761,8 +4761,13 @@ function renderSystemView() {
   elements.systemSourceQuality.innerHTML = reliabilitySources.length
     ? reliabilitySources
         .map(
-          (source) => `
-            <div class="source-card runtime-source-card ${sourceStatusClass(source.status)}">
+          (source) => {
+            const providerChain = Array.isArray(source.provider_chain) && source.provider_chain.length
+              ? source.provider_chain.join(" -> ")
+              : null;
+            const cooldowns = Array.isArray(source.provider_cooldowns) ? source.provider_cooldowns : [];
+            return `
+              <div class="source-card runtime-source-card ${sourceStatusClass(source.status)}">
               <div class="runtime-source-head">
                 <strong>${source.label}</strong>
                 <span class="sentiment-badge ${sourceStatusClass(source.status)}">${prettyLabel(source.status)}</span>
@@ -4770,14 +4775,17 @@ function renderSystemView() {
               <span>${sourceStatusMeaning(source.status)}</span>
               <span>${source.reason}</span>
               <span>${source.notes}</span>
-              <small>Provider: ${source.provider || "n/a"}${source.feed ? ` (${source.feed})` : ""} - Fallback: ${source.fallback_mode ? "yes" : "no"}</small>
+              <small>Provider: ${source.provider || "n/a"}${source.active_provider ? ` - Active: ${source.active_provider}` : ""}${source.feed ? ` (${source.feed})` : ""} - Fallback: ${source.fallback_mode ? "yes" : "no"}</small>
+              ${providerChain ? `<small>Provider chain: ${escapeHtml(providerChain)}</small>` : ""}
+              ${cooldowns.length ? `<small>Cooldown: ${cooldowns.map((item) => `${escapeHtml(item.provider)} ${Math.ceil((item.seconds_remaining || 0) / 60)}m`).join(", ")}</small>` : ""}
               ${source.universe_symbols ? `<small>Universe: ${source.requested_symbols || source.last_batch_size || 0}/${source.universe_symbols} symbols${source.total_batches ? ` - Batches: ${source.requested_batches || 0}/${source.total_batches}` : ""}${source.limit_per_request ? ` - Limit: ${source.limit_per_request}/request` : ""}</small>` : ""}
               ${source.rss_fallback_symbols ? `<small>RSS fallback tickers this poll: ${source.rss_fallback_symbols}</small>` : ""}
               ${source.coverage_note ? `<small>${escapeHtml(source.coverage_note)}</small>` : ""}
               <small>Action: ${prettyLabel(source.action)} - Last success: ${source.last_success_at ? relativeTime(source.last_success_at) : "n/a"}${source.last_empty_at ? ` - Last empty: ${relativeTime(source.last_empty_at)}` : ""}</small>
               ${source.last_error ? `<small class="source-error">Last error: ${escapeHtml(source.last_error)}</small>` : ""}
             </div>
-          `
+          `;
+          }
         )
         .join("")
     : state.snapshot.source_quality.length

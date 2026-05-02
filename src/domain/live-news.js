@@ -135,6 +135,10 @@ function marketauxTimestamp(date) {
   return date.toISOString().slice(0, 19);
 }
 
+function shouldRetryMarketauxIndividually(error) {
+  return [400, 414, 422].includes(Number(error?.status || 0)) || /HTTP (400|414|422)/.test(error?.message || "");
+}
+
 export function buildMarketauxUrl(config, entries) {
   const lookbackHours = Number(config.liveNewsLookbackHours || 24);
   const requestedLimit = Math.max(1, entries.length * Number(config.marketauxMaxItemsPerTicker || 3));
@@ -247,6 +251,7 @@ export function createLiveNewsCollector(app) {
         universe_symbols: 0,
         requested_batches: 0,
         total_batches: 0,
+        single_symbol_retries: 0,
         symbols_per_request: Number(config.marketauxSymbolsPerRequest || 20),
         max_requests_per_poll: Number(config.marketauxMaxRequestsPerPoll || 1),
         limit_per_request: Number(config.marketauxLimitPerRequest || 3),
@@ -316,6 +321,7 @@ export function createLiveNewsCollector(app) {
     const results = [];
     let fetchedArticles = 0;
     let failedChunks = 0;
+    let singleSymbolRetries = 0;
 
     try {
       for (const chunk of chunksToPoll) {
@@ -332,13 +338,45 @@ export function createLiveNewsCollector(app) {
           fetchedArticles += Array.isArray(payload?.data) ? payload.data.length : 0;
           results.push(...mapMarketauxArticles(payload, chunk, config.marketauxMaxItemsPerTicker));
         } catch (error) {
-          failedChunks += 1;
-          marketauxHealth.last_error = error.message;
-          aggregateHealth.provider_failures.marketaux = (aggregateHealth.provider_failures.marketaux || 0) + 1;
+          if (chunk.length > 1 && shouldRetryMarketauxIndividually(error)) {
+            let recoveredSymbols = 0;
+            for (const entry of chunk) {
+              singleSymbolRetries += 1;
+              try {
+                const payload = await fetchJsonWithRetry(buildMarketauxUrl(config, [entry]), {
+                  timeoutMs: config.marketauxRequestTimeoutMs,
+                  retries: config.marketauxRequestRetries,
+                  label: `Marketaux news ${entry.ticker}`,
+                  headers: {
+                    "User-Agent": "SentimentAnalyst/1.0 (+marketaux news)",
+                    Accept: "application/json"
+                  }
+                });
+                fetchedArticles += Array.isArray(payload?.data) ? payload.data.length : 0;
+                const mapped = mapMarketauxArticles(payload, [entry], config.marketauxMaxItemsPerTicker);
+                if (mapped.length) {
+                  recoveredSymbols += 1;
+                  results.push(...mapped);
+                }
+              } catch (symbolError) {
+                marketauxHealth.last_error = symbolError.message;
+                aggregateHealth.provider_failures.marketaux = (aggregateHealth.provider_failures.marketaux || 0) + 1;
+              }
+            }
+            if (!recoveredSymbols) {
+              failedChunks += 1;
+              marketauxHealth.last_error = error.message;
+            }
+          } else {
+            failedChunks += 1;
+            marketauxHealth.last_error = error.message;
+            aggregateHealth.provider_failures.marketaux = (aggregateHealth.provider_failures.marketaux || 0) + 1;
+          }
         }
       }
 
       marketauxHealth.fetched_articles += fetchedArticles;
+      marketauxHealth.single_symbol_retries = (marketauxHealth.single_symbol_retries || 0) + singleSymbolRetries;
       if (results.length) {
         marketauxHealth.last_success_at = new Date().toISOString();
         marketauxHealth.last_error = null;

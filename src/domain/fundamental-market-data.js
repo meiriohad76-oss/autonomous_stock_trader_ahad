@@ -2,7 +2,10 @@ import { clamp, fingerprint, round } from "../utils/helpers.js";
 import {
   alpacaHeaders,
   isLiveMarketProviderConfigured,
+  liveMarketProviderChain,
   liveMarketDataStatus,
+  marketProviderCooldownMs,
+  providerCooldownSnapshot,
   trimTrailingSlash
 } from "./market-providers.js";
 
@@ -48,17 +51,30 @@ function marketHealth(store, config) {
   return store.health.liveSources.fundamental_market_data;
 }
 
-function updateHealthSnapshot(store, config, cacheSize) {
+function updateHealthSnapshot(store, config, cacheSize, options = {}) {
   const health = marketHealth(store, config);
   const providerStatus = liveMarketDataStatus(config, config.fundamentalMarketDataProvider);
   health.provider = config.fundamentalMarketDataProvider;
   health.enabled = config.fundamentalMarketDataProvider !== "synthetic";
   health.cache_entries = cacheSize;
   health.configured = providerStatus.configured;
+  health.provider_chain = providerStatus.provider_chain;
+  if (options.activeProvider !== undefined) {
+    health.active_provider = options.activeProvider;
+  }
+  if (options.failedProviders !== undefined) {
+    health.failed_providers = options.failedProviders;
+  }
+  if (options.providerCooldowns !== undefined) {
+    health.provider_cooldowns = options.providerCooldowns;
+  }
   health.feed = providerStatus.feed;
-  health.fallback_mode = providerStatus.fallback_mode;
+  if (options.fallbackActive !== undefined) {
+    health.fallback_active = Boolean(options.fallbackActive);
+  }
+  health.fallback_mode = providerStatus.fallback_mode || Boolean(health.fallback_active);
   health.missing_config_reason = providerStatus.configured ? null : providerStatus.missing_config_reason;
-  health.decision_status = providerStatus.fallback_mode ? "fallback" : "partial_live";
+  health.decision_status = health.fallback_mode ? "fallback" : "partial_live";
   return health;
 }
 
@@ -277,6 +293,7 @@ function mapAlpacaReference(ticker, barsPayload, fallbackCompany) {
 
 export function createFundamentalMarketDataService({ config, store }) {
   const cache = new Map();
+  const providerCooldowns = new Map();
   let timer = null;
   let running = false;
   let getCompanies = () => [];
@@ -284,11 +301,62 @@ export function createFundamentalMarketDataService({ config, store }) {
   let refreshCursor = 0;
 
   function cacheKey(company) {
-    return `${config.fundamentalMarketDataProvider}:${company.ticker}`;
+    const chain = liveMarketProviderChain(config, config.fundamentalMarketDataProvider).join(">");
+    return `${chain}:${company.ticker}`;
+  }
+
+  function cooldown(provider) {
+    const item = providerCooldowns.get(provider);
+    if (!item) {
+      return null;
+    }
+    if (Number(item.until || 0) <= Date.now()) {
+      providerCooldowns.delete(provider);
+      return null;
+    }
+    return item;
+  }
+
+  function rememberCooldown(provider, error) {
+    const cooldownMs = marketProviderCooldownMs(error);
+    if (!cooldownMs) {
+      return;
+    }
+    providerCooldowns.set(provider, {
+      until: Date.now() + cooldownMs,
+      reason: error.message
+    });
+  }
+
+  async function getProviderReference(provider, company) {
+    if (provider === "alpaca") {
+      const barsPayload = await fetchAlpacaDailyBars(config, company.ticker);
+      return {
+        payload: mapAlpacaReference(company.ticker, barsPayload, company),
+        partialError: "Alpaca market data updates price/change only; SEC and bootstrap metrics still provide fundamentals."
+      };
+    }
+
+    const quotePayload = await fetchQuote(config, company.ticker);
+    let statsPayload = null;
+    let partialError = null;
+    try {
+      statsPayload = await fetchStatistics(config, company.ticker);
+    } catch (error) {
+      partialError = error.message;
+    }
+    return {
+      payload: mapLiveReference(company.ticker, quotePayload, statsPayload, company),
+      partialError
+    };
   }
 
   async function getReference(company) {
-    const health = updateHealthSnapshot(store, config, cache.size);
+    const health = updateHealthSnapshot(store, config, cache.size, {
+      providerCooldowns: providerCooldownSnapshot(providerCooldowns)
+    });
+    const providerChain = liveMarketProviderChain(config, config.fundamentalMarketDataProvider);
+    const liveProviders = providerChain.filter((provider) => provider !== "synthetic");
     const key = cacheKey(company);
     const cached = cache.get(key);
     const now = Date.now();
@@ -297,48 +365,61 @@ export function createFundamentalMarketDataService({ config, store }) {
       return cached.payload;
     }
 
-    if (!isLiveMarketProviderConfigured(config, config.fundamentalMarketDataProvider)) {
+    if (!liveProviders.length) {
       const synthetic = buildSyntheticReference(company);
       cache.set(key, { fetchedAt: now, payload: synthetic });
-      updateHealthSnapshot(store, config, cache.size);
+      updateHealthSnapshot(store, config, cache.size, {
+        activeProvider: "synthetic",
+        fallbackActive: true,
+        failedProviders: [],
+        providerCooldowns: providerCooldownSnapshot(providerCooldowns)
+      });
       return synthetic;
     }
 
     health.polling = true;
     health.last_poll_at = new Date().toISOString();
 
+    const failures = [];
     try {
-      if (config.fundamentalMarketDataProvider === "alpaca") {
-        const barsPayload = await fetchAlpacaDailyBars(config, company.ticker);
-        const payload = mapAlpacaReference(company.ticker, barsPayload, company);
-        cache.set(key, { fetchedAt: now, payload });
-        health.last_success_at = new Date().toISOString();
-        health.last_error = null;
-        health.partial_error = "Alpaca market data updates price/change only; SEC and bootstrap metrics still provide fundamentals.";
-        updateHealthSnapshot(store, config, cache.size);
-        return payload;
+      for (const provider of liveProviders) {
+        const cooldownState = cooldown(provider);
+        if (cooldownState) {
+          failures.push({ provider, error: `cooling down after ${cooldownState.reason}` });
+          continue;
+        }
+        try {
+          const { payload, partialError } = await getProviderReference(provider, company);
+          providerCooldowns.delete(provider);
+          cache.set(key, { fetchedAt: now, payload });
+          health.last_success_at = new Date().toISOString();
+          health.last_error = failures.length
+            ? `Provider failover used ${provider}; earlier failures: ${failures.map((item) => `${item.provider}: ${item.error}`).join("; ")}`
+            : null;
+          health.partial_error = partialError;
+          updateHealthSnapshot(store, config, cache.size, {
+            activeProvider: provider,
+            fallbackActive: false,
+            failedProviders: failures,
+            providerCooldowns: providerCooldownSnapshot(providerCooldowns)
+          });
+          return payload;
+        } catch (error) {
+          rememberCooldown(provider, error);
+          failures.push({ provider, error: error.message });
+        }
       }
 
-      const quotePayload = await fetchQuote(config, company.ticker);
-      let statsPayload = null;
-      let partialError = null;
-      try {
-        statsPayload = await fetchStatistics(config, company.ticker);
-      } catch (error) {
-        partialError = error.message;
-      }
-      const payload = mapLiveReference(company.ticker, quotePayload, statsPayload, company);
-      cache.set(key, { fetchedAt: now, payload });
-      health.last_success_at = new Date().toISOString();
-      health.last_error = null;
-      health.partial_error = partialError;
-      updateHealthSnapshot(store, config, cache.size);
-      return payload;
-    } catch (error) {
-      health.last_error = error.message;
+      health.last_error = `All live fundamental market-data providers failed: ${failures.map((item) => `${item.provider}: ${item.error}`).join("; ")}`;
+      health.partial_error = null;
       const fallback = buildSyntheticReference(company);
       cache.set(key, { fetchedAt: now, payload: fallback });
-      updateHealthSnapshot(store, config, cache.size);
+      updateHealthSnapshot(store, config, cache.size, {
+        activeProvider: "synthetic",
+        fallbackActive: true,
+        failedProviders: failures,
+        providerCooldowns: providerCooldownSnapshot(providerCooldowns)
+      });
       return fallback;
     } finally {
       health.polling = false;
@@ -350,7 +431,9 @@ export function createFundamentalMarketDataService({ config, store }) {
       companies.map(async (company) => [company.ticker, await getReference(company)])
     );
     const map = new Map(entries);
-    updateHealthSnapshot(store, config, cache.size).last_batch_size = entries.length;
+    updateHealthSnapshot(store, config, cache.size, {
+      providerCooldowns: providerCooldownSnapshot(providerCooldowns)
+    }).last_batch_size = entries.length;
     return map;
   }
 
@@ -401,7 +484,9 @@ export function createFundamentalMarketDataService({ config, store }) {
       running = true;
       getCompanies = options.getCompanies || getCompanies;
       onUpdate = options.onUpdate || onUpdate;
-      updateHealthSnapshot(store, config, cache.size);
+      updateHealthSnapshot(store, config, cache.size, {
+        providerCooldowns: providerCooldownSnapshot(providerCooldowns)
+      });
       await refreshLoop();
     },
     stop() {
@@ -411,7 +496,9 @@ export function createFundamentalMarketDataService({ config, store }) {
         timer = null;
       }
       marketHealth(store, config).polling = false;
-      updateHealthSnapshot(store, config, cache.size);
+      updateHealthSnapshot(store, config, cache.size, {
+        providerCooldowns: providerCooldownSnapshot(providerCooldowns)
+      });
     }
   };
 }

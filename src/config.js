@@ -62,6 +62,10 @@ function envBoolean(name, fallback, piFallback = fallback) {
 
 const autonomousDataEnabled = envBoolean("AGENCY_AUTONOMOUS_DATA_ENABLED", "true", "true");
 const hasTwelveDataKey = Boolean(process.env.TWELVE_DATA_API_KEY);
+const hasStocktwitsKey = Boolean(process.env.STOCKTWITS_API_KEY);
+const hasPolygonKey = Boolean(process.env.POLYGON_API_KEY);
+const hasIexKey = Boolean(process.env.IEX_API_KEY);
+const hasGenericTradePrintsKey = Boolean(process.env.TRADE_PRINTS_API_KEY);
 const hasAlpacaMarketDataKey = Boolean(
   (process.env.ALPACA_MARKET_DATA_API_KEY_ID || process.env.ALPACA_API_KEY_ID || process.env.ALPACA_API_KEY) &&
     (process.env.ALPACA_MARKET_DATA_API_SECRET_KEY ||
@@ -74,6 +78,13 @@ const alpacaMarketDataEnabled =
 const marketauxEnabled =
   String(process.env.MARKETAUX_ENABLED || (process.env.MARKETAUX_API_KEY ? "true" : "false")).toLowerCase() !==
   "false";
+const stocktwitsEnabled =
+  String(process.env.STOCKTWITS_ENABLED || (hasStocktwitsKey ? "true" : "false")).toLowerCase() !== "false";
+const tradePrintsEnabled =
+  String(
+    process.env.TRADE_PRINTS_ENABLED ||
+      (hasGenericTradePrintsKey || hasPolygonKey || hasIexKey ? "true" : "false")
+  ).toLowerCase() !== "false";
 
 function marketProvider(envName, { allowAlpaca = true } = {}) {
   const requested = process.env[envName];
@@ -85,6 +96,18 @@ function marketProvider(envName, { allowAlpaca = true } = {}) {
   }
   return requested || (allowAlpaca && alpacaMarketDataEnabled && hasAlpacaMarketDataKey ? "alpaca" : hasTwelveDataKey ? "twelvedata" : "synthetic");
 }
+
+const selectedMarketDataProvider = marketProvider("MARKET_DATA_PROVIDER");
+const selectedFundamentalMarketDataProvider = marketProvider("FUNDAMENTAL_MARKET_DATA_PROVIDER");
+const selectedMarketDataIsTwelve = selectedMarketDataProvider === "twelvedata";
+const selectedFundamentalMarketDataIsTwelve = selectedFundamentalMarketDataProvider === "twelvedata";
+const selectedTradePrintsProvider =
+  String(process.env.TRADE_PRINTS_PROVIDER || "").trim().toLowerCase() ||
+  (hasPolygonKey || hasGenericTradePrintsKey ? "polygon" : hasIexKey ? "iex" : "polygon");
+const selectedTradePrintsApiKey =
+  process.env.TRADE_PRINTS_API_KEY ||
+  (selectedTradePrintsProvider === "iex" ? process.env.IEX_API_KEY : process.env.POLYGON_API_KEY) ||
+  "";
 
 export const config = {
   piPerformanceMode,
@@ -124,13 +147,13 @@ export const config = {
   marketauxApiKey: process.env.MARKETAUX_API_KEY || "",
   marketauxBaseUrl: process.env.MARKETAUX_BASE_URL || "https://api.marketaux.com/v1/news/all",
   marketauxMaxItemsPerTicker: envNumber("MARKETAUX_MAX_ITEMS_PER_TICKER", 3, 2),
-  marketauxSymbolsPerRequest: envNumber("MARKETAUX_SYMBOLS_PER_REQUEST", 20, 10),
+  marketauxSymbolsPerRequest: envNumber("MARKETAUX_SYMBOLS_PER_REQUEST", 5, 5),
   marketauxMaxRequestsPerPoll: envNumber("MARKETAUX_MAX_REQUESTS_PER_POLL", 1, 1),
   marketauxLimitPerRequest: envNumber("MARKETAUX_LIMIT_PER_REQUEST", 3, 3),
   marketauxRequestTimeoutMs: Number(process.env.MARKETAUX_REQUEST_TIMEOUT_MS || 12000),
   marketauxRequestRetries: envNumber("MARKETAUX_REQUEST_RETRIES", 1, 0),
   autonomousDataEnabled,
-  marketDataProvider: marketProvider("MARKET_DATA_PROVIDER"),
+  marketDataProvider: selectedMarketDataProvider,
   marketDataInterval: process.env.MARKET_DATA_INTERVAL || "15min",
   marketDataHistoryPoints: Number(process.env.MARKET_DATA_HISTORY_POINTS || 18),
   marketDataCacheMs: Number(process.env.MARKET_DATA_CACHE_MS || 60000),
@@ -152,8 +175,8 @@ export const config = {
   alpacaMarketDataFeed: process.env.ALPACA_MARKET_DATA_FEED || "iex",
   marketFlowEnabled: String(process.env.MARKET_FLOW_ENABLED || "true").toLowerCase() !== "false",
   autoStartMarketFlow: envBoolean("AUTO_START_MARKET_FLOW", "true", "false"),
-  marketFlowPollMs: envNumber("MARKET_FLOW_POLL_MS", 60000, 300000),
-  marketFlowMaxTickersPerPoll: envNumber("MARKET_FLOW_MAX_TICKERS_PER_POLL", 25, 8),
+  marketFlowPollMs: envNumber("MARKET_FLOW_POLL_MS", selectedMarketDataIsTwelve ? 900000 : 60000, 300000),
+  marketFlowMaxTickersPerPoll: envNumber("MARKET_FLOW_MAX_TICKERS_PER_POLL", selectedMarketDataIsTwelve ? 3 : 25, 8),
   marketFlowVolumeSpikeThreshold: Number(process.env.MARKET_FLOW_VOLUME_SPIKE_THRESHOLD || 2.2),
   marketFlowMinPriceMoveThreshold: Number(process.env.MARKET_FLOW_MIN_PRICE_MOVE_THRESHOLD || 0.01),
   marketFlowBlockTradeSpikeThreshold: Number(process.env.MARKET_FLOW_BLOCK_TRADE_SPIKE_THRESHOLD || 3.8),
@@ -161,13 +184,12 @@ export const config = {
   marketFlowBlockTradeMinShares: Number(process.env.MARKET_FLOW_BLOCK_TRADE_MIN_SHARES || 500000),
   marketFlowBlockTradeMinNotionalUsd: Number(process.env.MARKET_FLOW_BLOCK_TRADE_MIN_NOTIONAL_USD || 25000000),
   marketFlowAbnormalVolumeMinNotionalUsd: Number(process.env.MARKET_FLOW_ABNORMAL_VOLUME_MIN_NOTIONAL_USD || 10000000),
-  fundamentalMarketDataProvider:
-    marketProvider("FUNDAMENTAL_MARKET_DATA_PROVIDER"),
+  fundamentalMarketDataProvider: selectedFundamentalMarketDataProvider,
   autoStartFundamentalMarketData: envBoolean("AUTO_START_FUNDAMENTAL_MARKET_DATA", "true", "false"),
   fundamentalMarketDataCacheMs: Number(process.env.FUNDAMENTAL_MARKET_DATA_CACHE_MS || 900000),
   fundamentalMarketDataRefreshMs: envNumber("FUNDAMENTAL_MARKET_DATA_REFRESH_MS", 900000, 1800000),
   fundamentalMarketDataRequestTimeoutMs: Number(process.env.FUNDAMENTAL_MARKET_DATA_REQUEST_TIMEOUT_MS || 12000),
-  fundamentalMarketDataMaxCompaniesPerPoll: envNumber("FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL", 25, 8),
+  fundamentalMarketDataMaxCompaniesPerPoll: envNumber("FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL", selectedFundamentalMarketDataIsTwelve ? 4 : 25, 8),
   fundamentalSecEnabled: String(process.env.FUNDAMENTAL_SEC_ENABLED || "true").toLowerCase() !== "false",
   autoStartSecFundamentals: envBoolean("AUTO_START_SEC_FUNDAMENTALS", "true", "false"),
   fundamentalSecPollMs: Number(process.env.FUNDAMENTAL_SEC_POLL_MS || 21600000),
@@ -265,15 +287,16 @@ export const config = {
   earningsPollMs: Number(process.env.EARNINGS_POLL_MS || 14400000),
   earningsRequestTimeoutMs: Number(process.env.EARNINGS_REQUEST_TIMEOUT_MS || 12000),
   earningsMaxTickersPerPoll: envNumber("EARNINGS_MAX_TICKERS_PER_POLL", 12, 6),
-  stocktwitsEnabled: String(process.env.STOCKTWITS_ENABLED || "false").toLowerCase() !== "false",
+  stocktwitsEnabled,
   stocktwitsApiKey: process.env.STOCKTWITS_API_KEY || "",
   stocktwitsPollMs: Number(process.env.STOCKTWITS_POLL_MS || 300000),
   stocktwitsMaxTickersPerPoll: envNumber("STOCKTWITS_MAX_TICKERS_PER_POLL", 20, 8),
   stocktwitsRequestTimeoutMs: Number(process.env.STOCKTWITS_REQUEST_TIMEOUT_MS || 10000),
-  tradePrintsEnabled: String(process.env.TRADE_PRINTS_ENABLED || "false").toLowerCase() !== "false",
-  tradePrintsProvider: process.env.TRADE_PRINTS_PROVIDER || "polygon",
+  tradePrintsEnabled,
+  tradePrintsProvider: selectedTradePrintsProvider,
   polygonApiKey: process.env.POLYGON_API_KEY || "",
-  tradePrintsApiKey: process.env.TRADE_PRINTS_API_KEY || process.env.POLYGON_API_KEY || process.env.IEX_API_KEY || "",
+  iexApiKey: process.env.IEX_API_KEY || "",
+  tradePrintsApiKey: selectedTradePrintsApiKey,
   tradePrintsPollMs: Number(process.env.TRADE_PRINTS_POLL_MS || 60000),
   tradePrintsMaxTickersPerPoll: envNumber("TRADE_PRINTS_MAX_TICKERS_PER_POLL", 25, 8),
   tradePrintsRequestTimeoutMs: Number(process.env.TRADE_PRINTS_REQUEST_TIMEOUT_MS || 12000),

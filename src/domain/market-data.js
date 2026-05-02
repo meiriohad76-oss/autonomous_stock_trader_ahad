@@ -3,8 +3,11 @@ import { lookupUniverseEntry } from "./tracked-universe.js";
 import {
   alpacaHeaders,
   isLiveMarketProviderConfigured,
+  liveMarketProviderChain,
   liveMarketDataStatus,
+  marketProviderCooldownMs,
   normalizeAlpacaTimeframe,
+  providerCooldownSnapshot,
   trimTrailingSlash
 } from "./market-providers.js";
 import { clamp, fingerprint, round } from "../utils/helpers.js";
@@ -168,6 +171,17 @@ function buildSeriesPayload(priceHistory, sentimentHistory, baselineWindow, barH
   };
 }
 
+function attachProvider(payload, provider, live) {
+  return {
+    ...payload,
+    market_snapshot: {
+      ...payload.market_snapshot,
+      provider,
+      live: Boolean(live)
+    }
+  };
+}
+
 async function fetchTwelveDataSeries(config, ticker) {
   const params = new URLSearchParams({
     symbol: ticker,
@@ -312,26 +326,75 @@ function mapAlpacaSeries(payload, scoredDocs, config) {
 
 export function createMarketDataService({ config, store }) {
   const cache = new Map();
+  const providerCooldowns = new Map();
   let timer = null;
   let running = false;
 
-  function updateHealthFromCache() {
+  function updateHealthFromCache(options = {}) {
     const health = marketHealth(store, config);
     const providerStatus = liveMarketDataStatus(config, config.marketDataProvider);
     health.cache_entries = cache.size;
     health.provider = config.marketDataProvider;
     health.enabled = config.marketDataProvider !== "synthetic";
     health.configured = providerStatus.configured;
+    health.provider_chain = providerStatus.provider_chain;
+    if (options.activeProvider !== undefined) {
+      health.active_provider = options.activeProvider;
+    }
+    if (options.failedProviders !== undefined) {
+      health.failed_providers = options.failedProviders;
+    }
+    health.provider_cooldowns = providerCooldownSnapshot(providerCooldowns);
     health.feed = providerStatus.feed;
-    health.fallback_mode = providerStatus.fallback_mode;
+    if (options.fallbackActive !== undefined) {
+      health.fallback_active = Boolean(options.fallbackActive);
+    }
+    health.fallback_mode = providerStatus.fallback_mode || Boolean(health.fallback_active);
     health.missing_config_reason = providerStatus.configured ? null : providerStatus.missing_config_reason;
-    health.decision_status = providerStatus.fallback_mode ? "fallback" : "live";
+    health.decision_status = health.fallback_mode ? "fallback" : "live";
     return health;
+  }
+
+  function cooldown(provider) {
+    const item = providerCooldowns.get(provider);
+    if (!item) {
+      return null;
+    }
+    if (Number(item.until || 0) <= Date.now()) {
+      providerCooldowns.delete(provider);
+      return null;
+    }
+    return item;
+  }
+
+  function rememberCooldown(provider, error) {
+    const cooldownMs = marketProviderCooldownMs(error);
+    if (!cooldownMs) {
+      return;
+    }
+    providerCooldowns.set(provider, {
+      until: Date.now() + cooldownMs,
+      reason: error.message
+    });
+  }
+
+  async function fetchProviderSeries(provider, ticker, scoredDocs) {
+    const rawPayload =
+      provider === "alpaca"
+        ? await fetchAlpacaSeries(config, ticker)
+        : await fetchTwelveDataSeries(config, ticker);
+    const payload =
+      provider === "alpaca"
+        ? mapAlpacaSeries(rawPayload, scoredDocs, config)
+        : mapTwelveDataSeries(rawPayload, scoredDocs);
+    return attachProvider(payload, provider, true);
   }
 
   async function getTickerSeries(ticker, scoredDocs, asOf) {
     const health = updateHealthFromCache();
-    const cacheKey = `${ticker}:${config.marketDataProvider}:${config.marketDataInterval}:${config.marketDataHistoryPoints}`;
+    const providerChain = liveMarketProviderChain(config, config.marketDataProvider);
+    const liveProviders = providerChain.filter((provider) => provider !== "synthetic");
+    const cacheKey = `${ticker}:${providerChain.join(">")}:${config.marketDataInterval}:${config.marketDataHistoryPoints}`;
     const cached = cache.get(cacheKey);
     const now = Date.now();
 
@@ -339,37 +402,54 @@ export function createMarketDataService({ config, store }) {
       return cached.payload;
     }
 
-    if (!isLiveMarketProviderConfigured(config, config.marketDataProvider)) {
+    if (!liveProviders.length) {
       const tickerEntry = lookupUniverseEntry(store.fundamentals?.leaderboard || [], ticker);
-      const payload = buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints, tickerEntry);
+      const payload = attachProvider(
+        buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints, tickerEntry),
+        "synthetic",
+        false
+      );
       cache.set(cacheKey, { fetchedAt: now, payload });
-      updateHealthFromCache();
+      updateHealthFromCache({ activeProvider: "synthetic", fallbackActive: true, failedProviders: [] });
       return payload;
     }
 
     health.polling = true;
     health.last_poll_at = new Date().toISOString();
 
+    const failures = [];
     try {
-      const rawPayload =
-        config.marketDataProvider === "alpaca"
-          ? await fetchAlpacaSeries(config, ticker)
-          : await fetchTwelveDataSeries(config, ticker);
-      const payload =
-        config.marketDataProvider === "alpaca"
-          ? mapAlpacaSeries(rawPayload, scoredDocs, config)
-          : mapTwelveDataSeries(rawPayload, scoredDocs);
-      cache.set(cacheKey, { fetchedAt: now, payload });
-      health.last_success_at = new Date().toISOString();
-      health.last_error = null;
-      updateHealthFromCache();
-      return payload;
-    } catch (error) {
-      health.last_error = error.message;
+      for (const provider of liveProviders) {
+        const cooldownState = cooldown(provider);
+        if (cooldownState) {
+          failures.push({ provider, error: `cooling down after ${cooldownState.reason}` });
+          continue;
+        }
+        try {
+          const payload = await fetchProviderSeries(provider, ticker, scoredDocs);
+          providerCooldowns.delete(provider);
+          cache.set(cacheKey, { fetchedAt: now, payload });
+          health.last_success_at = new Date().toISOString();
+          health.last_error = failures.length
+            ? `Provider failover used ${provider}; earlier failures: ${failures.map((item) => `${item.provider}: ${item.error}`).join("; ")}`
+            : null;
+          updateHealthFromCache({ activeProvider: provider, fallbackActive: false, failedProviders: failures });
+          return payload;
+        } catch (error) {
+          rememberCooldown(provider, error);
+          failures.push({ provider, error: error.message });
+        }
+      }
+
+      health.last_error = `All live market-data providers failed: ${failures.map((item) => `${item.provider}: ${item.error}`).join("; ")}`;
       const tickerEntry = lookupUniverseEntry(store.fundamentals?.leaderboard || [], ticker);
-      const fallback = buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints, tickerEntry);
+      const fallback = attachProvider(
+        buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints, tickerEntry),
+        "synthetic",
+        false
+      );
       cache.set(cacheKey, { fetchedAt: now, payload: fallback });
-      updateHealthFromCache();
+      updateHealthFromCache({ activeProvider: "synthetic", fallbackActive: true, failedProviders: failures });
       return fallback;
     } finally {
       health.polling = false;

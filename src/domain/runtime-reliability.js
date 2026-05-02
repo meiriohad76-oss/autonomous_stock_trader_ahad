@@ -1,7 +1,7 @@
 import os from "node:os";
 import {
+  hasConfiguredLiveMarketProvider,
   hasAlpacaMarketDataAccess,
-  isLiveMarketProviderConfigured,
   marketProviderMissingConfigReason
 } from "./market-providers.js";
 import { differenceInHours, round } from "../utils/helpers.js";
@@ -122,16 +122,16 @@ export const RUNTIME_PROFILES = {
       LIVE_NEWS_UNIVERSE_MODE: "full",
       LIVE_NEWS_RSS_FALLBACK_MAX_TICKERS: "10",
       MARKETAUX_ENABLED: "true",
-      MARKETAUX_SYMBOLS_PER_REQUEST: "20",
+      MARKETAUX_SYMBOLS_PER_REQUEST: "5",
       MARKETAUX_MAX_REQUESTS_PER_POLL: "1",
       MARKETAUX_LIMIT_PER_REQUEST: "3",
       MARKET_DATA_PROVIDER: "twelvedata",
       ALPACA_MARKET_DATA_ENABLED: "true",
-      MARKET_DATA_REFRESH_MS: "300000",
+      MARKET_DATA_REFRESH_MS: "900000",
       MARKET_FLOW_ENABLED: "true",
       AUTO_START_MARKET_FLOW: "true",
-      MARKET_FLOW_POLL_MS: "300000",
-      MARKET_FLOW_MAX_TICKERS_PER_POLL: "25",
+      MARKET_FLOW_POLL_MS: "900000",
+      MARKET_FLOW_MAX_TICKERS_PER_POLL: "3",
       EARNINGS_ENABLED: "true",
       EARNINGS_PROVIDER: "yahoo",
       EARNINGS_MAX_TICKERS_PER_POLL: "9",
@@ -145,7 +145,7 @@ export const RUNTIME_PROFILES = {
       TRADE_PRINTS_MAX_TICKERS_PER_POLL: "25",
       FUNDAMENTAL_MARKET_DATA_PROVIDER: "twelvedata",
       AUTO_START_FUNDAMENTAL_MARKET_DATA: "true",
-      FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL: "12",
+      FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL: "4",
       FUNDAMENTAL_SEC_ENABLED: "true",
       AUTO_START_SEC_FUNDAMENTALS: "true",
       FUNDAMENTAL_SEC_CONCURRENCY: "1",
@@ -173,7 +173,7 @@ export const RUNTIME_PROFILES = {
       LIVE_NEWS_UNIVERSE_MODE: "full",
       LIVE_NEWS_RSS_FALLBACK_MAX_TICKERS: "10",
       MARKETAUX_ENABLED: "true",
-      MARKETAUX_SYMBOLS_PER_REQUEST: "20",
+      MARKETAUX_SYMBOLS_PER_REQUEST: "5",
       MARKETAUX_MAX_REQUESTS_PER_POLL: "1",
       MARKETAUX_LIMIT_PER_REQUEST: "3",
       MARKET_DATA_PROVIDER: "alpaca",
@@ -224,7 +224,7 @@ export const RUNTIME_PROFILES = {
       LIVE_NEWS_UNIVERSE_MODE: "full",
       LIVE_NEWS_RSS_FALLBACK_MAX_TICKERS: "20",
       MARKETAUX_ENABLED: "true",
-      MARKETAUX_SYMBOLS_PER_REQUEST: "20",
+      MARKETAUX_SYMBOLS_PER_REQUEST: "5",
       MARKETAUX_MAX_REQUESTS_PER_POLL: "2",
       MARKETAUX_LIMIT_PER_REQUEST: "3",
       MARKET_DATA_PROVIDER: "twelvedata",
@@ -375,7 +375,7 @@ function sourceSpecs(config) {
       staleAfterHours: 36,
       softErrorsWhenFresh: true,
       criticality: "high",
-      configured: isLiveMarketProviderConfigured(config, config.marketDataProvider),
+      configured: config.marketDataProvider === "synthetic" || hasConfiguredLiveMarketProvider(config, config.marketDataProvider),
       missingConfigReason: marketProviderMissingConfigReason(config.marketDataProvider, "Live pricing"),
       notes: `Ticker charts and market snapshots use ${config.marketDataProvider}.`
     },
@@ -390,7 +390,7 @@ function sourceSpecs(config) {
       staleAfterHours: 36,
       softErrorsWhenFresh: true,
       criticality: "medium",
-      configured: config.marketDataProvider !== "synthetic" && isLiveMarketProviderConfigured(config, config.marketDataProvider),
+      configured: config.marketDataProvider !== "synthetic" && hasConfiguredLiveMarketProvider(config, config.marketDataProvider),
       missingConfigReason: marketProviderMissingConfigReason(config.marketDataProvider, "Market Flow") || "Market Flow needs MARKET_DATA_PROVIDER=alpaca or twelvedata.",
       notes: "Turns abnormal volume and price shocks into money-flow events."
     },
@@ -443,7 +443,7 @@ function sourceSpecs(config) {
       staleAfterHours: 48,
       softErrorsWhenFresh: true,
       criticality: "medium",
-      configured: isLiveMarketProviderConfigured(config, config.fundamentalMarketDataProvider),
+      configured: config.fundamentalMarketDataProvider === "synthetic" || hasConfiguredLiveMarketProvider(config, config.fundamentalMarketDataProvider),
       missingConfigReason: marketProviderMissingConfigReason(config.fundamentalMarketDataProvider, "Live fundamental market reference"),
       notes: `Valuation/reference fields use ${config.fundamentalMarketDataProvider} in batches of ${config.fundamentalMarketDataMaxCompaniesPerPoll || "all"}.`
     },
@@ -579,6 +579,15 @@ function classifySource(spec, health, pressure) {
       action: pressure.isConstrained ? "manual_refresh_when_needed" : "refresh",
       severity: spec.criticality === "critical" ? "warning" : "info",
       reason: `${spec.label} has not refreshed within ${staleAfterHours} hours.`
+    };
+  }
+
+  if (health?.fallback_active && lastError) {
+    return {
+      status: "degraded",
+      action: pressure.isConstrained ? "keep_running_light" : "retry_with_backoff",
+      severity: "warning",
+      reason: `${spec.label} is temporarily using synthetic fallback after live-provider failures.`
     };
   }
 
@@ -958,6 +967,10 @@ export function createRuntimeReliabilityAgent({ config, store }) {
         last_success_at: lastSuccessAt,
         age_hours: lastSuccessAt ? round(differenceInHours(lastSuccessAt), 2) : null,
         last_error: errorMessage(health),
+        active_provider: health.active_provider || null,
+        provider_chain: health.provider_chain || null,
+        provider_cooldowns: health.provider_cooldowns || [],
+        fallback_active: Boolean(health.fallback_active),
         universe_symbols: health.universe_symbols ?? null,
         requested_symbols: health.requested_symbols ?? null,
         last_batch_size: health.last_batch_size ?? null,

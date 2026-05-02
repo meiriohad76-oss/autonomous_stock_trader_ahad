@@ -1,5 +1,5 @@
 import { shouldUseEvidence } from "./freshness-policy.js";
-import { isLiveMarketProviderConfigured, liveMarketDataStatus } from "./market-providers.js";
+import { liveMarketDataStatus, liveMarketProviderChain } from "./market-providers.js";
 import { getTrackedUniverseEntries, rotateUniverseEntries } from "./tracked-universe.js";
 import { dedupeKey, round } from "../utils/helpers.js";
 
@@ -14,8 +14,8 @@ function ensureHealthEntry(store, config) {
       polls: 0,
       ingested_documents: 0,
       provider: config.marketDataProvider,
-      fallback_mode: config.marketDataProvider === "synthetic" || !isLiveMarketProviderConfigured(config, config.marketDataProvider),
-      configured: isLiveMarketProviderConfigured(config, config.marketDataProvider),
+      fallback_mode: liveMarketProviderChain(config, config.marketDataProvider, { includeSynthetic: false }).length === 0,
+      configured: liveMarketProviderChain(config, config.marketDataProvider, { includeSynthetic: false }).length > 0,
       feed: null,
       missing_config_reason: null,
       universe_symbols: 0,
@@ -26,6 +26,7 @@ function ensureHealthEntry(store, config) {
   const providerStatus = liveMarketDataStatus(config, config.marketDataProvider);
   store.health.liveSources.market_flow.provider = config.marketDataProvider;
   store.health.liveSources.market_flow.configured = providerStatus.configured;
+  store.health.liveSources.market_flow.provider_chain = providerStatus.provider_chain;
   store.health.liveSources.market_flow.feed = providerStatus.feed;
   store.health.liveSources.market_flow.fallback_mode = providerStatus.fallback_mode;
   store.health.liveSources.market_flow.missing_config_reason = providerStatus.configured
@@ -193,9 +194,14 @@ export function createMarketFlowMonitor({ config, store, pipeline, marketDataSer
     health.polling = true;
     health.last_poll_at = new Date().toISOString();
     health.polls += 1;
-    health.fallback_mode = config.marketDataProvider === "synthetic" || !isLiveMarketProviderConfigured(config, config.marketDataProvider);
+    const liveProviders = liveMarketProviderChain(config, config.marketDataProvider, { includeSynthetic: false });
+    health.configured = liveProviders.length > 0;
+    health.provider_chain = liveMarketProviderChain(config, config.marketDataProvider);
+    health.fallback_mode = liveProviders.length === 0;
 
     let ingested = 0;
+    let liveSeriesCount = 0;
+    let syntheticSeriesCount = 0;
 
     try {
       const { universe, batch } = nextBatch();
@@ -210,6 +216,12 @@ export function createMarketFlowMonitor({ config, store, pipeline, marketDataSer
       for (const entry of batch) {
         const scoredDocs = collectTickerDocs(store, entry.ticker);
         const marketSeries = await marketDataService.getTickerSeries(entry.ticker, scoredDocs, store.health.lastUpdate || new Date().toISOString());
+        if (!marketSeries.market_snapshot?.live) {
+          syntheticSeriesCount += 1;
+          continue;
+        }
+        liveSeriesCount += 1;
+        health.active_provider = marketSeries.market_snapshot.provider || health.active_provider || config.marketDataProvider;
         const flow = detectMarketFlowSignal(marketSeries.bar_history, config);
         if (!flow) {
           continue;
@@ -226,8 +238,15 @@ export function createMarketFlowMonitor({ config, store, pipeline, marketDataSer
       }
 
       health.ingested_documents += ingested;
-      health.last_success_at = new Date().toISOString();
-      health.last_error = null;
+      if (liveSeriesCount > 0) {
+        health.last_success_at = new Date().toISOString();
+      }
+      health.last_error =
+        syntheticSeriesCount && !liveSeriesCount
+          ? "Market data providers returned only synthetic fallback series; market-flow signals were skipped."
+          : syntheticSeriesCount
+            ? `${syntheticSeriesCount} ticker(s) skipped because only synthetic fallback market data was available.`
+            : null;
       return { ingested };
     } catch (error) {
       health.last_error = error.message;

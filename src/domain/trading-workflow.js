@@ -12,20 +12,24 @@ function sourceAgeHours(source = {}) {
 
 function sourceSummary(key, label, source = {}) {
   const timestamp = latestSourceTimestamp(source);
+  const fallbackMode = Boolean(source.fallback_mode || source.fallback_active || String(source.provider || "").includes("synthetic"));
   return {
     key,
     label,
     enabled: source.enabled !== false,
     polling: Boolean(source.polling),
     provider: source.provider || null,
-    fallback_mode: Boolean(source.fallback_mode || String(source.provider || "").includes("synthetic")),
+    active_provider: source.active_provider || null,
+    provider_chain: source.provider_chain || null,
+    fallback_mode: fallbackMode,
+    fallback_active: Boolean(source.fallback_active),
     last_success_at: source.last_success_at || source.last_bootstrap_at || null,
     last_poll_at: source.last_poll_at || null,
     age_hours: sourceAgeHours(source),
     last_error: source.last_error || null,
     status: source.last_error && !source.last_success_at
       ? "error"
-      : source.fallback_mode || String(source.provider || "").includes("synthetic")
+      : fallbackMode
         ? "fallback"
         : timestamp
           ? "fresh"
@@ -99,7 +103,16 @@ export function buildTradingWorkflowStatus({
   const freshDecisionEvidenceCount = evidenceCounts.alert + evidenceCounts.watch;
   const sourceRows = [
     sourceSummary("live_news", "Live News", liveSources.google_news_rss),
+    ...(config.marketauxEnabled ? [sourceSummary("marketaux_news", "Marketaux Linked News", liveSources.marketaux_news)] : []),
     sourceSummary("sec_form4", "SEC Form 4", liveSources.sec_form4),
+    ...(config.sec13fEnabled ? [sourceSummary("sec_13f", "SEC 13F", liveSources.sec_13f)] : []),
+    ...((config.earningsEnabled || config.autonomousDataEnabled)
+      ? [sourceSummary("earnings_calendar", "Earnings Calendar", liveSources.yahoo_earnings_calendar)]
+      : []),
+    ...(config.stocktwitsEnabled ? [sourceSummary("stocktwits_stream", "StockTwits Social Pulse", liveSources.stocktwits_stream)] : []),
+    ...(config.tradePrintsEnabled
+      ? [sourceSummary("trade_prints", "Delayed Trade Prints", liveSources[`${config.tradePrintsProvider}_trade_prints`])]
+      : []),
     sourceSummary("market_flow", "Market Flow", liveSources.market_flow),
     sourceSummary("market_data", "Market Data", liveSources.market_data),
     sourceSummary("fundamental_market_data", "Fundamental Market Reference", liveSources.fundamental_market_data),

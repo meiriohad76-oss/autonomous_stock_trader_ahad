@@ -18,7 +18,7 @@ import {
 import { createLiveNewsCollector } from "./domain/live-news.js";
 import { createMarketDataService } from "./domain/market-data.js";
 import { createMarketFlowMonitor } from "./domain/market-flow.js";
-import { isLiveMarketProviderConfigured } from "./domain/market-providers.js";
+import { hasConfiguredLiveMarketProvider } from "./domain/market-providers.js";
 import { createPersistence } from "./domain/persistence.js";
 import { createPipeline } from "./domain/pipeline.js";
 import { replaySampleEvents } from "./domain/replay.js";
@@ -2247,7 +2247,7 @@ export function createSentimentApp() {
 
     const fundamentalMarketConfigured =
       config.fundamentalMarketDataProvider === "synthetic" ||
-      isLiveMarketProviderConfigured(config, config.fundamentalMarketDataProvider);
+      hasConfiguredLiveMarketProvider(config, config.fundamentalMarketDataProvider);
     if ((config.autoStartFundamentalMarketData || autonomous) && fundamentalMarketConfigured) {
       starts.push(fundamentalMarketDataService.start({
         getCompanies: () => fundamentals.getTrackedCompanies(),

@@ -20,7 +20,44 @@ export function isLiveMarketProviderConfigured(config, provider = config?.market
   return provider === "synthetic";
 }
 
+export function liveMarketProviderChain(config, preferred = config?.marketDataProvider, options = {}) {
+  const includeSynthetic = options.includeSynthetic !== false;
+  const providers = [];
+  const add = (provider) => {
+    if (!provider || providers.includes(provider)) {
+      return;
+    }
+    if (provider === "synthetic") {
+      if (includeSynthetic) {
+        providers.push(provider);
+      }
+      return;
+    }
+    if (isLiveMarketProviderConfigured(config, provider)) {
+      providers.push(provider);
+    }
+  };
+
+  if (preferred === "synthetic") {
+    add("synthetic");
+    return providers;
+  }
+
+  add(preferred);
+  add("alpaca");
+  add("twelvedata");
+  add("synthetic");
+  return providers;
+}
+
+export function hasConfiguredLiveMarketProvider(config, preferred = config?.marketDataProvider) {
+  return liveMarketProviderChain(config, preferred, { includeSynthetic: false }).length > 0;
+}
+
 export function marketProviderMissingConfigReason(provider, purpose = "live market data") {
+  if (provider !== "synthetic" && !provider) {
+    return `${purpose} needs MARKET_DATA_PROVIDER=alpaca or twelvedata plus matching credentials.`;
+  }
   if (provider === "alpaca") {
     return `${purpose} needs Alpaca market data credentials. Set ALPACA_API_KEY/ALPACA_SECRET_KEY or ALPACA_API_KEY_ID/ALPACA_API_SECRET_KEY.`;
   }
@@ -31,17 +68,21 @@ export function marketProviderMissingConfigReason(provider, purpose = "live mark
 }
 
 export function liveMarketDataStatus(config, provider = config?.marketDataProvider) {
+  const providerChain = liveMarketProviderChain(config, provider);
+  const liveProviders = providerChain.filter((item) => item !== "synthetic");
+  const configured = provider === "synthetic" ? true : liveProviders.length > 0;
   return {
     provider,
-    configured: isLiveMarketProviderConfigured(config, provider),
-    fallback_mode: provider === "synthetic" || !isLiveMarketProviderConfigured(config, provider),
+    configured,
+    provider_chain: providerChain,
+    fallback_mode: provider === "synthetic" || !liveProviders.length,
     feed:
       provider === "alpaca"
         ? config?.alpacaMarketDataFeed || "iex"
         : provider === "twelvedata"
           ? config?.marketDataInterval || null
           : null,
-    missing_config_reason: marketProviderMissingConfigReason(provider)
+    missing_config_reason: configured ? null : marketProviderMissingConfigReason(provider)
   };
 }
 
@@ -74,4 +115,27 @@ export function normalizeAlpacaTimeframe(interval = "15min") {
 
 export function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
+}
+
+export function marketProviderCooldownMs(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  const status = Number(error?.status || 0);
+  if (status === 429 || /\b429\b|rate.?limit|too many requests/.test(message)) {
+    return 15 * 60_000;
+  }
+  if (/api credits|daily limit|quota|run out of api|credit limit|usage limit|exceeded/.test(message)) {
+    return 6 * 60 * 60_000;
+  }
+  return 0;
+}
+
+export function providerCooldownSnapshot(cooldowns = new Map()) {
+  const now = Date.now();
+  return [...cooldowns.entries()]
+    .filter(([, item]) => Number(item?.until || 0) > now)
+    .map(([provider, item]) => ({
+      provider,
+      seconds_remaining: Math.max(0, Math.ceil((Number(item.until) - now) / 1000)),
+      reason: item.reason || null
+    }));
 }
