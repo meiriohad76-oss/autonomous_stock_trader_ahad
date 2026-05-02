@@ -289,8 +289,8 @@ function hasTradePrintsAccess(config) {
 }
 
 function sourceSpecs(config) {
-  const stocktwitsEnabled = Boolean(config.stocktwitsEnabled || config.autonomousDataEnabled);
-  const tradePrintsEnabled = Boolean(config.tradePrintsEnabled || config.autonomousDataEnabled);
+  const stocktwitsEnabled = Boolean(config.stocktwitsEnabled);
+  const tradePrintsEnabled = Boolean(config.tradePrintsEnabled);
   const earningsEnabled = Boolean(config.earningsEnabled || config.autonomousDataEnabled);
 
   return [

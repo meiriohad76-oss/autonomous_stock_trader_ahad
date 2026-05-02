@@ -1252,8 +1252,8 @@ export function createSentimentApp() {
         earnings_enabled: config.earningsEnabled || config.autonomousDataEnabled,
         earnings_provider: config.earningsProvider,
         earnings_max_tickers_per_poll: config.earningsMaxTickersPerPoll,
-        stocktwits_enabled: config.stocktwitsEnabled || config.autonomousDataEnabled,
-        trade_prints_enabled: config.tradePrintsEnabled || config.autonomousDataEnabled,
+        stocktwits_enabled: config.stocktwitsEnabled,
+        trade_prints_enabled: config.tradePrintsEnabled,
         trade_prints_provider: config.tradePrintsProvider,
         broker_adapter: config.brokerAdapter,
         execution: executionAgent.getStatus(),
@@ -1316,8 +1316,8 @@ export function createSentimentApp() {
       const profileKey = String(payload.profile || "").trim();
       const applyProfile = Boolean(payload.apply);
       const earningsEnabled = Boolean(config.earningsEnabled || config.autonomousDataEnabled);
-      const stocktwitsEnabled = Boolean(config.stocktwitsEnabled || config.autonomousDataEnabled);
-      const tradePrintsEnabled = Boolean(config.tradePrintsEnabled || config.autonomousDataEnabled);
+      const stocktwitsEnabled = Boolean(config.stocktwitsEnabled);
+      const tradePrintsEnabled = Boolean(config.tradePrintsEnabled);
 
       const disabledSources = {
         live_news: !config.liveNewsEnabled,
@@ -2237,11 +2237,11 @@ export function createSentimentApp() {
       starts.push(corporateEventsCollector.start());
     }
 
-    if ((config.stocktwitsEnabled || autonomous) && config.stocktwitsApiKey) {
+    if (config.stocktwitsEnabled && config.stocktwitsApiKey) {
       starts.push(socialSentimentCollector.start());
     }
 
-    if ((config.tradePrintsEnabled || autonomous) && config.tradePrintsApiKey) {
+    if (config.tradePrintsEnabled && config.tradePrintsApiKey) {
       starts.push(tradePrintsCollector.start());
     }
 
