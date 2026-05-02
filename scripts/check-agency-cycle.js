@@ -62,6 +62,14 @@ if (!cycle.data_progress || typeof cycle.data_progress.pct !== "number" || !cycl
   throw new Error("Agency cycle is missing aggregate data progress telemetry.");
 }
 
+if (!cycle.initial_baseline || cycle.baseline_ready !== false || cycle.mode !== "initial_baseline") {
+  throw new Error("Agency cycle should expose initial baseline readiness separately from ongoing updates.");
+}
+
+if (!cycle.refresh_cadence || !cycle.workers.every((worker) => worker.load_phase && worker.refresh_cadence_label && worker.refresh_state)) {
+  throw new Error("Agency cycle workers should expose baseline phase and refresh cadence telemetry.");
+}
+
 if (cycle.current_worker_key !== "signals") {
   throw new Error(`Expected Signals Agent to be current blocker, got ${cycle.current_worker_key}.`);
 }
@@ -129,6 +137,10 @@ const readyCycle = buildAgencyCycleStatus({
 
 if (readyCycle.status !== "paper_ready" || !readyCycle.can_submit_orders) {
   throw new Error("Expected ready cycle to be paper-ready.");
+}
+
+if (!readyCycle.baseline_ready || readyCycle.data_progress.phase !== "ongoing_updates") {
+  throw new Error("Ready cycle should move out of initial baseline and into ongoing updates.");
 }
 
 if (!readyCycle.workers.every((worker) => typeof worker.progress_pct === "number" && worker.data_state)) {

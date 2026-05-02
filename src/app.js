@@ -286,11 +286,14 @@ function buildPerformanceSnapshot(currentConfig, store) {
       database_autosave_ms: currentConfig.databaseAutosaveMs,
       live_news_poll_ms: currentConfig.liveNewsPollMs,
       live_news_max_items_per_ticker: currentConfig.liveNewsMaxItemsPerTicker,
+      agency_initial_baseline_cycle_ms: currentConfig.agencyInitialBaselineCycleMs,
+      agency_ongoing_cycle_ms: currentConfig.agencyOngoingCycleMs,
       market_data_refresh_ms: currentConfig.marketDataRefreshMs,
       market_flow_poll_ms: currentConfig.marketFlowPollMs,
       auto_start_market_flow: currentConfig.autoStartMarketFlow,
       fundamental_market_data_refresh_ms: currentConfig.fundamentalMarketDataRefreshMs,
       auto_start_fundamental_market_data: currentConfig.autoStartFundamentalMarketData,
+      fundamental_sec_baseline_poll_ms: currentConfig.fundamentalSecBaselinePollMs,
       fundamental_sec_concurrency: currentConfig.fundamentalSecConcurrency,
       auto_start_sec_fundamentals: currentConfig.autoStartSecFundamentals,
       auto_start_sec_13f: currentConfig.autoStartSec13f,
@@ -823,6 +826,9 @@ function buildSecFundamentalsQueue(store, config, options = {}) {
     last_poll_at: health.last_poll_at || null,
     last_success_at: health.last_success_at || null,
     next_poll_at: health.next_poll_at || null,
+    baseline_poll_ms: config.fundamentalSecBaselinePollMs,
+    ongoing_poll_ms: config.fundamentalSecPollMs,
+    current_poll_ms: pendingCompanies.length ? config.fundamentalSecBaselinePollMs : config.fundamentalSecPollMs,
     last_error: health.last_error || null,
     explanation:
       "SEC fundamentals refresh runs in bounded batches. Pending bootstrap names stay visible with provisional scores until a batch replaces them with live SEC-backed metrics."
@@ -1242,6 +1248,20 @@ export function createSentimentApp() {
         windows: ["15m", "1h", "4h", "1d", "7d"],
         signal_freshness_max_hours: config.signalFreshnessMaxHours,
         active_alert_freshness_max_hours: config.activeAlertFreshnessMaxHours,
+        agency_cadence: {
+          initial_baseline_cycle_ms: config.agencyInitialBaselineCycleMs,
+          ongoing_cycle_ms: config.agencyOngoingCycleMs,
+          baseline_universe_min_count: config.agencyBaselineUniverseMinCount,
+          baseline_require_full_sec: config.agencyBaselineRequireFullSec,
+          baseline_min_sec_coverage_pct: config.agencyBaselineMinSecCoveragePct,
+          baseline_min_signal_sources: config.agencyBaselineMinSignalSources,
+          recommended: [
+            "Initial baseline cycle: every 5 minutes until all required agents are baseline-ready.",
+            "Ongoing agency cycle: every 15 minutes during market hours.",
+            "SEC fundamentals baseline catch-up: one bounded batch every 15 minutes, then every 6 hours after coverage is complete.",
+            "Market/news/signals: refresh on their configured source intervals, with paper execution gated when live pricing is not confirmed."
+          ]
+        },
         seed_data_on_empty: config.seedDataOnEmpty,
         seed_data_in_decisions: config.seedDataInDecisions,
         live_news_enabled: config.liveNewsEnabled,
@@ -1277,6 +1297,7 @@ export function createSentimentApp() {
         fundamental_market_data_max_companies_per_poll: config.fundamentalMarketDataMaxCompaniesPerPoll,
         fundamental_sec_enabled: config.fundamentalSecEnabled,
         fundamental_sec_max_companies_per_poll: config.fundamentalSecMaxCompaniesPerPoll,
+        fundamental_sec_baseline_poll_ms: config.fundamentalSecBaselinePollMs,
         auto_start_sec_fundamentals: config.autoStartSecFundamentals,
         sec_form4_enabled: config.secForm4Enabled,
         sec_form4_max_tickers_per_poll: config.secForm4MaxTickersPerPoll,
@@ -1844,6 +1865,7 @@ export function createSentimentApp() {
       });
 
       return buildAgencyCycleStatus({
+        config,
         readiness: getReadiness(),
         runtimeReliability,
         workflowStatus,

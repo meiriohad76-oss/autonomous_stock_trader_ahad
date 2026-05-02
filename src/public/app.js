@@ -259,6 +259,19 @@ function formatDateTime(value) {
   });
 }
 
+function formatDurationMs(value) {
+  const minutes = Math.max(1, Math.round(Number(value || 0) / 60_000));
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = minutes / 60;
+  if (hours < 24) {
+    return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} hr`;
+  }
+  const days = hours / 24;
+  return `${Number.isInteger(days) ? days : days.toFixed(1)} day`;
+}
+
 function healthLabel(value) {
   if (String(value).toLowerCase() === "green") {
     return "Optimal";
@@ -290,6 +303,28 @@ function relativeTime(value) {
     return `${hours}h ago`;
   }
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function timeUntil(value) {
+  if (!value) {
+    return "-";
+  }
+  const delta = new Date(value).getTime() - Date.now();
+  if (!Number.isFinite(delta)) {
+    return "-";
+  }
+  if (delta <= 0) {
+    return "due now";
+  }
+  const minutes = Math.ceil(delta / 60_000);
+  if (minutes < 60) {
+    return `in ${minutes}m`;
+  }
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) {
+    return `in ${hours}h`;
+  }
+  return `in ${Math.ceil(hours / 24)}d`;
 }
 
 function sentimentClass(regime) {
@@ -2080,7 +2115,9 @@ function renderAgencyStatusStrip(workers = [], currentKey = null, { loading = fa
             const dataState = worker.data_state || (loading ? "loading" : "observing");
             const title = [
               worker.detail,
+              worker.load_phase_label ? `Phase: ${worker.load_phase_label}` : null,
               worker.progress_label ? `Progress: ${worker.progress_label}` : null,
+              worker.refresh_cadence_label ? `Cadence: ${worker.refresh_cadence_label}` : null,
               worker.remaining?.length ? `Remaining: ${worker.remaining.join(", ")}` : null
             ].filter(Boolean).join(" | ");
 
@@ -2093,13 +2130,48 @@ function renderAgencyStatusStrip(workers = [], currentKey = null, { loading = fa
             >
               <span>${String(worker.step || 0).padStart(2, "0")}</span>
               <strong>${escapeHtml(worker.label || prettyLabel(worker.key))}</strong>
-              <small>${escapeHtml(prettyLabel(dataState))} - ${escapeHtml(worker.progress_label || prettyLabel(worker.status || "loading"))}</small>
+              <small>${escapeHtml(prettyLabel(worker.load_phase || dataState))} - ${escapeHtml(worker.progress_label || prettyLabel(worker.status || "loading"))}</small>
               <div class="agency-status-progress" aria-hidden="true"><i style="width: ${pct}%"></i></div>
             </button>
           `;
           }
         )
         .join("")}
+    </div>
+  `;
+}
+
+function renderAgencyLoadPhases(cycle = {}) {
+  const progress = cycle.data_progress || {};
+  const baseline = cycle.initial_baseline || progress.baseline || {};
+  const ongoing = cycle.ongoing_refresh || progress.ongoing_refresh || {};
+  const cadence = cycle.refresh_cadence || state.config?.agency_cadence || {};
+  const baselinePct = Math.min(100, Math.max(0, Number(baseline.pct || 0)));
+  const phase = progress.phase || (baseline.ready ? "ongoing_updates" : "initial_baseline");
+
+  return `
+    <div class="agency-load-phases" aria-label="Agency load phases">
+      <div class="agency-load-phase-card ${baseline.ready ? "bullish" : baseline.blocked_count ? "bearish" : "neutral"}">
+        <span>Initial Baseline</span>
+        <strong>${escapeHtml(baseline.ready ? "Complete" : `${baseline.ready_count || 0}/${baseline.required_count || 12}`)}</strong>
+        <small>${escapeHtml(baseline.label || "Waiting for the first full worker baseline.")}</small>
+        <div class="agency-status-progress" aria-hidden="true"><i style="width:${baselinePct}%"></i></div>
+      </div>
+      <div class="agency-load-phase-card ${phase === "ongoing_updates" ? "bullish" : "neutral"}">
+        <span>Ongoing Updates</span>
+        <strong>${escapeHtml(phase === "ongoing_updates" ? "Scheduled" : "After baseline")}</strong>
+        <small>${escapeHtml(ongoing.label || "Scheduled refreshes begin after baseline readiness.")}</small>
+      </div>
+      <div class="agency-load-phase-card neutral">
+        <span>Recommended Cadence</span>
+        <strong>${escapeHtml(phase === "ongoing_updates" ? formatDurationMs(cadence.ongoing_cycle_ms || 900000) : formatDurationMs(cadence.initial_baseline_cycle_ms || 300000))}</strong>
+        <small>${escapeHtml(phase === "ongoing_updates" ? "Normal agency cycle during market hours." : "First-load cycle until every required worker is ready.")}</small>
+      </div>
+      <div class="agency-load-phase-card neutral">
+        <span>Next Scheduled</span>
+        <strong>${escapeHtml(ongoing.next_refresh_at ? formatDateTime(ongoing.next_refresh_at) : "not scheduled")}</strong>
+        <small>${escapeHtml(ongoing.next_refresh_at ? timeUntil(ongoing.next_refresh_at) : "Manual actions are still available.")}</small>
+      </div>
     </div>
   `;
 }
@@ -2150,6 +2222,7 @@ function renderAgencyCyclePanel(cycle) {
         </div>
       </div>
       ${renderAgencyStatusStrip(cycle.workers, cycle.current_worker_key)}
+      ${renderAgencyLoadPhases(cycle)}
       <div class="agency-cycle-focus">
         <div class="agency-cycle-current ${currentWorker?.status_class || "neutral"} data-${escapeHtml(currentWorker?.data_state || "observing")}">
           <span>Step ${String(cycle.current_worker_step || currentWorker?.step || 1).padStart(2, "0")}</span>
@@ -2201,8 +2274,8 @@ function renderAgencyCyclePanel(cycle) {
               <button type="button" class="agency-cycle-step ${worker.status_class || "neutral"} data-${escapeHtml(worker.data_state || "observing")} ${worker.key === cycle.current_worker_key ? "active" : ""}" data-agent-view="${escapeHtml(worker.view || "overview")}">
                 <span>${String(worker.step).padStart(2, "0")}</span>
                 <strong>${escapeHtml(worker.label)}</strong>
-                <small>${escapeHtml(prettyLabel(worker.data_state || worker.status))} - ${escapeHtml(worker.progress_label || worker.metric || "")}</small>
-                <em>${escapeHtml(worker.automation_label || "automatic")}</em>
+                <small>${escapeHtml(prettyLabel(worker.load_phase || worker.data_state || worker.status))} - ${escapeHtml(worker.progress_label || worker.metric || "")}</small>
+                <em>${escapeHtml(worker.refresh_cadence_label || worker.automation_label || "automatic")}</em>
                 <div class="agency-status-progress" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, Number(worker.progress_pct || 0)))}%"></i></div>
               </button>
             `

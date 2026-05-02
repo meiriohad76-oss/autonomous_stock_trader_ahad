@@ -188,6 +188,92 @@ function dataReadyForState(value) {
   return ["ready", "review", "gated"].includes(value);
 }
 
+function loadPhaseLabel(value) {
+  return String(value || "ongoing_updates").replace(/_/g, " ");
+}
+
+function refreshStateLabel(value) {
+  return String(value || "scheduled").replace(/_/g, " ");
+}
+
+function msNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function minPositive(values = []) {
+  const positives = values.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
+  return positives.length ? Math.min(...positives) : 0;
+}
+
+function formatDuration(ms) {
+  const minutes = Math.max(1, Math.round(Number(ms || 0) / 60_000));
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = minutes / 60;
+  if (hours < 24) {
+    return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} hr`;
+  }
+  const days = hours / 24;
+  return `${Number.isInteger(days) ? days : days.toFixed(1)} day`;
+}
+
+function cadenceLabel(ms, fallback = "manual/on change") {
+  return msNumber(ms) ? `every ${formatDuration(ms)}` : fallback;
+}
+
+function runtimeSourceByKey(runtimeReliability = {}) {
+  return (runtimeReliability.sources || []).reduce((acc, source) => {
+    acc[source.key] = source;
+    return acc;
+  }, {});
+}
+
+function latestSourceAt(source = {}) {
+  return source.last_success_at || source.last_poll_at || source.last_backup_at || source.last_bootstrap_at || null;
+}
+
+function nextAtFrom(source = {}, intervalMs = 0, override = null) {
+  if (override) {
+    return override;
+  }
+  const last = latestSourceAt(source);
+  const interval = msNumber(intervalMs);
+  if (!last || !interval) {
+    return null;
+  }
+  const lastTime = new Date(last).getTime();
+  if (!Number.isFinite(lastTime)) {
+    return null;
+  }
+  return new Date(lastTime + interval).toISOString();
+}
+
+function refreshStateFor({ sources = [], baselineReady = true, intervalMs = 0, nextRefreshAt = null }) {
+  const presentSources = sources.filter(Boolean);
+  const activeSources = presentSources.filter((source) => source.enabled !== false);
+  if (activeSources.some((source) => source.polling)) {
+    return "refreshing";
+  }
+  if (!activeSources.length && presentSources.length) {
+    return "disabled";
+  }
+  if (activeSources.some((source) => source.fallback_mode || source.fallback_active || source.status === "fallback")) {
+    return "blocked";
+  }
+  if (!baselineReady) {
+    return "baseline_pending";
+  }
+  if (!activeSources.some((source) => latestSourceAt(source))) {
+    return "waiting";
+  }
+  if (nextRefreshAt && msNumber(intervalMs) && new Date(nextRefreshAt).getTime() <= Date.now()) {
+    return "due";
+  }
+  return "scheduled";
+}
+
 function workerStatus(status, detail, data = {}) {
   return { status, detail, data };
 }
@@ -206,6 +292,7 @@ function currentWorker(workers) {
   return (
     workers.find((worker) => worker.data_state === "blocked") ||
     workers.find((worker) => worker.data_state === "loading") ||
+    workers.find((worker) => worker.baseline_required && !worker.baseline_ready) ||
     workers.find((worker) => worker.status === "review" && !worker.data_ready) ||
     workers.find((worker) => ["deterministic_selection", "final_selection"].includes(worker.key) && worker.status === "review") ||
     workers.find((worker) => worker.data_state === "review") ||
@@ -223,6 +310,11 @@ function buildWorker(base, index, status, detail, metric, action = base.action, 
   const dataState = data.data_state || defaultDataState(status);
   const progressPct = clampProgress(data.progress_pct ?? (dataReadyForState(dataState) ? 100 : 0));
   const remaining = Array.isArray(data.remaining) ? data.remaining.filter(Boolean) : [];
+  const baselineRequired = data.baseline_required ?? true;
+  const baselineReady = data.baseline_ready ?? data.data_ready ?? dataReadyForState(dataState);
+  const loadPhase = data.load_phase || (baselineRequired && !baselineReady ? "initial_baseline" : "ongoing_updates");
+  const refreshCadenceMs = data.refresh_cadence_ms ?? null;
+  const refreshState = data.refresh_state || (data.loading || dataState === "loading" ? "refreshing" : baselineReady ? "scheduled" : "baseline_pending");
 
   return {
     step: index + 1,
@@ -239,11 +331,21 @@ function buildWorker(base, index, status, detail, metric, action = base.action, 
     data_state: dataState,
     data_state_label: dataStateLabel(dataState),
     data_ready: data.data_ready ?? dataReadyForState(dataState),
+    baseline_required: baselineRequired,
+    baseline_ready: Boolean(baselineReady),
+    baseline_state: baselineReady ? "ready" : dataState === "blocked" ? "blocked" : "pending",
+    load_phase: loadPhase,
+    load_phase_label: loadPhaseLabel(loadPhase),
     loading: Boolean(data.loading || dataState === "loading"),
     progress_pct: progressPct,
     progress_label: data.progress_label || `${progressPct}%`,
     progress_current: data.progress_current ?? null,
     progress_target: data.progress_target ?? null,
+    refresh_cadence_ms: refreshCadenceMs,
+    refresh_cadence_label: data.refresh_cadence_label || cadenceLabel(refreshCadenceMs),
+    refresh_state: refreshState,
+    refresh_state_label: refreshStateLabel(refreshState),
+    next_refresh_at: data.next_refresh_at || null,
     remaining,
     primary_action: action || null
   };
@@ -276,6 +378,21 @@ function prettyKey(value) {
 function aggregateDataProgress(workers) {
   const total = workers.length || 1;
   const average = Math.round(workers.reduce((sum, worker) => sum + Number(worker.progress_pct || 0), 0) / total);
+  const baselineWorkers = workers.filter((worker) => worker.baseline_required !== false);
+  const baselineTotal = baselineWorkers.length || 1;
+  const baselineReady = baselineWorkers.filter((worker) => worker.baseline_ready).length;
+  const baselineBlocked = baselineWorkers.filter((worker) => worker.baseline_state === "blocked" || worker.data_state === "blocked").length;
+  const baselineLoading = baselineWorkers.filter((worker) => worker.loading || worker.refresh_state === "refreshing").length;
+  const baselineAverage = Math.round(
+    baselineWorkers.reduce((sum, worker) => sum + Number(worker.progress_pct || 0), 0) / baselineTotal
+  );
+  const baselineFinished = baselineReady === baselineWorkers.length && baselineWorkers.length > 0;
+  const updateActive = workers.filter((worker) => worker.refresh_state === "refreshing").length;
+  const updateDue = workers.filter((worker) => worker.refresh_state === "due").length;
+  const nextRefreshAt = workers
+    .map((worker) => worker.next_refresh_at)
+    .filter(Boolean)
+    .sort((a, b) => new Date(a) - new Date(b))[0] || null;
   const counts = workers.reduce(
     (acc, worker) => {
       acc[worker.data_state] = (acc[worker.data_state] || 0) + 1;
@@ -296,17 +413,44 @@ function aggregateDataProgress(workers) {
 
   return {
     pct: clampProgress(average),
+    phase: baselineFinished ? "ongoing_updates" : "initial_baseline",
+    phase_label: baselineFinished ? "ongoing updates" : "initial baseline",
     ready_count: counts.ready_total || 0,
     loading_count: loading,
     blocked_count: blocked,
     gated_count: gated,
     review_count: review,
     worker_count: workers.length,
-    finished: loading === 0 && blocked === 0,
+    finished: baselineFinished && loading === 0 && blocked === 0,
+    baseline: {
+      ready: baselineFinished,
+      pct: clampProgress(baselineAverage),
+      ready_count: baselineReady,
+      required_count: baselineWorkers.length,
+      loading_count: baselineLoading,
+      blocked_count: baselineBlocked,
+      label: baselineFinished
+        ? "Initial baseline is complete"
+        : `${baselineReady}/${baselineWorkers.length} baseline agents ready`
+    },
+    ongoing_refresh: {
+      active_count: updateActive,
+      due_count: updateDue,
+      next_refresh_at: nextRefreshAt,
+      label: baselineFinished
+        ? updateActive
+          ? `${updateActive} scheduled update(s) running`
+          : updateDue
+            ? `${updateDue} scheduled update(s) due`
+            : "Waiting for the next scheduled refresh"
+        : "Ongoing refreshes start after the initial baseline is complete"
+    },
     label:
-      loading > 0
-        ? `${loading} worker(s) still loading data`
-        : blocked > 0
+      !baselineFinished
+        ? `${baselineReady}/${baselineWorkers.length} baseline agents ready`
+        : loading > 0
+          ? `${loading} worker(s) refreshing now`
+          : blocked > 0
           ? `${blocked} worker(s) blocked`
           : gated > 0
             ? "Data loaded; execution gates remain supervised"
@@ -470,6 +614,7 @@ export function chooseAgencyCycleAdvance(cycle = {}) {
 }
 
 export function buildAgencyCycleStatus({
+  config = {},
   readiness,
   runtimeReliability,
   workflowStatus,
@@ -484,6 +629,27 @@ export function buildAgencyCycleStatus({
   executionLog = [],
   advanceLog = []
 }) {
+  const cfg = {
+    agencyBaselineUniverseMinCount: 160,
+    agencyBaselineRequireFullSec: true,
+    agencyBaselineMinSecCoveragePct: 1,
+    agencyBaselineMinSignalSources: 3,
+    agencyInitialBaselineCycleMs: 300_000,
+    agencyOngoingCycleMs: 900_000,
+    marketDataRefreshMs: 300_000,
+    marketFlowPollMs: 300_000,
+    liveNewsPollMs: 900_000,
+    fundamentalMarketDataRefreshMs: 900_000,
+    fundamentalSecBaselinePollMs: 900_000,
+    fundamentalSecPollMs: 21_600_000,
+    secForm4PollMs: 600_000,
+    sec13fPollMs: 43_200_000,
+    earningsPollMs: 14_400_000,
+    stocktwitsPollMs: 300_000,
+    tradePrintsPollMs: 300_000,
+    executionSyncMs: 180_000,
+    ...config
+  };
   const setupCounts = countTradeSetups(tradeSetups);
   const tradableCount = setupCounts.long + setupCounts.short;
   const finalCounts = countFinalSelection(finalSelection);
@@ -502,7 +668,11 @@ export function buildAgencyCycleStatus({
   const livePricingReady = Boolean(workflowStatus?.live_data?.live_pricing_ready);
   const secLiveCount = Math.max(0, trackedCount - pendingSec);
   const secPolling = Boolean(secQueue?.polling);
-  const selectorRan = Number(tradeSetups?.counts?.tracked_tickers || 0) > 0;
+  const selectorRan =
+    Number(tradeSetups?.counts?.tracked_tickers || 0) > 0 ||
+    setupCounts.visible > 0 ||
+    setupCounts.long + setupCounts.short + setupCounts.watch + setupCounts.noTrade > 0;
+  const runtimeSources = runtimeSourceByKey(runtimeReliability);
   const marketSourceProgress = sourceProgress(["market_data", "fundamental_market_data", "market_flow"], sources);
   const signalSourceProgress = sourceProgress(
     [
@@ -527,6 +697,15 @@ export function buildAgencyCycleStatus({
   const signalProgressPct = freshDecisionEvidence > 0
     ? Math.max(75, signalSourceProgress.target ? signalSourceProgress.pct : 100)
     : signalSourceProgress.pct;
+  const signalDataState = freshDecisionEvidence > 0
+    ? signalSourceProgress.polling
+      ? "loading"
+      : signalSourceProgress.remaining.length
+        ? "review"
+        : "ready"
+    : signalSourceProgress.polling
+      ? "loading"
+      : "blocked";
   const fundamentalsProgressPct = trackedCount ? secCoveragePct : 0;
   const upstreamSelectionProgress = clampProgress((fundamentalsProgressPct + marketProgressPct + signalProgressPct) / 3);
   const selectionProgressPct = tradableCount
@@ -550,6 +729,160 @@ export function buildAgencyCycleStatus({
         : 40;
   const portfolioProgressPct = broker.configured ? 100 : 45;
   const learningProgressPct = clampProgress((Math.min(outcomeSample, 10) / 10) * 100);
+  const minSecCoveragePct = Math.max(0, Math.min(1, Number(cfg.agencyBaselineMinSecCoveragePct || 1)));
+  const signalBaselineTarget = signalSourceProgress.target
+    ? Math.max(1, Math.min(Number(cfg.agencyBaselineMinSignalSources || 3), signalSourceProgress.target))
+    : 1;
+  const universeBaselineReady = trackedCount >= Number(cfg.agencyBaselineUniverseMinCount || 160);
+  const fundamentalsBaselineReady = Boolean(
+    trackedCount &&
+    (
+      pendingSec === 0 ||
+      (!cfg.agencyBaselineRequireFullSec && Number(secQueue?.coverage_ratio || 0) >= minSecCoveragePct)
+    )
+  );
+  const marketBaselineReady = Boolean(livePricingReady && marketSourceProgress.target && marketSourceProgress.remaining.length === 0);
+  const signalsBaselineReady = Boolean(freshDecisionEvidence > 0 && signalSourceProgress.current >= signalBaselineTarget);
+  const policyBaselineReady = Boolean(portfolioPolicy);
+  const upstreamBaselineReady =
+    universeBaselineReady && fundamentalsBaselineReady && marketBaselineReady && signalsBaselineReady && policyBaselineReady;
+  const deterministicBaselineReady = selectorRan && upstreamBaselineReady;
+  const llmBaselineReady = Boolean(llmSelection) && deterministicBaselineReady;
+  const finalBaselineReady = Boolean(finalSelection) && deterministicBaselineReady;
+  const riskBaselineReady = Boolean(riskSnapshot);
+  const executionBaselineReady = Boolean(broker.configured || broker.ready_for_order_submission);
+  const portfolioBaselineReady = Boolean(positionMonitor && (broker.configured || positionCount || openOrderCount));
+  const learningBaselineReady = true;
+
+  const secRuntimeSource = runtimeSources.sec_fundamentals || sources.sec_fundamentals || {};
+  const marketRuntimeSources = ["market_data", "fundamental_market_data", "market_flow"].map((key) => runtimeSources[key] || sources[key]).filter(Boolean);
+  const signalRuntimeSources = [
+    "live_news",
+    "marketaux_news",
+    "sec_form4",
+    "earnings_calendar",
+    "stocktwits_stream",
+    "trade_prints",
+    "market_flow",
+    "sec_13f"
+  ].map((key) => runtimeSources[key] || sources[key]).filter(Boolean);
+  const marketCadenceMs = Math.max(300_000, minPositive([
+    runtimeSources.market_data?.interval_ms,
+    runtimeSources.fundamental_market_data?.interval_ms,
+    runtimeSources.market_flow?.interval_ms,
+    cfg.marketDataRefreshMs,
+    cfg.fundamentalMarketDataRefreshMs,
+    cfg.marketFlowPollMs
+  ]));
+  const signalsCadenceMs = Math.max(300_000, minPositive([
+    runtimeSources.live_news?.interval_ms,
+    runtimeSources.marketaux_news?.interval_ms,
+    runtimeSources.sec_form4?.interval_ms,
+    runtimeSources.trade_prints?.interval_ms,
+    runtimeSources.market_flow?.interval_ms,
+    cfg.liveNewsPollMs,
+    cfg.secForm4PollMs,
+    cfg.marketFlowPollMs
+  ]));
+  const agencyCycleCadenceMs = msNumber(upstreamBaselineReady ? cfg.agencyOngoingCycleMs : cfg.agencyInitialBaselineCycleMs, 900_000);
+  const secCadenceMs = msNumber(
+    fundamentalsBaselineReady ? cfg.fundamentalSecPollMs : cfg.fundamentalSecBaselinePollMs,
+    fundamentalsBaselineReady ? 21_600_000 : 900_000
+  );
+  const workerTiming = {
+    universe: {
+      refresh_cadence_ms: 86_400_000,
+      refresh_cadence_label: "daily on startup/refresh",
+      refresh_state: universeBaselineReady ? "scheduled" : "baseline_pending"
+    },
+    fundamentals: {
+      refresh_cadence_ms: secCadenceMs,
+      refresh_cadence_label: fundamentalsBaselineReady
+        ? `ongoing SEC refresh ${cadenceLabel(secCadenceMs)}`
+        : `initial SEC catch-up ${cadenceLabel(secCadenceMs)}`,
+      refresh_state: refreshStateFor({
+        sources: [secRuntimeSource],
+        baselineReady: fundamentalsBaselineReady,
+        intervalMs: secCadenceMs,
+        nextRefreshAt: secQueue?.next_poll_at || null
+      }),
+      next_refresh_at: secQueue?.next_poll_at || nextAtFrom(secRuntimeSource, secCadenceMs)
+    },
+    market: {
+      refresh_cadence_ms: marketCadenceMs,
+      refresh_cadence_label: `pricing/flow ${cadenceLabel(marketCadenceMs)}`,
+      refresh_state: refreshStateFor({
+        sources: marketRuntimeSources,
+        baselineReady: marketBaselineReady,
+        intervalMs: marketCadenceMs
+      }),
+      next_refresh_at: marketRuntimeSources.map((source) => nextAtFrom(source, source.interval_ms || marketCadenceMs)).filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0] || null
+    },
+    signals: {
+      refresh_cadence_ms: signalsCadenceMs,
+      refresh_cadence_label: `signals/flow ${cadenceLabel(signalsCadenceMs)}`,
+      refresh_state: refreshStateFor({
+        sources: signalRuntimeSources,
+        baselineReady: signalsBaselineReady,
+        intervalMs: signalsCadenceMs
+      }),
+      next_refresh_at: signalRuntimeSources.map((source) => nextAtFrom(source, source.interval_ms || signalsCadenceMs)).filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0] || null
+    },
+    policy: {
+      refresh_cadence_ms: null,
+      refresh_cadence_label: "on user policy change",
+      refresh_state: policyBaselineReady ? "scheduled" : "baseline_pending"
+    },
+    deterministic_selection: {
+      refresh_cadence_ms: agencyCycleCadenceMs,
+      refresh_cadence_label: `agency cycle ${cadenceLabel(agencyCycleCadenceMs)}`,
+      refresh_state: deterministicBaselineReady ? "scheduled" : "baseline_pending"
+    },
+    llm_selection: {
+      refresh_cadence_ms: agencyCycleCadenceMs,
+      refresh_cadence_label: `parallel review ${cadenceLabel(agencyCycleCadenceMs)}`,
+      refresh_state: llmBaselineReady ? "scheduled" : "baseline_pending"
+    },
+    final_selection: {
+      refresh_cadence_ms: agencyCycleCadenceMs,
+      refresh_cadence_label: `final arbitration ${cadenceLabel(agencyCycleCadenceMs)}`,
+      refresh_state: finalBaselineReady ? "scheduled" : "baseline_pending"
+    },
+    risk: {
+      refresh_cadence_ms: agencyCycleCadenceMs,
+      refresh_cadence_label: `risk snapshot ${cadenceLabel(agencyCycleCadenceMs)}`,
+      refresh_state: riskBaselineReady ? "scheduled" : "baseline_pending"
+    },
+    execution: {
+      refresh_cadence_ms: cfg.executionSyncMs,
+      refresh_cadence_label: `broker sync ${cadenceLabel(cfg.executionSyncMs)}`,
+      refresh_state: executionBaselineReady ? "scheduled" : "baseline_pending"
+    },
+    portfolio: {
+      refresh_cadence_ms: cfg.executionSyncMs,
+      refresh_cadence_label: `position sync ${cadenceLabel(cfg.executionSyncMs)}`,
+      refresh_state: portfolioBaselineReady ? "scheduled" : "baseline_pending"
+    },
+    learning: {
+      refresh_cadence_ms: cfg.agencyOngoingCycleMs,
+      refresh_cadence_label: `outcome review ${cadenceLabel(cfg.agencyOngoingCycleMs)}`,
+      refresh_state: "scheduled"
+    }
+  };
+  const workerBaseline = {
+    universe: { baseline_ready: universeBaselineReady },
+    fundamentals: { baseline_ready: fundamentalsBaselineReady },
+    market: { baseline_ready: marketBaselineReady },
+    signals: { baseline_ready: signalsBaselineReady },
+    policy: { baseline_ready: policyBaselineReady },
+    deterministic_selection: { baseline_ready: deterministicBaselineReady },
+    llm_selection: { baseline_ready: llmBaselineReady },
+    final_selection: { baseline_ready: finalBaselineReady },
+    risk: { baseline_ready: riskBaselineReady },
+    execution: { baseline_ready: executionBaselineReady },
+    portfolio: { baseline_ready: portfolioBaselineReady },
+    learning: { baseline_ready: learningBaselineReady }
+  };
 
   const statuses = {
     universe: trackedCount
@@ -595,7 +928,7 @@ export function buildAgencyCycleStatus({
           remaining: ["Universe Agent"]
         }),
     market: livePricingReady || sourceIsFresh(sources.market_flow) || sourceIsFresh(sources.market_data) || sourceIsFresh(sources.fundamental_market_data)
-      ? workerStatus("complete", "Market and pricing context is available.", {
+      ? workerStatus(marketDataState === "blocked" ? "blocked" : "complete", marketDataState === "blocked" ? "Market context is partial, but live pricing is not confirmed." : "Market and pricing context is available.", {
           data_state: marketDataState,
           loading: marketSourceProgress.polling,
           data_ready: livePricingReady,
@@ -619,9 +952,9 @@ export function buildAgencyCycleStatus({
         }),
     signals: freshDecisionEvidence > 0
       ? workerStatus("complete", `${freshDecisionEvidence} fresh decision evidence item(s) are available.`, {
-          data_state: signalSourceProgress.remaining.length ? "loading" : "ready",
-          loading: signalSourceProgress.remaining.length > 0 || signalSourceProgress.polling,
-          data_ready: signalSourceProgress.remaining.length === 0,
+          data_state: signalDataState,
+          loading: signalSourceProgress.polling,
+          data_ready: true,
           progress_pct: signalProgressPct,
           progress_current: signalSourceProgress.current,
           progress_target: signalSourceProgress.target,
@@ -629,7 +962,8 @@ export function buildAgencyCycleStatus({
           remaining: signalSourceProgress.remaining
         })
       : workerStatus("blocked", "Fresh alerts/watch evidence is missing.", {
-          data_state: "blocked",
+          data_state: signalDataState,
+          loading: signalSourceProgress.polling,
           progress_pct: signalProgressPct,
           progress_current: signalSourceProgress.current,
           progress_target: signalSourceProgress.target,
@@ -809,21 +1143,31 @@ export function buildAgencyCycleStatus({
       portfolio: `${positionCount} pos / ${openOrderCount} ord`,
       learning: `${outcomeSample}/10 sample`
     }[worker.key];
-    return buildWorker(worker, index, status.status, status.detail, metric, worker.action, status.data);
+    return buildWorker(worker, index, status.status, status.detail, metric, worker.action, {
+      ...status.data,
+      ...(workerBaseline[worker.key] || {}),
+      ...(workerTiming[worker.key] || {})
+    });
   });
 
   const dataProgress = aggregateDataProgress(workers);
+  const baselineReady = Boolean(dataProgress.baseline?.ready);
 
   const hasFinalSelection = Boolean(finalSelection);
-  const canPreview = Boolean(workflowStatus?.can_preview_orders) && (!hasFinalSelection || finalCounts.executable > 0);
-  const canSubmit = Boolean(workflowStatus?.can_submit_orders) && (!hasFinalSelection || finalCounts.executable > 0);
-  const canUseForDecisions = Boolean(workflowStatus?.can_use_for_decisions);
+  const workflowCanPreview = Boolean(workflowStatus?.can_preview_orders) && (!hasFinalSelection || finalCounts.executable > 0);
+  const workflowCanSubmit = Boolean(workflowStatus?.can_submit_orders) && (!hasFinalSelection || finalCounts.executable > 0);
+  const workflowCanUseForDecisions = Boolean(workflowStatus?.can_use_for_decisions);
+  const canPreview = baselineReady && workflowCanPreview;
+  const canSubmit = baselineReady && workflowCanSubmit;
+  const canUseForDecisions = baselineReady && workflowCanUseForDecisions;
   const executionWorker = workers.find((worker) => worker.key === "execution");
   const current = (canSubmit || canPreview) && executionWorker ? executionWorker : currentWorker(workers);
   const mode = canSubmit
     ? "ready_for_paper_approval"
     : canPreview
       ? "ready_for_preview"
+      : !baselineReady
+        ? "initial_baseline"
       : canUseForDecisions
         ? "analysis_ready"
         : "collecting_inputs";
@@ -836,13 +1180,15 @@ export function buildAgencyCycleStatus({
     as_of: new Date().toISOString(),
     mode,
     mode_label: automationLabel(mode),
-    status: canSubmit ? "paper_ready" : canPreview ? "ready" : workflowStatus?.status || "not_ready",
-    status_class: canSubmit || canPreview ? "bullish" : workflowStatus?.status === "review_required" ? "neutral" : "bearish",
+    status: canSubmit ? "paper_ready" : canPreview ? "ready" : !baselineReady ? "baseline_loading" : workflowStatus?.status || "not_ready",
+    status_class: canSubmit || canPreview ? "bullish" : workflowStatus?.status === "review_required" || !baselineReady ? "neutral" : "bearish",
     summary: canSubmit
       ? "The agency can prepare a supervised Alpaca paper approval."
       : canPreview
         ? "The agency can preview final-selected trade tickets, but submission remains guarded."
-        : "The agency is still collecting or refreshing inputs before trade decisions.",
+        : !baselineReady
+          ? "The agency is building the initial baseline before the first full decision cycle."
+          : "The agency is still collecting or refreshing inputs before trade decisions.",
     supervision: "Universe, fundamentals, market, signals, policy, deterministic selection, LLM selection, final selection, risk checks, monitoring, and learning run automatically from available telemetry. Alpaca paper submission remains supervised and requires explicit approval.",
     current_worker_key: current?.key || null,
     current_worker_label: current?.label || null,
@@ -851,6 +1197,15 @@ export function buildAgencyCycleStatus({
     can_use_for_decisions: canUseForDecisions,
     can_preview_orders: canPreview,
     can_submit_orders: canSubmit,
+    baseline_ready: baselineReady,
+    initial_baseline: dataProgress.baseline,
+    ongoing_refresh: dataProgress.ongoing_refresh,
+    refresh_cadence: {
+      initial_baseline_cycle_ms: cfg.agencyInitialBaselineCycleMs,
+      ongoing_cycle_ms: cfg.agencyOngoingCycleMs,
+      recommendation:
+        "Run a bounded initial baseline cycle every 5 minutes until all required workers are baseline-ready; after that, run the agency cycle every 15 minutes during market hours, with source collectors following their own safer API-specific intervals."
+    },
     data_progress: dataProgress,
     workers,
     blockers: workflowStatus?.blockers || [],

@@ -625,6 +625,15 @@ export function createSecFundamentalsCollector(app) {
       : null;
   }
 
+  function currentPollMs() {
+    const health = ensureHealthEntry();
+    const pending = Number(health.pending_bootstrap_companies || 0);
+    if (pending > 0) {
+      return Math.max(60_000, Number(config.fundamentalSecBaselinePollMs || config.fundamentalSecPollMs || 900_000));
+    }
+    return Math.max(60_000, Number(config.fundamentalSecPollMs || 21_600_000));
+  }
+
   async function pollOnce() {
     if (!config.fundamentalSecEnabled || inFlight) {
       return buildEmptyResult();
@@ -771,11 +780,12 @@ export function createSecFundamentalsCollector(app) {
       return;
     }
 
-    setNextPollAt(config.fundamentalSecPollMs);
+    const delayMs = currentPollMs();
+    setNextPollAt(delayMs);
     timer = setTimeout(async () => {
       await pollOnce();
       scheduleNext();
-    }, config.fundamentalSecPollMs);
+    }, delayMs);
   }
 
   return {

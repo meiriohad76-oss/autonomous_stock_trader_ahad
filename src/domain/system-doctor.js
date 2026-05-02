@@ -63,6 +63,9 @@ function brokerModeSafe(broker = {}) {
 }
 
 function productStatus({ workflowStatus, agencyCycle }) {
+  if (agencyCycle?.baseline_ready === false) {
+    return "initial_baseline";
+  }
   if (workflowStatus?.can_submit_orders && agencyCycle?.can_submit_orders) {
     return "ready_for_paper_submit";
   }
@@ -76,6 +79,9 @@ function productStatus({ workflowStatus, agencyCycle }) {
 }
 
 function productSummary(status) {
+  if (status === "initial_baseline") {
+    return "The agency is still building the first full worker baseline before reliable trade decisions.";
+  }
   if (status === "ready_for_paper_submit") {
     return "End-to-end paper trading is ready behind the explicit Alpaca approval gate.";
   }
@@ -126,6 +132,7 @@ export function buildSystemDoctorSnapshot({
   const seedMode = Boolean(config.seedDataOnEmpty || config.seedDataInDecisions);
   const credentialWarnings = config.credentialWarnings || [];
   const status = productStatus({ workflowStatus, agencyCycle });
+  const baseline = agencyCycle?.initial_baseline || agencyCycle?.data_progress?.baseline || null;
 
   const checks = [
     check(
@@ -150,6 +157,17 @@ export function buildSystemDoctorSnapshot({
       seedMode
         ? "Seed/sample data is enabled for decisions. Trading decisions are blocked."
         : "Seed/sample data is blocked from trading decisions."
+    ),
+    check(
+      "initial_baseline",
+      "Initial Agency Baseline",
+      baseline?.ready ? "pass" : baseline?.blocked_count ? "fail" : "warning",
+      baseline?.ready
+        ? "All required agents completed the first baseline load."
+        : baseline
+          ? `${baseline.ready_count || 0}/${baseline.required_count || 12} required agents are baseline-ready.`
+          : "Agency baseline telemetry is not available.",
+      { baseline }
     ),
     check(
       "allowed_universe",
@@ -270,6 +288,7 @@ export function buildSystemDoctorSnapshot({
     !readiness?.ready && "Application startup is not ready.",
     seedMode && "Disable seed/sample decision mode.",
     trackedCount < 100 && "Refresh the allowed S&P 100 plus QQQ universe.",
+    baseline && !baseline.ready && baseline.blocked_count > 0 && "Resolve blocked initial-baseline agents before the first full cycle.",
     decisionEvidence <= 0 && "Collect fresh live evidence before selecting trades.",
     riskBlocked && "Resolve Risk Manager hard blocks."
   ]);
@@ -280,6 +299,7 @@ export function buildSystemDoctorSnapshot({
     !livePricingReady && "Live pricing is not confirmed; paper submission remains gated.",
     marketauxSource?.last_error && `Marketaux needs attention: ${marketauxSource.last_error}`,
     pendingBootstrap > 0 && `${pendingBootstrap} fundamentals rows still need live SEC confirmation.`,
+    baseline && !baseline.ready && `${baseline.ready_count || 0}/${baseline.required_count || 12} agents have completed the first baseline load.`,
     counts.visible > 0 && !counts.executable && "Selection has review/watch candidates but no executable final candidate.",
     !broker.configured && "Alpaca broker credentials are missing.",
     broker.configured && !broker.ready_for_order_submission && (broker.blocked_reason || "Broker submission is guarded."),
@@ -290,6 +310,7 @@ export function buildSystemDoctorSnapshot({
     ...(workflowStatus?.next_actions || []),
     credentialWarnings.length && "Replace placeholder credential values with real keys or leave them blank.",
     trackedCount < 100 && "Run Refresh Universe from the Command or System dashboard.",
+    baseline && !baseline.ready && "Run the initial baseline cycle until every required worker shows baseline-ready.",
     !livePricingReady && "Use Alpaca market-data credentials as the primary live-pricing fallback, then run one agency cycle.",
     decisionEvidence <= 0 && "Run Poll News, Poll Form 4, and Poll Flow from the Signals or System dashboard.",
     counts.visible === 0 && "Run Agency Cycle after live evidence and pricing are refreshed.",
@@ -305,11 +326,11 @@ export function buildSystemDoctorSnapshot({
     status_class:
       status === "ready_for_paper_submit" || status === "ready_for_preview"
         ? "bullish"
-        : status === "analysis_ready"
+        : status === "analysis_ready" || status === "initial_baseline"
           ? "neutral"
           : "bearish",
     summary: productSummary(status),
-    can_use_for_decisions: Boolean(workflowStatus?.can_use_for_decisions || agencyCycle?.can_use_for_decisions),
+    can_use_for_decisions: Boolean(agencyCycle?.baseline_ready && (workflowStatus?.can_use_for_decisions || agencyCycle?.can_use_for_decisions)),
     can_preview_orders: Boolean(workflowStatus?.can_preview_orders && agencyCycle?.can_preview_orders),
     can_submit_orders: Boolean(workflowStatus?.can_submit_orders && agencyCycle?.can_submit_orders),
     target: {
@@ -335,10 +356,17 @@ export function buildSystemDoctorSnapshot({
       current_worker: agencyCycle?.current_worker_label || null,
       agency_mode: agencyCycle?.mode || null,
       data_progress: agencyCycle?.data_progress || null,
+      initial_baseline: baseline,
+      ongoing_refresh: agencyCycle?.ongoing_refresh || agencyCycle?.data_progress?.ongoing_refresh || null,
       worker_readiness: (agencyCycle?.workers || []).map((worker) => ({
         key: worker.key,
         label: worker.label,
         data_state: worker.data_state || null,
+        baseline_ready: worker.baseline_ready ?? null,
+        load_phase: worker.load_phase || null,
+        refresh_cadence_label: worker.refresh_cadence_label || null,
+        refresh_state: worker.refresh_state || null,
+        next_refresh_at: worker.next_refresh_at || null,
         progress_pct: worker.progress_pct ?? null,
         progress_label: worker.progress_label || null,
         remaining: worker.remaining || []

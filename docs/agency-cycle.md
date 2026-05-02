@@ -17,12 +17,29 @@ The Agency Cycle is the step-by-step operating state for the autonomous trade ag
 
 The cycle is autonomous for analysis, ranking, risk checks, portfolio monitoring, and learning from paper outcomes. Alpaca paper submission remains supervised and requires explicit user approval.
 
+## Initial Baseline vs Ongoing Updates
+
+The agency now separates first-load readiness from normal refreshes:
+
+- `initial_baseline`: the first full operating baseline is still being built. Required workers must load their baseline data before the system promotes decisions to preview or paper approval.
+- `ongoing_updates`: the first baseline is complete. Workers continue refreshing on their configured schedule, and stale or blocked sources are shown as update issues rather than first-load blockers.
+
+Recommended cadence:
+
+- initial baseline cycle: every 5 minutes until all required workers are baseline-ready
+- ongoing agency cycle: every 15 minutes during market hours
+- SEC fundamentals first-load catch-up: one bounded batch every 15 minutes, then the normal SEC refresh interval after coverage is complete
+- market/news/signals: use the configured source intervals, with paper execution gated whenever live pricing is fallback, synthetic, or unconfirmed
+
+The Command dashboard exposes `Initial Baseline`, `Ongoing Updates`, `Recommended Cadence`, and `Next Scheduled` cards so a worker no longer looks stuck when it is either waiting for a scheduled catch-up batch or blocked by missing live data.
+
 ## Dashboard
 
 Open the Command screen. The `Autonomous Cycle` panel shows:
 
 - the current worker stage
 - whether the agency is collecting inputs, ready for preview, or ready for supervised paper approval
+- whether the agency is in first-load baseline mode or ongoing update mode
 - the next action to take
 - a twelve-agent status bar and timeline that open each worker dashboard
 
@@ -38,7 +55,11 @@ curl -s http://127.0.0.1:3000/api/agency/cycle | jq
 
 Useful fields:
 
-- `mode`: `collecting_inputs`, `analysis_ready`, `ready_for_preview`, or `ready_for_paper_approval`
+- `mode`: `initial_baseline`, `collecting_inputs`, `analysis_ready`, `ready_for_preview`, or `ready_for_paper_approval`
+- `baseline_ready`: whether the first full baseline is complete
+- `initial_baseline`: aggregate first-load readiness
+- `ongoing_refresh`: scheduled update state after baseline readiness
+- `refresh_cadence`: configured baseline and ongoing cadence recommendation
 - `current_worker_label`: the worker that needs attention now
 - `workers`: all twelve worker states
 - `next_actions`: operator-readable next steps

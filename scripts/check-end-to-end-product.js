@@ -95,7 +95,9 @@ try {
   assert(doctor.checks.some((item) => item.key === "production_data_mode" && item.status === "pass"), "Seed/sample data must be blocked from decisions.");
   assert(doctor.checks.some((item) => item.key === "signals" && item.status === "pass"), "Doctor should see fresh live-like decision evidence.");
   assert(!doctor.can_submit_orders, "End-to-end check must keep Alpaca submit gated by default.");
-  assert(["analysis_ready", "ready_for_preview", "blocked"].includes(doctor.status), `Unexpected doctor status: ${doctor.status}.`);
+  assert(["initial_baseline", "analysis_ready", "ready_for_preview", "blocked"].includes(doctor.status), `Unexpected doctor status: ${doctor.status}.`);
+  assert(cycle.initial_baseline && typeof cycle.initial_baseline.ready === "boolean", "Agency cycle should expose initial baseline state.");
+  assert(cycle.ongoing_refresh && cycle.refresh_cadence, "Agency cycle should expose ongoing refresh cadence state.");
   assert(routeSource.includes("/api/system/doctor"), "Router should expose /api/system/doctor.");
   assert(doctor.next_actions.length, "Doctor should return actionable next steps.");
 
