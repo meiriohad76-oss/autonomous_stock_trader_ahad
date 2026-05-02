@@ -2346,47 +2346,60 @@ export function createSentimentApp() {
     await persistenceReady;
     await ensureFundamentalCoverage();
     const autonomous = Boolean(config.autonomousDataEnabled);
-    const starts = [
-      liveNewsCollector.start(),
-      marketDataService.start(),
-      secInsiderCollector.start()
-    ];
+    const launches = [];
+    const launch = (label, starter) => {
+      const promise = Promise.resolve()
+        .then(starter)
+        .catch((error) => {
+          console.error(`${label} startup failed:`, error);
+          store.health.liveSourceStartup = {
+            ...(store.health.liveSourceStartup || {}),
+            [label]: {
+              last_error: error.message,
+              failed_at: new Date().toISOString()
+            }
+          };
+        });
+      launches.push(promise);
+    };
+
+    launch("live_news", () => liveNewsCollector.start());
+    launch("market_data", () => marketDataService.start());
+    launch("sec_form4", () => secInsiderCollector.start());
 
     if (config.sec13fEnabled && (config.autoStartSec13f || autonomous)) {
-      starts.push(secInstitutionalCollector.start());
+      launch("sec_13f", () => secInstitutionalCollector.start());
     }
 
     const fundamentalMarketConfigured =
       config.fundamentalMarketDataProvider === "synthetic" ||
       hasConfiguredLiveMarketProvider(config, config.fundamentalMarketDataProvider);
     if ((config.autoStartFundamentalMarketData || autonomous) && fundamentalMarketConfigured) {
-      starts.push(fundamentalMarketDataService.start({
+      launch("fundamental_market_data", () => fundamentalMarketDataService.start({
         getCompanies: () => fundamentals.getTrackedCompanies(),
         onUpdate: async (referenceMap) => fundamentals.refreshMarketReference(referenceMap)
       }));
     }
 
     if (config.fundamentalSecEnabled && (config.autoStartSecFundamentals || autonomous)) {
-      starts.push(secFundamentalsCollector.start());
+      launch("sec_fundamentals", () => secFundamentalsCollector.start());
     }
 
     const earningsConfigured = config.earningsProvider !== "twelvedata" || Boolean(config.earningsApiKey || config.twelveDataApiKey);
     if ((config.earningsEnabled || autonomous) && earningsConfigured) {
-      starts.push(corporateEventsCollector.start());
+      launch("earnings_calendar", () => corporateEventsCollector.start());
     }
 
     if (config.stocktwitsEnabled && config.stocktwitsApiKey) {
-      starts.push(socialSentimentCollector.start());
+      launch("stocktwits_stream", () => socialSentimentCollector.start());
     }
 
     if (config.tradePrintsEnabled && config.tradePrintsApiKey) {
-      starts.push(tradePrintsCollector.start());
+      launch("trade_prints", () => tradePrintsCollector.start());
     }
 
-    await Promise.all(starts);
-
     if (config.marketFlowEnabled && (config.autoStartMarketFlow || autonomous)) {
-      await marketFlowMonitor.start();
+      launch("market_flow", () => marketFlowMonitor.start());
     }
 
     if (config.executionEnabled) {
@@ -2416,6 +2429,10 @@ export function createSentimentApp() {
         }, config.sqliteBackupIntervalMs);
       }
     }
+
+    return {
+      launched: launches.length
+    };
   };
 
   app.stopLiveSources = async function stopLiveSources() {
