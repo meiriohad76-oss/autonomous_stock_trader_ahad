@@ -708,9 +708,29 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     const evidence = app.getEvidenceQuality({ limit: 10 });
     const recent = app.getRecentDocuments({ limit: 10 });
     const moneyFlow = app.getMoneyFlowSignals({ limit: 10 });
+    const signalSourceKeys = new Set([
+      "live_news",
+      "marketaux_news",
+      "sec_form4",
+      "sec_13f",
+      "earnings_calendar",
+      "stocktwits_stream",
+      "trade_prints",
+      "market_flow"
+    ]);
+    const signalSources = (workflow.live_data?.sources || []).filter((source) => signalSourceKeys.has(source.key) && source.enabled !== false);
+    const readySignalSources = signalSources.filter((source) => source.status === "fresh" && !source.fallback_mode);
+    const requiredSignalSources = Math.max(
+      1,
+      Math.min(Number(app.config.agencyBaselineMinSignalSources || 3), signalSources.length || 1)
+    );
+    const signalSourcesReady = readySignalSources.length >= requiredSignalSources;
     agent.output_summary = {
       fresh_decision_evidence_count: workflow.live_data?.fresh_decision_evidence_count || 0,
       display_tiers: workflow.live_data?.display_tiers || {},
+      signal_sources_ready: signalSourcesReady,
+      signal_sources_ready_count: readySignalSources.length,
+      signal_sources_required_count: requiredSignalSources,
       source_rows: workflow.live_data?.sources || [],
       evidence_summary: evidence.summary || null,
       recent_documents: recent.map((item) => ({
@@ -728,7 +748,16 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
         source_url: item.source_url || item.url || null
       }))
     };
-    addCheck(agent, "fresh_evidence", agent.output_summary.fresh_decision_evidence_count > 0 ? "pass" : "fail", `${agent.output_summary.fresh_decision_evidence_count} fresh decision evidence item(s).`);
+    addCheck(
+      agent,
+      "fresh_evidence",
+      agent.output_summary.fresh_decision_evidence_count > 0 ? "pass" : signalSourcesReady ? "warning" : "fail",
+      agent.output_summary.fresh_decision_evidence_count > 0
+        ? `${agent.output_summary.fresh_decision_evidence_count} fresh decision evidence item(s).`
+        : signalSourcesReady
+          ? `Signal sources are fresh (${readySignalSources.length}/${requiredSignalSources} required), but no alert/watch evidence cleared the decision threshold in this diagnostic batch.`
+          : `0 fresh decision evidence item(s); only ${readySignalSources.length}/${requiredSignalSources} required signal source(s) are fresh.`
+    );
     addCheck(agent, "source_links", recent.some((item) => item.source_url || item.url) ? "pass" : "warning", "Recent signal source links captured.");
   }
 

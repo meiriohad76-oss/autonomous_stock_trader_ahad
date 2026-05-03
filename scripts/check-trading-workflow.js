@@ -16,6 +16,7 @@ process.env.ALPACA_API_KEY_ID = "";
 process.env.ALPACA_API_SECRET_KEY = "";
 
 const { createSentimentApp } = await import("../src/app.js");
+const { buildTradingWorkflowStatus } = await import("../src/domain/trading-workflow.js");
 
 const app = createSentimentApp();
 
@@ -89,6 +90,55 @@ try {
 
   if (!(workflow.live_data.sources || []).length) {
     throw new Error("Workflow status should report live source freshness.");
+  }
+
+  const noTradeWorkflow = buildTradingWorkflowStatus({
+    config: {
+      ...app.config,
+      agencyBaselineMinSignalSources: 3,
+      seedDataOnEmpty: false,
+      seedDataInDecisions: false,
+      marketauxEnabled: false,
+      sec13fEnabled: false,
+      earningsEnabled: false,
+      stocktwitsEnabled: false,
+      tradePrintsEnabled: false
+    },
+    store: {
+      health: {
+        liveSources: {
+          google_news_rss: { enabled: true, last_success_at: new Date().toISOString() },
+          sec_form4: { enabled: true, last_success_at: new Date().toISOString() },
+          market_flow: { enabled: true, provider: "alpaca", last_success_at: new Date().toISOString() },
+          market_data: { enabled: true, provider: "alpaca", last_success_at: new Date().toISOString() },
+          fundamental_market_data: { enabled: true, provider: "alpaca", last_success_at: new Date().toISOString() },
+          sec_fundamentals: { enabled: true, last_success_at: new Date().toISOString() },
+          lightweight_state: { enabled: true, last_success_at: new Date().toISOString() }
+        }
+      },
+      documentScores: []
+    },
+    readiness: { ready: true },
+    runtimeReliability: { status: "degraded", summary: "Optional source degraded." },
+    tradeSetups: {
+      counts: { tracked_tickers: 3, long: 0, short: 0, watch: 0, no_trade: 3 },
+      setups: [{ ticker: "AAPL", action: "no_trade" }]
+    },
+    executionStatus: { broker: { configured: true, ready_for_order_submission: false } },
+    riskSnapshot: { status: "ok" },
+    positionMonitor: { broker: { configured: true }, position_count: 0, open_order_count: 0 }
+  });
+
+  if (noTradeWorkflow.status !== "review_required") {
+    throw new Error(`No-trade cycles should be review_required, not ${noTradeWorkflow.status}.`);
+  }
+
+  if (!noTradeWorkflow.can_use_for_decisions) {
+    throw new Error("Fresh signal sources with no trade setup should still support a no-trade decision.");
+  }
+
+  if (noTradeWorkflow.can_preview_orders) {
+    throw new Error("No-trade cycles must not enable order preview.");
   }
 
   console.log(

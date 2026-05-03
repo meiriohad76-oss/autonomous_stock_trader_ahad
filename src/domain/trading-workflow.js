@@ -5,6 +5,11 @@ function latestSourceTimestamp(source = {}) {
   return source.last_success_at || source.last_poll_at || source.last_backup_at || null;
 }
 
+function timestampMs(value) {
+  const parsed = new Date(value || 0).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function sourceAgeHours(source = {}) {
   const timestamp = latestSourceTimestamp(source);
   return timestamp ? round(differenceInHours(timestamp), 2) : null;
@@ -13,6 +18,9 @@ function sourceAgeHours(source = {}) {
 function sourceSummary(key, label, source = {}) {
   const timestamp = latestSourceTimestamp(source);
   const fallbackMode = Boolean(source.fallback_mode || source.fallback_active || String(source.provider || "").includes("synthetic"));
+  const successMs = timestampMs(source.last_success_at);
+  const pollMs = timestampMs(source.last_poll_at);
+  const newerError = Boolean(source.last_error && (!successMs || (pollMs && pollMs > successMs)));
   return {
     key,
     label,
@@ -27,8 +35,10 @@ function sourceSummary(key, label, source = {}) {
     last_poll_at: source.last_poll_at || null,
     age_hours: sourceAgeHours(source),
     last_error: source.last_error || null,
-    status: source.last_error && !source.last_success_at
+    status: newerError && !source.last_success_at
       ? "error"
+      : newerError
+        ? "degraded"
       : fallbackMode
         ? "fallback"
         : timestamp
@@ -70,6 +80,15 @@ function evidenceTierCounts(items = []) {
     },
     { alert: 0, watch: 0, context: 0, suppress: 0 }
   );
+}
+
+function sourceReady(source = {}) {
+  return source.status === "fresh" && !source.fallback_mode;
+}
+
+function enabledSourcesByKey(sourceRows = [], keys = []) {
+  const wanted = new Set(keys);
+  return sourceRows.filter((source) => wanted.has(source.key) && source.enabled !== false);
 }
 
 function pushIf(list, condition, value) {
@@ -119,9 +138,26 @@ export function buildTradingWorkflowStatus({
     sourceSummary("sec_fundamentals", "SEC Fundamentals", liveSources.sec_fundamentals),
     sourceSummary("lightweight_state", "Runtime State", liveSources.lightweight_state)
   ];
+  const signalSourceRows = enabledSourcesByKey(sourceRows, [
+    "live_news",
+    "marketaux_news",
+    "sec_form4",
+    "sec_13f",
+    "earnings_calendar",
+    "stocktwits_stream",
+    "trade_prints",
+    "market_flow"
+  ]);
+  const readySignalSourceCount = signalSourceRows.filter(sourceReady).length;
+  const requiredSignalSourceCount = Math.max(
+    1,
+    Math.min(Number(config.agencyBaselineMinSignalSources || 3), signalSourceRows.length || 1)
+  );
+  const signalSourcesReady = readySignalSourceCount >= requiredSignalSourceCount;
+  const decisionEvidenceReady = freshDecisionEvidenceCount > 0 || signalSourcesReady;
   const livePricingReady = sourceRows
     .filter((source) => ["market_data", "fundamental_market_data"].includes(source.key))
-    .some((source) => source.status === "fresh" && !source.fallback_mode);
+    .some(sourceReady);
 
   const steps = [
     {
@@ -141,21 +177,23 @@ export function buildTradingWorkflowStatus({
     {
       key: "fresh_market_evidence",
       label: "Fresh Market Evidence",
-      status: freshDecisionEvidenceCount > 0 ? "pass" : "fail",
+      status: freshDecisionEvidenceCount > 0 ? "pass" : signalSourcesReady ? "warning" : "fail",
       summary: freshDecisionEvidenceCount > 0
         ? `${freshDecisionEvidenceCount} fresh alert/watch evidence item(s) are available.`
-        : "No fresh alert/watch evidence is available for trade decisions."
+        : signalSourcesReady
+          ? "Signal sources are fresh, but no alert/watch evidence is strong enough for a trade setup."
+          : "Signal sources have not produced fresh decision evidence yet."
     },
     {
       key: "source_reliability",
       label: "Source Reliability",
-      status: runtimeReliability?.status === "critical" || runtimeReliability?.status === "degraded" ? "fail" : runtimeReliability?.status === "constrained" ? "warning" : "pass",
+      status: runtimeReliability?.status === "critical" ? "fail" : ["degraded", "constrained"].includes(runtimeReliability?.status) ? "warning" : "pass",
       summary: runtimeReliability?.summary || "Runtime reliability snapshot is unavailable."
     },
     {
       key: "trade_plan",
       label: "Trade Plan",
-      status: tradableCount > 0 ? "pass" : watchCount > 0 ? "warning" : "fail",
+      status: tradableCount > 0 ? "pass" : "warning",
       summary: tradableCount > 0
         ? `${tradableCount} tradable setup(s) are ready for preview.`
         : watchCount > 0
@@ -187,35 +225,37 @@ export function buildTradingWorkflowStatus({
   const blockers = [];
   pushIf(blockers, !readiness?.ready, "Application is not fully ready yet.");
   pushIf(blockers, seedDecisionMode, "Disable seed data before using decisions for trading.");
-  pushIf(blockers, freshDecisionEvidenceCount === 0, "Collect fresh live evidence before compiling actionable trades.");
+  pushIf(blockers, !decisionEvidenceReady, "Collect fresh live signal-source data before compiling actionable trades.");
   pushIf(blockers, riskBlocked, "Resolve Portfolio Risk Agent hard blocks before order submission.");
 
   const warnings = [];
   pushIf(warnings, runtimeReliability?.status === "constrained", "Runtime is constrained; keep heavy collectors manual and use one-shot refreshes.");
+  pushIf(warnings, runtimeReliability?.status === "degraded", "Some source diagnostics are degraded; inspect Runtime Reliability before increasing collector load.");
+  pushIf(warnings, sourceRows.some((source) => ["error", "degraded"].includes(source.status)), "One or more live sources reported errors after their last successful refresh.");
   pushIf(warnings, sourceRows.some((source) => source.fallback_mode), "At least one market/reference source is using fallback or synthetic data.");
   pushIf(warnings, !livePricingReady, "Live pricing is not confirmed; keep order submission disabled.");
   pushIf(warnings, !broker.ready_for_order_submission, "Alpaca paper submission is not ready; previews remain useful.");
-  pushIf(warnings, tradableCount === 0 && watchCount > 0, "Current lists are monitor-only until conviction improves.");
+  pushIf(warnings, tradableCount === 0, watchCount > 0 ? "Current lists are monitor-only until conviction improves." : "No setup clears the current trade threshold; this is a no-trade cycle.");
 
   const nextActions = [];
   pushIf(nextActions, !readiness?.ready, "Wait for /api/ready to return ready before reviewing lists.");
   pushIf(nextActions, seedDecisionMode, "Set SEED_DATA_ON_EMPTY=false and SEED_DATA_IN_DECISIONS=false, then restart.");
-  pushIf(nextActions, freshDecisionEvidenceCount === 0, "Run Refresh Live or one-shot poll Live News / SEC Form 4 / Market Flow.");
+  pushIf(nextActions, !decisionEvidenceReady, "Run Refresh Live or one-shot poll Live News / SEC Form 4 / Market Flow.");
   pushIf(nextActions, runtimeReliability?.status === "constrained", "Use Runtime Reliability actions one at a time and observe Pi load.");
-  pushIf(nextActions, tradableCount === 0 && watchCount > 0, "Review watch setups and wait for stronger evidence or better fundamentals confirmation.");
+  pushIf(nextActions, tradableCount === 0, watchCount > 0 ? "Review watch setups and wait for stronger evidence or better fundamentals confirmation." : "Treat this cycle as no-trade unless you intentionally lower test thresholds.");
   pushIf(nextActions, !livePricingReady, "Enable a live pricing source before allowing paper order submission.");
   pushIf(nextActions, !broker.configured, "Configure Alpaca paper credentials or the Alpaca MCP broker before submitting paper orders.");
   pushIf(nextActions, broker.configured && !broker.ready_for_order_submission, "Keep using Preview until BROKER_SUBMIT_ENABLED and paper-mode gates are intentionally enabled.");
   pushIf(nextActions, !nextActions.length, "Preview the top setup, inspect risk checks, then submit only if the paper-trade confirmation gate is intentionally enabled.");
 
   const overallStatus = overallFromSteps(steps);
-  const canUseForDecisions = readiness?.ready && !seedDecisionMode && freshDecisionEvidenceCount > 0 && !blockers.length;
+  const canUseForDecisions = readiness?.ready && !seedDecisionMode && decisionEvidenceReady && !blockers.length;
 
   return {
     as_of: new Date().toISOString(),
     status: overallStatus,
     can_use_for_decisions: canUseForDecisions,
-    can_preview_orders: canUseForDecisions && setups.length > 0,
+    can_preview_orders: canUseForDecisions && tradableCount > 0,
     can_submit_orders: canUseForDecisions && tradableCount > 0 && broker.ready_for_order_submission && livePricingReady && !riskBlocked,
     summary:
       overallStatus === "ready"
@@ -228,6 +268,10 @@ export function buildTradingWorkflowStatus({
       fresh_market_evidence_count: freshEvidence.length,
       fresh_decision_evidence_count: freshDecisionEvidenceCount,
       display_tiers: evidenceCounts,
+      signal_sources_ready: signalSourcesReady,
+      decision_evidence_ready: decisionEvidenceReady,
+      signal_sources_ready_count: readySignalSourceCount,
+      signal_sources_required_count: requiredSignalSourceCount,
       live_pricing_ready: livePricingReady,
       seed_data_on_empty: config.seedDataOnEmpty,
       seed_data_in_decisions: config.seedDataInDecisions,

@@ -871,6 +871,7 @@ export function buildAgencyCycleStatus({
   const signalBaselineTarget = signalSourceProgress.target
     ? Math.max(1, Math.min(Number(cfg.agencyBaselineMinSignalSources || 3), signalSourceProgress.target))
     : 1;
+  const signalSourcesBaselineReady = signalSourceProgress.current >= signalBaselineTarget;
   const pricingProgress = livePricingReady ? 65 : marketSourceProgress.pct >= 67 ? 55 : marketSourceProgress.pct >= 34 ? 35 : 0;
   const marketProgressPct = clampProgress(Math.max(marketSourceProgress.pct, pricingProgress));
   const marketDataState = livePricingReady
@@ -878,17 +879,13 @@ export function buildAgencyCycleStatus({
     : marketSourceProgress.polling
       ? "loading"
       : "blocked";
-  const signalProgressPct = freshDecisionEvidence > 0
-    ? Math.max(75, signalSourceProgress.target ? signalSourceProgress.pct : 100)
+  const signalProgressPct = signalSourcesBaselineReady
+    ? Math.max(freshDecisionEvidence > 0 ? 75 : 80, signalSourceProgress.target ? signalSourceProgress.pct : 100)
     : signalSourceProgress.pct;
-  const signalDataState = freshDecisionEvidence > 0
-    ? signalSourceProgress.current >= signalBaselineTarget
-      ? signalSourceProgress.remaining.length
-        ? "review"
-        : "ready"
-      : signalSourceProgress.polling
-        ? "loading"
-        : "review"
+  const signalDataState = signalSourcesBaselineReady
+    ? freshDecisionEvidence > 0 && !signalSourceProgress.remaining.length
+      ? "ready"
+      : "review"
     : signalSourceProgress.polling
       ? "loading"
       : "blocked";
@@ -925,7 +922,7 @@ export function buildAgencyCycleStatus({
     )
   );
   const marketBaselineReady = Boolean(livePricingReady && marketSourceProgress.pricing_ready && marketSourceProgress.flow_ready);
-  const signalsBaselineReady = Boolean(freshDecisionEvidence > 0 && signalSourceProgress.current >= signalBaselineTarget);
+  const signalsBaselineReady = Boolean(signalSourcesBaselineReady);
   const policyBaselineReady = Boolean(portfolioPolicy);
   const upstreamBaselineReady =
     universeBaselineReady && fundamentalsBaselineReady && marketBaselineReady && signalsBaselineReady && policyBaselineReady;
@@ -1352,6 +1349,19 @@ export function buildAgencyCycleStatus({
           progress_label: `${freshDecisionEvidence} fresh evidence; ${signalSourceProgress.current}/${signalSourceProgress.target || 1} signal sources fresh`,
           remaining: signalSourceProgress.remaining
         })
+      : signalSourcesBaselineReady
+        ? workerStatus("complete", "Signal sources are fresh, but no alert/watch evidence is strong enough for a trade setup.", {
+            data_state: "review",
+            loading: signalSourceProgress.polling,
+            data_ready: true,
+            progress_pct: signalProgressPct,
+            progress_current: signalSourceProgress.current,
+            progress_target: signalSourceProgress.target,
+            progress_label: `0 fresh trade-grade evidence; ${signalSourceProgress.current}/${signalSourceProgress.target || 1} signal sources fresh`,
+            remaining: signalSourceProgress.remaining.length
+              ? [`optional/degraded source(s): ${signalSourceProgress.remaining.join(", ")}`]
+              : ["wait for stronger alert/watch evidence"]
+          })
       : workerStatus("blocked", "Fresh alerts/watch evidence is missing.", {
           data_state: signalDataState,
           loading: signalSourceProgress.polling,
