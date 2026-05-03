@@ -2211,6 +2211,12 @@ input:focus-visible {
   padding: 8px 10px;
 }
 
+.trade-list-row-with-action .neutral-action {
+  color: var(--text);
+  border-color: rgba(173, 198, 255, 0.26);
+  background: rgba(173, 198, 255, 0.1);
+}
+
 .trade-list-row small {
   color: var(--text-soft);
   font-size: 11px;
@@ -2222,7 +2228,6 @@ input:focus-visible {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 14px;
 }
 
 .selector-lane-card,
@@ -2255,6 +2260,216 @@ input:focus-visible {
   display: grid;
   gap: 12px;
   margin-top: 14px;
+}
+
+.selection-decision-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.95fr);
+  gap: 16px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--surface-border);
+  border-left: 5px solid rgba(68, 138, 255, 0.72);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.selection-decision-panel.bullish {
+  border-left-color: rgba(19, 255, 67, 0.72);
+}
+
+.selection-decision-panel.bearish {
+  border-left-color: rgba(255, 84, 75, 0.72);
+}
+
+.selection-decision-panel h3 {
+  margin: 6px 0;
+  color: var(--text);
+  font-size: 1.45rem;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.selection-decision-panel p,
+.selection-decision-reasons li,
+.selection-next-card small,
+.trading-flow-map-shell summary small,
+.selection-advanced-details summary small,
+.workflow-diagnostics-details summary small,
+.final-selection-procedure summary small {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.selection-decision-panel p {
+  margin: 0;
+  max-width: 760px;
+}
+
+.selection-decision-main,
+.selection-decision-reasons,
+.selection-next-steps {
+  min-width: 0;
+}
+
+.selection-decision-reasons {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.selection-decision-reasons strong,
+.selection-next-steps > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.selection-decision-reasons ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.selection-decision-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.selection-decision-metrics span {
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.selection-decision-metrics strong {
+  display: block;
+  color: var(--text);
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
+
+.selection-next-steps {
+  grid-column: 1 / -1;
+  padding-top: 2px;
+}
+
+.selection-next-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.selection-next-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "icon title"
+    "icon copy";
+  gap: 2px 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(173, 198, 255, 0.2);
+  background: rgba(173, 198, 255, 0.08);
+  text-align: left;
+}
+
+.selection-next-card.primary {
+  border-color: rgba(19, 255, 67, 0.42);
+  background: rgba(19, 255, 67, 0.1);
+}
+
+.selection-next-card .material-symbols-outlined {
+  grid-area: icon;
+  color: var(--accent);
+}
+
+.selection-next-card strong {
+  grid-area: title;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.selection-next-card small {
+  grid-area: copy;
+}
+
+.trading-flow-map-shell,
+.selection-advanced-details,
+.workflow-diagnostics-details,
+.final-selection-procedure {
+  min-width: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.trading-flow-map-shell,
+.selection-advanced-details,
+.workflow-diagnostics-details {
+  margin-top: 14px;
+}
+
+.trading-flow-map-shell summary,
+.selection-advanced-details summary,
+.workflow-diagnostics-details summary,
+.final-selection-procedure summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.trading-flow-map-shell summary::-webkit-details-marker,
+.selection-advanced-details summary::-webkit-details-marker,
+.workflow-diagnostics-details summary::-webkit-details-marker,
+.final-selection-procedure summary::-webkit-details-marker {
+  display: none;
+}
+
+.trading-flow-map-shell summary span,
+.selection-advanced-details summary span,
+.workflow-diagnostics-details summary span,
+.final-selection-procedure summary span {
+  font-weight: 850;
+}
+
+.trading-flow-map-shell[open] summary,
+.selection-advanced-details[open] summary,
+.workflow-diagnostics-details[open] summary,
+.final-selection-procedure[open] summary {
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.trading-flow-map-shell .trading-flow-map,
+.workflow-diagnostics-details .workflow-step-grid,
+.workflow-diagnostics-details .workflow-live-data-grid,
+.workflow-diagnostics-details .workflow-action-grid,
+.workflow-diagnostics-details .workflow-control-card,
+.selection-advanced-details .agent-process-panel,
+.final-selection-procedure .selector-lane-grid,
+.final-selection-procedure .runtime-control-card {
+  margin: 12px;
 }
 
 .final-procedure-list {

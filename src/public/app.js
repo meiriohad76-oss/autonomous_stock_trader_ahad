@@ -144,6 +144,7 @@ const elements = {
   fundamentalsAgentTable: document.querySelector("#fundamentals-agent-table"),
   universeAgentHandoff: document.querySelector("#universe-agent-handoff"),
   marketAgentProcess: document.querySelector("#market-agent-process"),
+  selectionDecisionPanel: document.querySelector("#selection-decision-panel"),
   tradingWorkflowStatus: document.querySelector("#trading-workflow-status"),
   selectionAgentProcess: document.querySelector("#selection-agent-process"),
   selectionFinalProcedure: document.querySelector("#selection-final-procedure"),
@@ -3645,6 +3646,163 @@ function finalActionClass(action, executionAllowed = false) {
   return setupActionClass(action);
 }
 
+function selectionCandidateStrength(candidate) {
+  if (!candidate) {
+    return 0;
+  }
+  return Math.max(candidate.final_conviction || 0, candidate.deterministic_conviction || 0, candidate.llm_confidence || 0);
+}
+
+function bestSelectionCandidate(candidates = []) {
+  return candidates
+    .slice()
+    .sort((left, right) => selectionCandidateStrength(right) - selectionCandidateStrength(left))[0];
+}
+
+function renderSelectionDecisionPanel(finalSelection) {
+  if (!finalSelection) {
+    return `
+      <section class="selection-decision-panel neutral">
+        <div>
+          <div class="section-kicker">Selection Decision</div>
+          <h3>Selection is loading</h3>
+          <p>The agency is compiling deterministic, LLM, policy, risk, and execution context.</p>
+        </div>
+      </section>
+    `;
+  }
+
+  const workflow = state.workflowStatus || {};
+  const counts = finalSelection.counts || {};
+  const candidates = finalSelection.candidates || [];
+  const executableCount = counts.executable || 0;
+  const finalBuy = counts.final_buy || 0;
+  const finalSell = counts.final_sell || 0;
+  const watchCount = (counts.watch || 0) + (counts.review || 0);
+  const noTradeCount = counts.no_trade || 0;
+  const llm = finalSelection.llm_agent || {};
+  const policy = finalSelection.portfolio_policy || {};
+  const strongest = bestSelectionCandidate(candidates);
+  const strongestThresholds = strongest?.deterministic_explanation?.decision_thresholds || {};
+  const strongestRuntimePenalty = strongest?.final_score_components?.runtime_penalty || 0;
+  const requiredFinal = strongest?.required_final_conviction ?? policy.execution_min_conviction ?? 0;
+  const tone = executableCount ? "bullish" : candidates.length ? "neutral" : "bearish";
+  const headline = executableCount
+    ? "Trade candidates are ready for supervised review"
+    : "No trade is approved right now";
+  const summary = executableCount
+    ? `${executableCount} final candidate(s) can move to Risk and Alpaca preview. Paper submission still requires explicit approval.`
+    : watchCount || noTradeCount
+      ? "Selection completed, but the current output is monitor-only. Watch names can be reviewed; they are not Alpaca-ready trades."
+      : "The selector has no visible buy, sell, or watch candidate yet.";
+
+  const reasons = [];
+  if (!executableCount) {
+    reasons.push(`Final Selection has ${finalBuy} buy and ${finalSell} sell candidates approved for execution.`);
+  }
+  if (watchCount) {
+    reasons.push(`${watchCount} candidate(s) are watch/review only and should be investigated, not traded.`);
+  }
+  if (noTradeCount) {
+    reasons.push(`${noTradeCount} candidate(s) are explicit no-trade decisions.`);
+  }
+  if (strongest && !strongest.execution_allowed) {
+    reasons.push(
+      `${strongest.ticker} is the strongest visible report, but final conviction is ${formatNumber((strongest.final_conviction || 0) * 100, 1)}% versus ${formatNumber(requiredFinal * 100, 1)}% required.`
+    );
+  }
+  if (
+    strongestThresholds.best_score !== undefined &&
+    strongestThresholds.long_threshold !== undefined &&
+    strongestThresholds.short_threshold !== undefined
+  ) {
+    const threshold = Math.min(strongestThresholds.long_threshold || 0, strongestThresholds.short_threshold || 0);
+    if ((strongestThresholds.best_score || 0) < threshold) {
+      reasons.push(
+        `Rules score is ${formatNumber((strongestThresholds.best_score || 0) * 100, 1)}% against the current ${formatNumber(threshold * 100, 1)}% trade threshold.`
+      );
+    } else if (strongest && !strongest.execution_allowed) {
+      reasons.push("The rules lane alone is not enough; Final Selection still requires LLM/policy alignment and post-penalty conviction.");
+    }
+  }
+  if (strongestRuntimePenalty > 0) {
+    reasons.push(`Runtime/source reliability is subtracting ${formatNumber(strongestRuntimePenalty * 100, 1)} percentage points from the final score.`);
+  }
+  if (llm.status === "waiting_for_provider" || llm.mode === "enabled_without_provider") {
+    reasons.push(`The LLM lane is configured for ${llm.model || "the selected model"}, but a live provider is not connected yet.`);
+  }
+  if (workflow.can_preview_orders && !executableCount) {
+    reasons.push("Preview infrastructure is ready, but there is no executable final buy/sell candidate to preview.");
+  }
+  if (!workflow.can_submit_orders) {
+    reasons.push("Alpaca paper submission remains guarded until you intentionally enable it.");
+  }
+
+  const visibleReasons = reasons.slice(0, 6);
+  const nextCards = [];
+  if (strongest) {
+    nextCards.push(`
+      <button type="button" class="selection-next-card primary" data-final-selection-ticker="${escapeHtml(strongest.ticker)}">
+        <span class="material-symbols-outlined">fact_check</span>
+        <strong>Open ${escapeHtml(strongest.ticker)} report</strong>
+        <small>See every agent vote, score component, and blocker.</small>
+      </button>
+    `);
+  }
+  if (executableCount) {
+    nextCards.push(`
+      <button type="button" class="selection-next-card" data-agent-view="risk">
+        <span class="material-symbols-outlined">shield</span>
+        <strong>Review Risk</strong>
+        <small>Confirm sizing, exposure, and broker readiness.</small>
+      </button>
+    `);
+  } else {
+    nextCards.push(`
+      <button type="button" class="selection-next-card" data-agent-view="alerts">
+        <span class="material-symbols-outlined">monitoring</span>
+        <strong>Check Signals</strong>
+        <small>Look for fresher alerts, money flow, and source quality.</small>
+      </button>
+    `);
+  }
+  nextCards.push(`
+    <button type="button" class="selection-next-card" data-agent-view="portfolio">
+      <span class="material-symbols-outlined">tune</span>
+      <strong>Review policy</strong>
+      <small>Confirm thresholds, position cap, stops, and target rules.</small>
+    </button>
+  `);
+
+  return `
+    <section class="selection-decision-panel ${tone}">
+      <div class="selection-decision-main">
+        <div class="section-kicker">Selection Decision</div>
+        <h3>${headline}</h3>
+        <p>${escapeHtml(summary)}</p>
+        <div class="selection-decision-metrics">
+          <span><strong>${finalBuy}</strong> final buy</span>
+          <span><strong>${finalSell}</strong> final sell</span>
+          <span><strong>${watchCount}</strong> watch/review</span>
+          <span><strong>${executableCount}</strong> Alpaca-ready</span>
+        </div>
+      </div>
+      <div class="selection-decision-reasons">
+        <strong>Why</strong>
+        <ul>
+          ${visibleReasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}
+        </ul>
+      </div>
+      <div class="selection-next-steps">
+        <strong>Do This Next</strong>
+        <div class="selection-next-grid">
+          ${nextCards.join("")}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderSelectionLanes(finalSelection) {
   if (!finalSelection) {
     return `<div class="workspace-empty">Final selection is loading.</div>`;
@@ -3696,7 +3854,11 @@ function renderFinalSelectionProcedure(finalSelection) {
   }
   const steps = finalSelection.algorithm?.steps || [];
   return `
-    <div class="final-selection-procedure">
+    <details class="final-selection-procedure">
+      <summary>
+        <span>Dual selector procedure</span>
+        <small>Deterministic lane, LLM lane, final policy arbitration.</small>
+      </summary>
       ${renderSelectionLanes(finalSelection)}
       <div class="runtime-control-card">
         <div class="runtime-source-head">
@@ -3707,7 +3869,7 @@ function renderFinalSelectionProcedure(finalSelection) {
           ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
         </ol>
       </div>
-    </div>
+    </details>
   `;
 }
 
@@ -3763,9 +3925,11 @@ function renderFinalSelectionLists(finalSelection, options = {}) {
                                 <small>${formatNumber((candidate.final_conviction || 0) * 100, 1)}% final / ${formatNumber((candidate.required_final_conviction || 0) * 100, 1)}% min - ${prettyLabel(candidate.agreement)} - ${prettyLabel(candidate.final_action)}</small>
                               </button>
                               ${
-                                includePreview
-                                  ? `<button type="button" class="panel-action compact-action" data-preview-execution="${escapeHtml(candidate.ticker)}" ${candidate.execution_allowed ? "" : "disabled"}>Preview</button>`
-                                  : ""
+                                includePreview && candidate.execution_allowed
+                                  ? `<button type="button" class="panel-action compact-action" data-preview-execution="${escapeHtml(candidate.ticker)}">Preview</button>`
+                                  : includePreview
+                                    ? `<button type="button" class="panel-action compact-action neutral-action" data-final-selection-ticker="${escapeHtml(candidate.ticker)}">Report</button>`
+                                   : ""
                               }
                             </div>
                             <p class="final-selection-reason">${escapeHtml(candidate.final_reason || "")}</p>
@@ -4986,79 +5150,85 @@ function renderTradingWorkflowStatus() {
         <span class="sentiment-badge ${workflow.can_submit_orders ? "bullish" : "neutral"}">${workflow.can_submit_orders ? "Paper Submit Ready" : "Submit Gated"}</span>
       </div>
     </div>
-    <div class="workflow-step-grid">
-      ${steps
-        .map(
-          (step) => `
-            <div class="workflow-step-card ${workflowStatusClass(step.status)}">
-              <span>${prettyLabel(step.status)}</span>
-              <strong>${escapeHtml(step.label)}</strong>
-              <p>${escapeHtml(step.summary)}</p>
-            </div>
-          `
-        )
-        .join("")}
-    </div>
-    <div class="workflow-live-data-grid">
-      <div class="workflow-data-card">
-        <span>Fresh Decision Evidence</span>
-        <strong>${liveData.fresh_decision_evidence_count || 0}</strong>
-        <small>Max age ${liveData.freshness_max_hours || 72}h. Seed decisions: ${liveData.seed_data_in_decisions ? "on" : "off"}. Live pricing: ${liveData.live_pricing_ready ? "ready" : "not confirmed"}.</small>
+    <details class="workflow-diagnostics-details">
+      <summary>
+        <span>Data readiness details</span>
+        <small>${liveData.fresh_decision_evidence_count || 0} fresh decision evidence item(s), ${sources.length} source checks.</small>
+      </summary>
+      <div class="workflow-step-grid">
+        ${steps
+          .map(
+            (step) => `
+              <div class="workflow-step-card ${workflowStatusClass(step.status)}">
+                <span>${prettyLabel(step.status)}</span>
+                <strong>${escapeHtml(step.label)}</strong>
+                <p>${escapeHtml(step.summary)}</p>
+              </div>
+            `
+          )
+          .join("")}
       </div>
-      <div class="workflow-data-card">
-        <span>Alert / Watch / Context</span>
-        <strong>${liveData.display_tiers?.alert || 0} / ${liveData.display_tiers?.watch || 0} / ${liveData.display_tiers?.context || 0}</strong>
-        <small>Only fresh alert/watch evidence can make the workflow decision-ready.</small>
-      </div>
-      <div class="workflow-data-card wide">
-        <span>Live Sources</span>
-        <div class="workflow-source-list">
-          ${sources
-            .map(
-              (source) => `
-                <span title="${escapeHtml(source.last_error || source.label)}">
-                  ${escapeHtml(source.label)}: ${prettyLabel(source.status)}${source.age_hours !== null && source.age_hours !== undefined ? `, ${formatNumber(source.age_hours, 1)}h old` : ""}
-                </span>
-              `
-            )
-            .join("")}
+      <div class="workflow-live-data-grid">
+        <div class="workflow-data-card">
+          <span>Fresh Decision Evidence</span>
+          <strong>${liveData.fresh_decision_evidence_count || 0}</strong>
+          <small>Max age ${liveData.freshness_max_hours || 72}h. Seed decisions: ${liveData.seed_data_in_decisions ? "on" : "off"}. Live pricing: ${liveData.live_pricing_ready ? "ready" : "not confirmed"}.</small>
+        </div>
+        <div class="workflow-data-card">
+          <span>Alert / Watch / Context</span>
+          <strong>${liveData.display_tiers?.alert || 0} / ${liveData.display_tiers?.watch || 0} / ${liveData.display_tiers?.context || 0}</strong>
+          <small>Only fresh alert/watch evidence can make the workflow decision-ready.</small>
+        </div>
+        <div class="workflow-data-card wide">
+          <span>Live Sources</span>
+          <div class="workflow-source-list">
+            ${sources
+              .map(
+                (source) => `
+                  <span title="${escapeHtml(source.last_error || source.label)}">
+                    ${escapeHtml(source.label)}: ${prettyLabel(source.status)}${source.age_hours !== null && source.age_hours !== undefined ? `, ${formatNumber(source.age_hours, 1)}h old` : ""}
+                  </span>
+                `
+              )
+              .join("")}
+          </div>
         </div>
       </div>
-    </div>
-    ${
-      blockers.length || warnings.length || actions.length
-        ? `<div class="workflow-action-grid">
-            ${
-              blockers.length
-                ? `<div class="workflow-action-card bearish"><strong>Blockers</strong><ul>${blockers.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
-                : ""
-            }
-            ${
-              warnings.length
-                ? `<div class="workflow-action-card neutral"><strong>Warnings</strong><ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
-                : ""
-            }
-            <div class="workflow-action-card bullish"><strong>Next Actions</strong><ul>${actions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
-          </div>`
-        : ""
-    }
-    <div class="workflow-control-card">
-      <div>
-        <strong>One-Shot Live Refresh</strong>
-        <p>Use these when the workflow says fresh evidence, pricing, or SEC coverage is missing. They do not enable permanent background polling.</p>
-        ${state.runtimeActionState ? `<small>${escapeHtml(state.runtimeActionState)}</small>` : ""}
+      ${
+        blockers.length || warnings.length || actions.length
+          ? `<div class="workflow-action-grid">
+              ${
+                blockers.length
+                  ? `<div class="workflow-action-card bearish"><strong>Blockers</strong><ul>${blockers.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+                  : ""
+              }
+              ${
+                warnings.length
+                  ? `<div class="workflow-action-card neutral"><strong>Warnings</strong><ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+                  : ""
+              }
+              <div class="workflow-action-card bullish"><strong>Next Actions</strong><ul>${actions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+            </div>`
+          : ""
+      }
+      <div class="workflow-control-card">
+        <div>
+          <strong>One-Shot Live Refresh</strong>
+          <p>Use these when the workflow says fresh evidence, pricing, or SEC coverage is missing. They do not enable permanent background polling.</p>
+          ${state.runtimeActionState ? `<small>${escapeHtml(state.runtimeActionState)}</small>` : ""}
+        </div>
+        <div class="workflow-control-actions">
+          ${runtimeActionButton("poll_once", "live_news", "Poll News", "newspaper")}
+          ${runtimeActionButton("poll_once", "earnings_calendar", "Poll Earnings", "event")}
+          ${runtimeActionButton("poll_once", "stocktwits_stream", "Poll Social", "forum")}
+          ${runtimeActionButton("poll_once", "trade_prints", "Poll Prints", "receipt_long")}
+          ${runtimeActionButton("poll_once", "sec_form4", "Poll Form 4", "badge")}
+          ${runtimeActionButton("poll_once", "market_flow", "Poll Flow", "monitoring")}
+          ${runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database")}
+          ${runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")}
+        </div>
       </div>
-      <div class="workflow-control-actions">
-        ${runtimeActionButton("poll_once", "live_news", "Poll News", "newspaper")}
-        ${runtimeActionButton("poll_once", "earnings_calendar", "Poll Earnings", "event")}
-        ${runtimeActionButton("poll_once", "stocktwits_stream", "Poll Social", "forum")}
-        ${runtimeActionButton("poll_once", "trade_prints", "Poll Prints", "receipt_long")}
-        ${runtimeActionButton("poll_once", "sec_form4", "Poll Form 4", "badge")}
-        ${runtimeActionButton("poll_once", "market_flow", "Poll Flow", "monitoring")}
-        ${runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database")}
-        ${runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")}
-      </div>
-    </div>
+    </details>
   `;
 }
 
@@ -5094,8 +5264,21 @@ function renderTradingView() {
     elements.tradingWorkflowStatus.innerHTML = renderTradingWorkflowStatus();
   }
 
+  if (elements.selectionDecisionPanel) {
+    elements.selectionDecisionPanel.innerHTML = renderSelectionDecisionPanel(finalSelection);
+    attachFinalSelectionActions(elements.selectionDecisionPanel);
+  }
+
   if (elements.selectionAgentProcess) {
-    elements.selectionAgentProcess.innerHTML = `${renderAgentProcessPanel(buildAgentProcess("selection"))}${renderSelectionLanes(finalSelection)}`;
+    elements.selectionAgentProcess.innerHTML = `
+      <details class="selection-advanced-details">
+        <summary>
+          <span>Selector process details</span>
+          <small>Open for lane inputs, gates, and handoff detail.</small>
+        </summary>
+        ${renderAgentProcessPanel(buildAgentProcess("selection"))}
+      </details>
+    `;
   }
 
   if (elements.selectionFinalProcedure) {

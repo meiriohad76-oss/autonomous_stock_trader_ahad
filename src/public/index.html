@@ -550,28 +550,35 @@
                 <p>Combines Fundamentals, Market/Sector, and Signals workers into ranked buy, sell, watch, and blocked lists.</p>
               </div>
             </div>
-            <div class="trading-flow-map">
-              <div class="trading-flow-step">
-                <span>1</span>
-                <strong>Universe Screen</strong>
-                <p>Fundamentals classifies each tracked name before it is allowed into the trade funnel.</p>
+            <div id="selection-decision-panel"></div>
+            <details class="trading-flow-map-shell">
+              <summary>
+                <span>How the Selection Agent works</span>
+                <small>Universe, evidence, trade lists, then Risk and Alpaca preview.</small>
+              </summary>
+              <div class="trading-flow-map">
+                <div class="trading-flow-step">
+                  <span>1</span>
+                  <strong>Universe Screen</strong>
+                  <p>Fundamentals classifies each tracked name before it is allowed into the trade funnel.</p>
+                </div>
+                <div class="trading-flow-step">
+                  <span>2</span>
+                  <strong>Fresh Evidence</strong>
+                  <p>News, SEC, insider, macro, and flow evidence must be fresh and sourced.</p>
+                </div>
+                <div class="trading-flow-step">
+                  <span>3</span>
+                  <strong>Trade Lists</strong>
+                  <p>The Selection Agent compiles buy, short/sell, and watch candidates.</p>
+                </div>
+                <div class="trading-flow-step">
+                  <span>4</span>
+                  <strong>Risk + Alpaca</strong>
+                  <p>Execution previews pass through broker readiness and Portfolio Risk before paper orders.</p>
+                </div>
               </div>
-              <div class="trading-flow-step">
-                <span>2</span>
-                <strong>Fresh Evidence</strong>
-                <p>News, SEC, insider, macro, and flow evidence must be fresh and sourced.</p>
-              </div>
-              <div class="trading-flow-step">
-                <span>3</span>
-                <strong>Trade Lists</strong>
-                <p>The Selection Agent compiles buy, short/sell, and watch candidates.</p>
-              </div>
-              <div class="trading-flow-step">
-                <span>4</span>
-                <strong>Risk + Alpaca</strong>
-                <p>Execution previews pass through broker readiness and Portfolio Risk before paper orders.</p>
-              </div>
-            </div>
+            </details>
             <div id="trading-workflow-status" class="trading-workflow-status"></div>
             <div id="selection-agent-process" class="agent-process-slot"></div>
             <div id="trading-plan-summary" class="workspace-detail-grid"></div>
