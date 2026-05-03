@@ -105,6 +105,10 @@ try {
     JSON.stringify(
       {
         status: "ok",
+        mode: "offline_fixture",
+        live_service_check: false,
+        live_service_check_command: "npm run check:live-agents",
+        note: "This check initializes a local fixture app with guarded placeholders. Use check:live-agents to audit the running dashboard/API service.",
         doctor_status: doctor.status,
         worker_count: doctor.agents.worker_count,
         data_progress_pct: cycle.data_progress.pct,
