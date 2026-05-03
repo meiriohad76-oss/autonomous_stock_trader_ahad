@@ -16,6 +16,7 @@ const { normalizeRawDocument } = await import("../src/domain/normalize.js");
 const { createMarketDataService } = await import("../src/domain/market-data.js");
 const { detectMarketFlowSignal } = await import("../src/domain/market-flow.js");
 const {
+  buildSecTickerCikMap,
   computeLiveMetricsFromCompanyFacts,
   selectSecFundamentalsRefreshBatch
 } = await import("../src/domain/sec-fundamentals.js");
@@ -678,6 +679,14 @@ if (secBatchOne.map((item) => item.ticker).join(",") !== "PEND1,PEND2") {
 
 if (secBatchTwo.length !== 2 || secBatchTwo[0].ticker === secBatchOne[0].ticker) {
   throw new Error("SEC fundamentals batch selector should rotate bounded refresh batches.");
+}
+
+const secTickerMap = buildSecTickerCikMap({
+  0: { ticker: "BRK-B", cik_str: 1067983 },
+  1: { ticker: "BF.B", cik_str: 14693 }
+});
+if (secTickerMap.get("BRKB") !== "0001067983" || secTickerMap.get("BFB") !== "0000014693") {
+  throw new Error("SEC ticker map should resolve compact class-share aliases such as BRKB.");
 }
 
 const app = createSentimentApp();

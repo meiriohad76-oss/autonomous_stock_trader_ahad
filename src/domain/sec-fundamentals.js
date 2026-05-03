@@ -153,6 +153,22 @@ async function fetchJson(url, config) {
   });
 }
 
+export function buildSecTickerCikMap(payload = {}) {
+  const map = new Map();
+  for (const record of Object.values(payload || {})) {
+    if (record?.ticker && record?.cik_str) {
+      const secTicker = String(record.ticker).toUpperCase();
+      const cik = cikToPaddedString(record.cik_str);
+      map.set(secTicker, cik);
+      const compactTicker = secTicker.replace(/[.-]/g, "");
+      if (compactTicker && compactTicker !== secTicker && !map.has(compactTicker)) {
+        map.set(compactTicker, cik);
+      }
+    }
+  }
+  return map;
+}
+
 async function loadTickerCikMap(config, store) {
   const cache = store.externalLookups.secTickerMap;
   if (cache.data && Date.now() - cache.fetchedAt <= config.secTickerMapCacheMs) {
@@ -160,13 +176,7 @@ async function loadTickerCikMap(config, store) {
   }
 
   const payload = await fetchJson("https://www.sec.gov/files/company_tickers.json", config);
-  const map = new Map();
-  for (const record of Object.values(payload || {})) {
-    if (record?.ticker && record?.cik_str) {
-      map.set(String(record.ticker).toUpperCase(), cikToPaddedString(record.cik_str));
-    }
-  }
-
+  const map = buildSecTickerCikMap(payload);
   cache.data = map;
   cache.fetchedAt = Date.now();
   return map;
