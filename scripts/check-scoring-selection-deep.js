@@ -373,6 +373,26 @@ async function testFundamentalsAgent() {
       data_source: "universe_membership",
       quality_flags: { anomaly_flags: ["awaiting_sec_refresh"] }
     }),
+    mergeCompany("SCREENPASSWEAK", {
+      metrics: {
+        revenue_growth_yoy: 0.081,
+        eps_growth_yoy: 0.02,
+        operating_margin: 0.121,
+        gross_margin: 0.36,
+        current_ratio: 1.01,
+        net_debt_to_ebitda: 2.9,
+        fcf_conversion: 0.76,
+        fcf_margin: 0.081,
+        pe_ttm: 44,
+        peg: 2.4,
+        fcf_yield: 0.021,
+        roe: 0.06,
+        roic: 0.04,
+        margin_stability: 0.52,
+        revenue_consistency: 0.5
+      },
+      previous_composite_score: 0.5
+    }),
     mergeCompany("LIVEBAD", {
       market_cap_bucket: "mid_cap",
       metrics: {
@@ -400,11 +420,23 @@ async function testFundamentalsAgent() {
   const snapshot = engine.getSnapshot();
   const liveGood = snapshot.leaderboard.find((row) => row.ticker === "LIVEGOOD");
   const pending = snapshot.leaderboard.find((row) => row.ticker === "PENDING");
+  const screenPassWeak = snapshot.leaderboard.find((row) => row.ticker === "SCREENPASSWEAK");
   const bad = snapshot.leaderboard.find((row) => row.ticker === "LIVEBAD");
 
   assert.equal(liveGood.initial_screen.stage, "eligible", "Strong live SEC-backed row should be eligible.");
   assert.equal(pending.initial_screen.stage, "watch", "Pending SEC refresh must not become eligible.");
+  assert.notEqual(screenPassWeak.initial_screen.stage, "eligible", "A low-composite row must not pass Fundamentals just because checklist items pass.");
+  assert.ok(
+    screenPassWeak.initial_screen.failed_checks.some((item) => /Composite score/.test(item)),
+    "Low-composite demotion should explain the composite floor."
+  );
   assert.equal(bad.initial_screen.stage, "reject", "Weak/stale fundamentals should reject.");
+  assert.ok(
+    snapshot.leaderboard
+      .filter((row) => row.initial_screen?.stage === "eligible")
+      .every((row) => !["weak", "deteriorating"].includes(row.rating_label)),
+    "Eligible fundamentals should never include weak/deteriorating ratings."
+  );
   assert.ok(liveGood.composite_fundamental_score > bad.composite_fundamental_score, "Fundamental score should rank strong row above weak row.");
   assert.ok(snapshot.screener.governance.criteria.length >= 7, "Dashboard fundamentals should include criteria governance.");
   record("Fundamentals Agent", "governance_screener_monotonicity", {

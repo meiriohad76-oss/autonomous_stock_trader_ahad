@@ -198,6 +198,7 @@ export const FUNDAMENTAL_SCREENER_PROFILES = {
       screenerMaxPeTtm: 45,
       screenerMaxPeg: 2.5,
       screenerMinFcfYield: 0.02,
+      screenerMinCompositeScoreForEligible: 0.56,
       screenerEligibleScore: 0.71,
       screenerWatchScore: 0.43
     }
@@ -221,6 +222,7 @@ export const FUNDAMENTAL_SCREENER_PROFILES = {
       screenerMaxPeTtm: 38,
       screenerMaxPeg: 2,
       screenerMinFcfYield: 0.025,
+      screenerMinCompositeScoreForEligible: 0.62,
       screenerEligibleScore: 0.86,
       screenerWatchScore: 0.57
     }
@@ -244,6 +246,7 @@ export const FUNDAMENTAL_SCREENER_PROFILES = {
       screenerMaxPeTtm: 60,
       screenerMaxPeg: 3,
       screenerMinFcfYield: 0.012,
+      screenerMinCompositeScoreForEligible: 0.58,
       screenerEligibleScore: 0.71,
       screenerWatchScore: 0.43
     }
@@ -267,6 +270,7 @@ export const FUNDAMENTAL_SCREENER_PROFILES = {
       screenerMaxPeTtm: 28,
       screenerMaxPeg: 1.8,
       screenerMinFcfYield: 0.04,
+      screenerMinCompositeScoreForEligible: 0.56,
       screenerEligibleScore: 0.71,
       screenerWatchScore: 0.43
     }
@@ -290,6 +294,7 @@ function screenerSettingsFromConfig(config = {}) {
     maxPeTtm: Number(config.screenerMaxPeTtm ?? 45),
     maxPeg: Number(config.screenerMaxPeg ?? 2.5),
     minFcfYield: Number(config.screenerMinFcfYield ?? 0.02),
+    minCompositeScoreForEligible: Number(config.screenerMinCompositeScoreForEligible ?? 0.56),
     eligibleScore: Number(config.screenerEligibleScore ?? 0.71),
     watchScore: Number(config.screenerWatchScore ?? 0.43)
   };
@@ -312,6 +317,7 @@ function screenerConfigFromSettings(settings = {}) {
     screenerMaxPeTtm: Number(settings.maxPeTtm ?? 45),
     screenerMaxPeg: Number(settings.maxPeg ?? 2.5),
     screenerMinFcfYield: Number(settings.minFcfYield ?? 0.02),
+    screenerMinCompositeScoreForEligible: Number(settings.minCompositeScoreForEligible ?? 0.56),
     screenerEligibleScore: Number(settings.eligibleScore ?? 0.71),
     screenerWatchScore: Number(settings.watchScore ?? 0.43)
   };
@@ -578,6 +584,19 @@ function buildScreenerCriteria(settings = screenerSettingsFromConfig()) {
       research_basis: criterionResearchBasis(["piotroski_2000", "factor_zoo_caution"]),
       backtest_status: backtestPlaceholder("valuation_sanity"),
       rule: `P/E <= ${round(settings.maxPeTtm, 1)} OR PEG <= ${round(settings.maxPeg, 2)} OR FCF yield >= ${round(settings.minFcfYield * 100, 1)}%.`
+    },
+    {
+      key: "composite_quality_floor",
+      label: "Composite score is balanced or better",
+      factor_family: "combined_score",
+      default_value: "composite fundamental score >= 0.56",
+      current_value: `composite fundamental score >= ${round(settings.minCompositeScoreForEligible, 2)}`,
+      summary: "A company cannot pass Fundamentals on checklist optics alone; the weighted factor score must also clear the balanced-quality floor.",
+      why: "This prevents companies that pass broad baseline checks from being labeled eligible when their overall quality, valuation, stability, or cash profile remains weak relative to peers.",
+      why_it_matters: "The Fundamentals Agent's pass list should mean investable quality, not merely 'six out of seven boxes were checked.'",
+      research_basis: criterionResearchBasis(["fama_french_2015", "novy_marx_2013", "piotroski_2000", "factor_zoo_caution"]),
+      backtest_status: backtestPlaceholder("composite_quality_floor"),
+      rule: `Composite fundamental score >= ${round(settings.minCompositeScoreForEligible, 2)}.`
     }
   ];
 }
@@ -891,10 +910,13 @@ function buildFactorCards(factorScores) {
   }));
 }
 
-function evaluateInitialScreener(company, settings) {
+function evaluateInitialScreener(company, settings, scoreContext = {}) {
   const metrics = company.metrics || {};
   const qualityFlags = company.quality_flags || {};
   const awaitingSecRefresh = (qualityFlags.anomaly_flags || []).includes("awaiting_sec_refresh");
+  const compositeScore = Number(scoreContext.composite_fundamental_score ?? scoreContext.composite ?? NaN);
+  const hasCompositeScore = Number.isFinite(compositeScore);
+  const compositeFloor = Number(settings.minCompositeScoreForEligible ?? 0.56);
 
   const checks = [
     {
@@ -948,6 +970,14 @@ function evaluateInitialScreener(company, settings) {
     }
   ];
 
+  if (hasCompositeScore) {
+    checks.push({
+      key: "composite_quality_floor",
+      label: "Composite score is balanced or better",
+      passed: compositeScore >= compositeFloor
+    });
+  }
+
   const hardFailures = [];
   if (qualityFlags.restatement_flag) {
     hardFailures.push("recent restatement risk");
@@ -984,6 +1014,11 @@ function evaluateInitialScreener(company, settings) {
     failedChecks.unshift("Live SEC filing refresh still pending");
   }
 
+  if (hasCompositeScore && compositeScore < compositeFloor && stage === "eligible") {
+    stage = "watch";
+    failedChecks.unshift(`Composite score ${round(compositeScore, 3)} is below eligible floor ${round(compositeFloor, 2)}`);
+  }
+
   return {
     stage,
     passed: stage === "eligible",
@@ -997,11 +1032,11 @@ function evaluateInitialScreener(company, settings) {
     hard_failures: hardFailures,
     summary:
       stage === "eligible"
-        ? "Passes the initial liquidity, quality, growth, and tradability gate with live filing-backed support."
+        ? "Passes the initial liquidity, quality, growth, tradability, and composite-quality gate with live filing-backed support."
         : awaitingSecRefresh
           ? "Looks broadly investable, but stays in watch until live SEC filing data is available."
         : stage === "watch"
-          ? "Shows some strong traits but misses enough baseline checks to stay on watch rather than pass."
+          ? "Shows some strong traits but misses at least one required eligible gate, so it stays on watch rather than pass."
           : "Fails the current first-pass screen and should not enter the ranked candidate set yet."
   };
 }
@@ -1033,7 +1068,6 @@ function mergeCompanyWithMarketReference(company, reference) {
 }
 
 function scoreCompany(company, companies, sectorScores, screenerSettings) {
-  const initialScreen = evaluateInitialScreener(company, screenerSettings);
   const sector = sectorScores.find((item) => item.sector === company.sector);
   const scores = {
     quality: round(
@@ -1126,6 +1160,11 @@ function scoreCompany(company, companies, sectorScores, screenerSettings) {
     earnings_stability: scores.stability,
     sector: scores.sector
   };
+  const initialScreen = evaluateInitialScreener(company, screenerSettings, {
+    composite_fundamental_score: composite,
+    rating_label: labels.rating_label,
+    factor_scores: factorScores
+  });
   const strengths = buildStrengthWeaknesses(factorScores);
 
   return {

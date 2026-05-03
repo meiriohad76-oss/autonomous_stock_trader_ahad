@@ -1,9 +1,12 @@
-import { createSentimentApp } from "../src/app.js";
+process.env.DATABASE_ENABLED = process.env.DATABASE_ENABLED || "false";
+
+const { createSentimentApp } = await import("../src/app.js");
 
 const app = createSentimentApp();
 
 try {
   await app.initialize();
+  await app.replay({ reset: true, intervalMs: 0 });
   const snapshot = app.getFundamentalBacktest({ horizonDays: 5, minSample: 5 });
 
   if (snapshot.engine !== "fundamental_threshold_backtest_v1") {

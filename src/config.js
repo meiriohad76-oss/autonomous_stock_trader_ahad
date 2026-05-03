@@ -296,6 +296,7 @@ export const config = {
   screenerMaxPeTtm: Number(process.env.SCREENER_MAX_PE_TTM || 45),
   screenerMaxPeg: Number(process.env.SCREENER_MAX_PEG || 2.5),
   screenerMinFcfYield: Number(process.env.SCREENER_MIN_FCF_YIELD || 0.02),
+  screenerMinCompositeScoreForEligible: Number(process.env.SCREENER_MIN_COMPOSITE_SCORE_FOR_ELIGIBLE || 0.56),
   screenerEligibleScore: Number(process.env.SCREENER_ELIGIBLE_SCORE || 0.71),
   screenerWatchScore: Number(process.env.SCREENER_WATCH_SCORE || 0.43),
   brokerProvider: process.env.BROKER_PROVIDER || "alpaca",

@@ -309,6 +309,16 @@ const FUNDAMENTAL_SCREENER_FIELDS = {
     label: "Min FCF Yield",
     help: "FCF yield floor for the valuation sanity check."
   },
+  screenerMinCompositeScoreForEligible: {
+    env: "SCREENER_MIN_COMPOSITE_SCORE_FOR_ELIGIBLE",
+    type: "number",
+    min: 0.3,
+    max: 0.9,
+    digits: 2,
+    step: 0.01,
+    label: "Min Composite For Eligible",
+    help: "Minimum weighted fundamentals score required before a company can be marked Eligible."
+  },
   screenerEligibleScore: {
     env: "SCREENER_ELIGIBLE_SCORE",
     type: "number",

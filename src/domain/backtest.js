@@ -151,6 +151,7 @@ function currentSettings(config = {}) {
     screenerMaxPeTtm: asNumber(config.screenerMaxPeTtm, 45),
     screenerMaxPeg: asNumber(config.screenerMaxPeg, 2.5),
     screenerMinFcfYield: asNumber(config.screenerMinFcfYield, 0.02),
+    screenerMinCompositeScoreForEligible: asNumber(config.screenerMinCompositeScoreForEligible, 0.56),
     screenerEligibleScore: asNumber(config.screenerEligibleScore, 0.71)
   };
 }
@@ -200,15 +201,18 @@ function evaluateScreenerCriterion(row, key, settings) {
       asNumber(feature.fcf_yield, -Infinity) >= settings.screenerMinFcfYield
     );
   }
+  if (key === "composite_quality_floor") {
+    return asNumber(score.composite_fundamental_score, -Infinity) >= settings.screenerMinCompositeScoreForEligible;
+  }
   return null;
 }
 
 function profilePass(row, settings) {
-  const checks = ["scale", "filing_quality", "growth", "profitability", "balance_sheet", "cash_efficiency", "valuation_sanity"]
+  const checks = ["scale", "filing_quality", "growth", "profitability", "balance_sheet", "cash_efficiency", "valuation_sanity", "composite_quality_floor"]
     .map((key) => evaluateScreenerCriterion(row, key, settings));
   const passCount = checks.filter(Boolean).length;
   const hardFailure = checks[0] === false || checks[1] === false;
-  return !hardFailure && passCount >= 5 && asNumber(row.score?.composite_fundamental_score, 0) >= settings.screenerEligibleScore;
+  return !hardFailure && passCount / checks.length >= settings.screenerEligibleScore && checks[7] === true;
 }
 
 function sectorSensitivity(rows) {
