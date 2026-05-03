@@ -745,7 +745,7 @@ const mockWarehouse = baseFundamentalCompany && fundamentalDetail
       store: mockWarehouseStore,
       companies: [{ ...baseFundamentalCompany, cik: "0000320193" }],
       snapshot: {
-        leaderboard: [fundamentalDetail]
+        leaderboard: [{ ...fundamentalDetail, score_delta_30d: undefined }]
       },
       artifactsByTicker: new Map([
         [
@@ -814,6 +814,13 @@ if (!mockWarehouseFilings.length || mockWarehouseFilings[0].facts_count <= 0) {
 
 if (!mockRevenueSeries.length || mockRevenueSeries[0].canonical_field !== "revenue") {
   throw new Error("Fundamental fact-series query did not return the expected canonical fact history.");
+}
+
+if (
+  mockWarehouse &&
+  ![...mockWarehouse.fundamentalStates.values()].every((item) => Number.isFinite(Number(item.score_delta_30d)))
+) {
+  throw new Error("Fundamental warehouse states must default missing score deltas to a finite value.");
 }
 
 console.log(

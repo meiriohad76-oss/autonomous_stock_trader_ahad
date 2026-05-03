@@ -368,7 +368,7 @@ function materializeFeatures(snapshot, warehouse) {
       rank_global: item.rank_global,
       composite_fundamental_score: item.composite_fundamental_score,
       confidence: item.final_confidence,
-      score_delta_30d: item.score_delta_30d,
+      score_delta_30d: Number.isFinite(Number(item.score_delta_30d)) ? Number(item.score_delta_30d) : 0,
       rating_label: item.rating_label,
       valuation_label: item.valuation_label,
       direction_label: item.direction_label,

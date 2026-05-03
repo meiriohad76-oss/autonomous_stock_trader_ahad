@@ -2337,7 +2337,9 @@ function renderAgencyLoadPhases(cycle = {}) {
   const baselinePct = Math.min(100, Math.max(0, Number(baseline.pct || 0)));
   const phase = progress.phase || (baseline.ready ? "ongoing_updates" : "initial_baseline");
   const baselineEta = baseline.estimated_completion_label && baseline.estimated_completion_label !== "complete"
-    ? ` ETA ${baseline.estimated_completion_label}.`
+    ? /waiting|blocked|manual|action/i.test(String(baseline.estimated_completion_label))
+      ? ` Action needed: ${baseline.estimated_completion_label}.`
+      : ` ETA ${baseline.estimated_completion_label}.`
     : "";
 
   return `

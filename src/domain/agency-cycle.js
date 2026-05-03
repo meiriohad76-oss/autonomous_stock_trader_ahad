@@ -536,13 +536,17 @@ function aggregateDataProgress(workers) {
       ms: worker.estimated_completion_ms,
       basis: worker.estimation_basis
     }))
-    .filter((item) => Number.isFinite(Number(item.ms)));
+    .filter((item) => item.ms !== null && item.ms !== undefined && Number.isFinite(Number(item.ms)));
   const slowestBaselineEstimate = pendingBaselineEstimates
     .sort((a, b) => Number(b.ms) - Number(a.ms))[0] || null;
   const blockedBaselineEstimate = pendingBaselineWorkers.find((worker) => worker.completion_estimate?.blocked) || null;
+  const actionRequiredBaselineEstimate = pendingBaselineWorkers.find((worker) =>
+    /waiting|manual|action/i.test(String(worker.estimated_completion_label || worker.completion_estimate?.label || ""))
+  ) || null;
+  const nonTimedBaselineEstimate = blockedBaselineEstimate || actionRequiredBaselineEstimate;
   const baselineEstimateMs = baselineFinished
     ? 0
-    : blockedBaselineEstimate
+    : nonTimedBaselineEstimate
       ? null
       : slowestBaselineEstimate
       ? Number(slowestBaselineEstimate.ms)
@@ -590,12 +594,12 @@ function aggregateDataProgress(workers) {
       loading_count: baselineLoading,
       blocked_count: baselineBlocked,
       estimated_completion_ms: baselineEstimateMs,
-      estimated_completion_label: blockedBaselineEstimate
-        ? blockedBaselineEstimate.estimated_completion_label || "blocked until configuration changes"
+      estimated_completion_label: nonTimedBaselineEstimate
+        ? nonTimedBaselineEstimate.estimated_completion_label || "action needed"
         : baselineEstimateMs === null ? "unknown" : estimateLabel(baselineEstimateMs),
       estimated_completion_at: estimateAt(baselineEstimateMs),
-      estimation_basis: blockedBaselineEstimate
-        ? `Blocked pending worker: ${blockedBaselineEstimate.label}. ${blockedBaselineEstimate.estimation_basis || ""}`.trim()
+      estimation_basis: nonTimedBaselineEstimate
+        ? `Action needed for pending worker: ${nonTimedBaselineEstimate.label}. ${nonTimedBaselineEstimate.estimation_basis || ""}`.trim()
         : slowestBaselineEstimate
         ? `Slowest pending worker: ${slowestBaselineEstimate.label}. ${slowestBaselineEstimate.basis || ""}`.trim()
         : baselineFinished
