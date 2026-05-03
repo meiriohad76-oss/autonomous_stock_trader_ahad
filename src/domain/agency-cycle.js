@@ -422,11 +422,12 @@ function currentWorker(workers, { canPreview = false, canSubmit = false } = {}) 
   }
 
   return (
-    workers.find((worker) => worker.data_state === "blocked") ||
-    workers.find((worker) => worker.data_state === "loading") ||
+    workers.find((worker) => worker.data_state === "blocked" && !worker.data_ready) ||
+    workers.find((worker) => worker.status === "blocked") ||
+    workers.find((worker) => worker.data_state === "loading" && !worker.data_ready) ||
     workers.find((worker) => worker.status === "review" && !worker.data_ready) ||
-    workers.find((worker) => ["deterministic_selection", "final_selection"].includes(worker.key) && worker.status === "review") ||
-    workers.find((worker) => worker.data_state === "review") ||
+    workers.find((worker) => ["deterministic_selection", "llm_selection", "final_selection"].includes(worker.key) && ["waiting", "review"].includes(worker.status)) ||
+    workers.find((worker) => worker.data_state === "review" && !worker.data_ready) ||
     workers.find((worker) => worker.data_state === "gated") ||
     workers.find((worker) => worker.status === "ready") ||
     workers[workers.length - 1]
@@ -867,6 +868,9 @@ export function buildAgencyCycleStatus({
     ],
     sources
   );
+  const signalBaselineTarget = signalSourceProgress.target
+    ? Math.max(1, Math.min(Number(cfg.agencyBaselineMinSignalSources || 3), signalSourceProgress.target))
+    : 1;
   const pricingProgress = livePricingReady ? 65 : marketSourceProgress.pct >= 67 ? 55 : marketSourceProgress.pct >= 34 ? 35 : 0;
   const marketProgressPct = clampProgress(Math.max(marketSourceProgress.pct, pricingProgress));
   const marketDataState = livePricingReady
@@ -878,11 +882,13 @@ export function buildAgencyCycleStatus({
     ? Math.max(75, signalSourceProgress.target ? signalSourceProgress.pct : 100)
     : signalSourceProgress.pct;
   const signalDataState = freshDecisionEvidence > 0
-    ? signalSourceProgress.polling
-      ? "loading"
-      : signalSourceProgress.remaining.length
+    ? signalSourceProgress.current >= signalBaselineTarget
+      ? signalSourceProgress.remaining.length
         ? "review"
         : "ready"
+      : signalSourceProgress.polling
+        ? "loading"
+        : "review"
     : signalSourceProgress.polling
       ? "loading"
       : "blocked";
@@ -910,9 +916,6 @@ export function buildAgencyCycleStatus({
   const portfolioProgressPct = broker.configured ? 100 : 45;
   const learningProgressPct = clampProgress((Math.min(outcomeSample, 10) / 10) * 100);
   const minSecCoveragePct = Math.max(0, Math.min(1, Number(cfg.agencyBaselineMinSecCoveragePct || 1)));
-  const signalBaselineTarget = signalSourceProgress.target
-    ? Math.max(1, Math.min(Number(cfg.agencyBaselineMinSignalSources || 3), signalSourceProgress.target))
-    : 1;
   const universeBaselineReady = trackedCount >= Number(cfg.agencyBaselineUniverseMinCount || 160);
   const fundamentalsBaselineReady = Boolean(
     trackedCount &&

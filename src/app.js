@@ -654,6 +654,59 @@ function boundedFundamentalMarketDataLimit(requestedLimit = null) {
   return Math.min(requested, configuredCap);
 }
 
+function canonicalRuntimeSourceKey(source) {
+  const providerTradePrints = config.tradePrintsProvider ? `${config.tradePrintsProvider}_trade_prints` : "";
+  return {
+    yahoo_earnings_calendar: "earnings_calendar",
+    earnings: "earnings_calendar",
+    stocktwits: "stocktwits_stream",
+    polygon_trade_prints: "trade_prints",
+    iex_trade_prints: "trade_prints",
+    [providerTradePrints]: "trade_prints"
+  }[source] || source;
+}
+
+function runtimeSourceStatusMap(workflowStatus = {}) {
+  return new Map((workflowStatus.live_data?.sources || []).map((source) => [source.key, source]));
+}
+
+function sourceStatusIsFresh(source = null) {
+  return Boolean(
+    source &&
+      source.status === "fresh" &&
+      !source.fallback_mode &&
+      !source.fallback_active &&
+      source.status !== "fallback"
+  );
+}
+
+function sourceStatusIsPolling(source = null) {
+  return Boolean(source?.polling);
+}
+
+function timeoutError(label, timeoutMs) {
+  const error = new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s. The provider may still be finishing in the background; refresh the Command Center in a moment.`);
+  error.code = "AGENCY_ACTION_TIMEOUT";
+  return error;
+}
+
+async function withAgencyActionTimeout(promise, label, timeoutMs) {
+  const safeTimeout = Math.max(5000, Number(timeoutMs || 60000));
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(timeoutError(label, safeTimeout)), safeTimeout);
+      })
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 async function persistEnvUpdates(filePath, updates) {
   const raw = await readFile(filePath, "utf8");
   const lines = raw.split(/\r?\n/);
@@ -1411,6 +1464,7 @@ export function createSentimentApp() {
           baseline_min_sec_coverage_pct: config.agencyBaselineMinSecCoveragePct,
           baseline_min_signal_sources: config.agencyBaselineMinSignalSources,
           baseline_sec_batches_per_run: config.agencyBaselineSecBatchesPerRun,
+          action_timeout_ms: config.agencyCycleActionTimeoutMs,
           recommended: [
             "Initial baseline cycle: every 5 minutes until all required agents are baseline-ready.",
             "Ongoing agency cycle: every 15 minutes during market hours.",
@@ -2233,6 +2287,8 @@ export function createSentimentApp() {
       const requestedPriceLimit = Math.max(1, Math.floor(Number(options.priceLimit || options.price_limit || config.fundamentalMarketDataMaxCompaniesPerPoll || 25)));
       const priceLimit = Math.max(1, boundedFundamentalMarketDataLimit(requestedPriceLimit) || requestedPriceLimit);
       const before = await this.getAgencyCycleStatus({ ...options, window, limit });
+      const workflowBefore = await this.getTradingWorkflowStatus({ ...options, window, limit }).catch(() => null);
+      const sourceStatuses = runtimeSourceStatusMap(workflowBefore || {});
       const baselineMode = before.baseline_ready === false || before.mode === "initial_baseline";
       const includeHeavy = requestedIncludeHeavy || baselineMode;
       const actionResults = [];
@@ -2250,6 +2306,33 @@ export function createSentimentApp() {
         { label: "Poll SEC 13F", payload: { action: "poll_once", source: "sec_13f" }, optional: true, heavy: true }
       ];
 
+      function cycleSkipReason(item) {
+        const payload = item.payload || {};
+        if (baselineMode && item.baseline) {
+          return null;
+        }
+
+        if (!baselineMode && payload.action === "refresh_universe") {
+          const universeWorker = (before.workers || []).find((worker) => worker.key === "universe");
+          if (universeWorker?.data_ready || universeWorker?.baseline_ready) {
+            return "Allowed universe is already loaded; skipped during ongoing cycle.";
+          }
+        }
+
+        if (!baselineMode && payload.action === "poll_once" && payload.source) {
+          const sourceKey = canonicalRuntimeSourceKey(payload.source);
+          const sourceStatus = sourceStatuses.get(sourceKey) || sourceStatuses.get(payload.source);
+          if (sourceStatusIsPolling(sourceStatus)) {
+            return `${sourceStatus.label || sourceKey} is already refreshing; skipped to avoid a duplicate blocking request.`;
+          }
+          if (sourceStatusIsFresh(sourceStatus)) {
+            return `${sourceStatus.label || sourceKey} is already fresh; skipped so the agency can move to selection.`;
+          }
+        }
+
+        return null;
+      }
+
       for (const item of runtimeActions) {
         const allowedByBaseline = baselineMode && item.baseline;
         if (item.heavy && !requestedIncludeHeavy && !allowedByBaseline) {
@@ -2264,17 +2347,35 @@ export function createSentimentApp() {
           continue;
         }
 
+        const skipReason = cycleSkipReason(item);
+        if (skipReason) {
+          actionResults.push({
+            ok: null,
+            skipped: true,
+            label: item.label,
+            action: item.payload.action,
+            source: item.payload.source || null,
+            reason: skipReason
+          });
+          continue;
+        }
+
         const repeat = Math.max(1, Math.floor(Number(item.repeat || 1)));
         for (let iteration = 0; iteration < repeat; iteration += 1) {
+          const actionLabel = repeat > 1 ? `${item.label} ${iteration + 1}/${repeat}` : item.label;
           try {
-            const response = await this.runRuntimeReliabilityAction(item.payload);
+            const response = await withAgencyActionTimeout(
+              this.runRuntimeReliabilityAction(item.payload),
+              actionLabel,
+              config.agencyCycleActionTimeoutMs
+            );
             const sourceStatus = item.payload.source
               ? response.runtime_reliability?.sources?.find((source) => source.key === item.payload.source)
               : null;
             actionResults.push({
               ok: true,
               skipped: false,
-              label: repeat > 1 ? `${item.label} ${iteration + 1}/${repeat}` : item.label,
+              label: actionLabel,
               action: item.payload.action,
               source: item.payload.source || null,
               result: summarizeRuntimeActionResult(response.result) || null,
@@ -2300,7 +2401,8 @@ export function createSentimentApp() {
             actionResults.push({
               ok: skipped ? null : false,
               skipped,
-              label: repeat > 1 ? `${item.label} ${iteration + 1}/${repeat}` : item.label,
+              timeout: error.code === "AGENCY_ACTION_TIMEOUT",
+              label: actionLabel,
               action: item.payload.action,
               source: item.payload.source || null,
               error: error.message
@@ -2312,13 +2414,58 @@ export function createSentimentApp() {
         }
       }
 
-      const [finalSelection, riskSnapshot, positionMonitor] = await Promise.all([
+      const [finalSelectionResult, riskSnapshotResult, positionMonitorResult] = await Promise.allSettled([
         this.getFinalSelection({ window, limit, minConviction: options.minConviction !== undefined ? Number(options.minConviction) : undefined }),
         riskAgent.getSnapshot(),
         positionMonitorAgent.getSnapshot({ window, limit: options.positionLimit ? Number(options.positionLimit) : 25 })
       ]);
-      const after = await this.getAgencyCycleStatus({ ...options, window, limit });
-      const workflowStatus = await this.getTradingWorkflowStatus({ ...options, window, limit });
+      const finalSelection = finalSelectionResult.status === "fulfilled" ? finalSelectionResult.value : { counts: {}, candidates: [] };
+      const riskSnapshot = riskSnapshotResult.status === "fulfilled" ? riskSnapshotResult.value : { status: "unknown" };
+      const positionMonitor = positionMonitorResult.status === "fulfilled" ? positionMonitorResult.value : { risk_status: "unknown" };
+
+      for (const [label, settled] of [
+        ["Final Selection Snapshot", finalSelectionResult],
+        ["Risk Snapshot", riskSnapshotResult],
+        ["Portfolio Monitor Snapshot", positionMonitorResult]
+      ]) {
+        if (settled.status === "rejected") {
+          actionResults.push({
+            ok: false,
+            skipped: false,
+            label,
+            action: "snapshot",
+            source: null,
+            error: settled.reason?.message || String(settled.reason)
+          });
+        }
+      }
+
+      let after = null;
+      try {
+        after = await this.getAgencyCycleStatus({ ...options, window, limit });
+      } catch (error) {
+        actionResults.push({
+          ok: false,
+          skipped: false,
+          label: "Agency Cycle Status",
+          action: "snapshot",
+          source: null,
+          error: error.message
+        });
+        after = before;
+      }
+
+      const workflowStatus = await this.getTradingWorkflowStatus({ ...options, window, limit }).catch((error) => {
+        actionResults.push({
+          ok: false,
+          skipped: false,
+          label: "Trading Workflow Status",
+          action: "snapshot",
+          source: null,
+          error: error.message
+        });
+        return workflowBefore || {};
+      });
       const logEntry = {
         id: `cycle-run-${Date.now()}`,
         at: new Date().toISOString(),

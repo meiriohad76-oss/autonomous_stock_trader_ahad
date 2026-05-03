@@ -230,6 +230,73 @@ if (!["position_monitor", "learning_review", "execution_preview"].includes(ready
   throw new Error(`Unexpected ready advance action: ${readyAdvance.type}.`);
 }
 
+const ongoingFreshSignalCycle = buildAgencyCycleStatus({
+  readiness: { ready: true },
+  runtimeReliability: { status: "healthy" },
+  workflowStatus: {
+    status: "review_required",
+    can_use_for_decisions: true,
+    can_preview_orders: false,
+    can_submit_orders: false,
+    live_data: {
+      fresh_decision_evidence_count: 84,
+      live_pricing_ready: true,
+      sources: [
+        { key: "market_data", label: "Market Data", status: "fresh", fallback_mode: false },
+        { key: "fundamental_market_data", label: "Fundamental Market Reference", status: "fresh", fallback_mode: false },
+        { key: "market_flow", label: "Market Flow", status: "fresh", fallback_mode: false, polling: true },
+        { key: "live_news", label: "Live News", status: "fresh", fallback_mode: false, polling: true },
+        { key: "marketaux_news", label: "Marketaux News", status: "fresh", fallback_mode: false },
+        { key: "sec_form4", label: "SEC Form 4", status: "fresh", fallback_mode: false },
+        { key: "earnings_calendar", label: "Earnings Calendar", status: "fresh", fallback_mode: false },
+        { key: "sec_13f", label: "SEC 13F", status: "fresh", fallback_mode: false }
+      ]
+    },
+    blockers: [],
+    warnings: [],
+    next_actions: ["Review watch setups and wait for stronger evidence."]
+  },
+  tradeSetups: {
+    counts: { tracked_tickers: 168, long: 0, short: 0, watch: 0, no_trade: 168 },
+    setups: []
+  },
+  executionStatus: {
+    broker: { configured: true, ready_for_order_submission: false }
+  },
+  riskSnapshot: { status: "ok", hard_blocks: [] },
+  positionMonitor: { position_count: 0, open_order_count: 0, broker: { configured: true } },
+  portfolioPolicy: { status: "ok", summary: "Policy clear.", hard_blocks: [] },
+  llmSelection: {
+    status: "shadow",
+    mode: "shadow",
+    recommendations: []
+  },
+  finalSelection: {
+    counts: { final_buy: 0, final_sell: 0, executable: 0, review: 0, watch: 0, visible: 0 },
+    candidates: []
+  },
+  secQueue: {
+    tracked_companies: 168,
+    pending_live_sec_companies: 0,
+    live_sec_companies: 168,
+    coverage_ratio: 1
+  },
+  executionLog: []
+});
+
+const ongoingSignals = ongoingFreshSignalCycle.workers.find((worker) => worker.key === "signals");
+if (ongoingSignals.data_state !== "ready" || !ongoingSignals.loading) {
+  throw new Error("Signals with fresh required sources should be ready while background polling is shown separately.");
+}
+
+if (ongoingFreshSignalCycle.current_worker_key === "signals") {
+  throw new Error("Background Signals refresh should not become the required workflow step after baseline is complete.");
+}
+
+if (ongoingFreshSignalCycle.current_worker_key !== "deterministic_selection") {
+  throw new Error(`Expected no-candidate ongoing workflow to point at deterministic selection, got ${ongoingFreshSignalCycle.current_worker_key}.`);
+}
+
 console.log(JSON.stringify({
   status: "ok",
   workers: cycle.workers.length,

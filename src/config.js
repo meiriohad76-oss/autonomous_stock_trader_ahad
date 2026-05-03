@@ -223,6 +223,7 @@ export const config = {
   agencyBaselineMinSecCoveragePct: Number(process.env.AGENCY_BASELINE_MIN_SEC_COVERAGE_PCT || 0.99),
   agencyBaselineMinSignalSources: Number(process.env.AGENCY_BASELINE_MIN_SIGNAL_SOURCES || 3),
   agencyBaselineSecBatchesPerRun: envNumber("AGENCY_BASELINE_SEC_BATCHES_PER_RUN", 4, 3),
+  agencyCycleActionTimeoutMs: envNumber("AGENCY_CYCLE_ACTION_TIMEOUT_MS", 60000, 45000),
   seedDataOnEmpty: String(process.env.SEED_DATA_ON_EMPTY || "false").toLowerCase() === "true",
   seedDataInDecisions: String(process.env.SEED_DATA_IN_DECISIONS || "false").toLowerCase() === "true",
   liveNewsEnabled: String(process.env.LIVE_NEWS_ENABLED || "true").toLowerCase() !== "false",

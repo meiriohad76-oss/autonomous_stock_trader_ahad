@@ -332,6 +332,7 @@ function timeUntil(value) {
 function workerEtaText(worker = {}) {
   const estimate = worker.completion_estimate || {};
   const fullEstimate = worker.full_extraction_estimate || {};
+  const workerReady = worker.data_ready && worker.baseline_ready !== false;
   if (estimate.label && estimate.label !== "complete") {
     const label = String(estimate.label);
     if (/waiting|blocked|manual|action/i.test(label)) {
@@ -339,7 +340,7 @@ function workerEtaText(worker = {}) {
     }
     return `ETA ${label}`;
   }
-  if (fullEstimate.label && fullEstimate.label !== "complete" && fullEstimate.label !== "full reference coverage complete") {
+  if (!workerReady && fullEstimate.label && fullEstimate.label !== "complete" && fullEstimate.label !== "full reference coverage complete") {
     return `Full ${fullEstimate.label}`;
   }
   if (estimate.label === "complete") {
@@ -537,6 +538,7 @@ function runtimeOptionsFromButton(button) {
 
 function advanceCycleButton(label = "Advance Cycle") {
   const disabled = state.agencyAdvanceState === "running" || state.agencyRunState === "running" || state.runtimeActionState === "running";
+  const disabledLabel = state.agencyAdvanceState === "running" ? "Advancing..." : "Waiting...";
   return `
     <button
       type="button"
@@ -546,7 +548,7 @@ function advanceCycleButton(label = "Advance Cycle") {
       title="Run the safest next worker action. This never submits an Alpaca order."
     >
       <span class="material-symbols-outlined">${disabled ? "progress_activity" : "play_arrow"}</span>
-      ${escapeHtml(disabled ? "Advancing..." : label)}
+      ${escapeHtml(disabled ? disabledLabel : label)}
     </button>
   `;
 }
@@ -555,6 +557,7 @@ function runAgencyCycleButton(label = "Run Agency Cycle", options = {}) {
   const disabled = state.agencyRunState === "running" || state.agencyAdvanceState === "running" || state.runtimeActionState === "running";
   const baselineMode = state.agencyCycle?.baseline_ready === false || state.agencyCycle?.mode === "initial_baseline";
   const buttonLabel = baselineMode && label === "Run Agency Cycle" ? "Run Initial Baseline" : label;
+  const disabledLabel = state.agencyRunState === "running" ? "Running Cycle..." : "Waiting...";
   const primaryClass = options.primary === false ? "" : " agency-run-action";
   return `
     <button
@@ -565,7 +568,7 @@ function runAgencyCycleButton(label = "Run Agency Cycle", options = {}) {
       title="${escapeHtml(baselineMode ? "Run the first-load baseline, including bounded SEC fundamentals catch-up. This never submits an Alpaca order." : "Run a bounded agency cycle: refresh data workers, recompute selection, refresh risk and portfolio snapshots. This never submits an Alpaca order.")}"
     >
       <span class="material-symbols-outlined">${disabled ? "progress_activity" : "play_circle"}</span>
-      ${escapeHtml(disabled ? "Running Cycle..." : buttonLabel)}
+      ${escapeHtml(disabled ? disabledLabel : buttonLabel)}
     </button>
   `;
 }
@@ -3079,12 +3082,32 @@ async function getJson(url) {
   return response.json();
 }
 
-async function postJson(url, payload) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {})
-  });
+async function postJson(url, payload, options = {}) {
+  const timeoutMs = Number(options.timeoutMs || 0);
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+      signal: controller?.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s. Refresh Command Center; the server-side collector may still finish safely in the background.`);
+    }
+    throw error;
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body.ok === false) {
     throw new Error(body.error || `Failed to post ${url}`);
@@ -6769,6 +6792,8 @@ async function advanceAgencyCycle() {
   try {
     const payload = await postJson("/api/agency/cycle/advance", {
       window: state.activeWindow
+    }, {
+      timeoutMs: Math.max(60000, Number(state.config?.agency_cadence?.action_timeout_ms || 60000) + 15000)
     });
     state.agencyAdvanceResult = payload;
     state.agencyAdvanceState = agencyAdvanceSummary(payload);
@@ -6785,6 +6810,7 @@ async function advanceAgencyCycle() {
   } catch (error) {
     state.agencyAdvanceResult = { ok: false, error: error.message };
     state.agencyAdvanceState = error.message;
+    await performRefresh().catch(() => null);
     render();
   }
 }
@@ -6817,6 +6843,8 @@ async function runAgencyCycle() {
       priceLimit: 25,
       includeHeavy: false,
       baselineMode: state.agencyCycle?.baseline_ready === false || state.agencyCycle?.mode === "initial_baseline"
+    }, {
+      timeoutMs: Math.max(90000, Number(state.config?.agency_cadence?.action_timeout_ms || 60000) * 3)
     });
     state.agencyRunResult = payload;
     state.agencyRunState = agencyRunSummary(payload);
@@ -6827,6 +6855,7 @@ async function runAgencyCycle() {
   } catch (error) {
     state.agencyRunResult = { ok: false, error: error.message };
     state.agencyRunState = error.message;
+    await performRefresh().catch(() => null);
     render();
   }
 }
