@@ -2153,6 +2153,7 @@ function renderAgencyStatusStrip(workers = [], currentKey = null, { loading = fa
             const pct = Math.min(100, Math.max(0, Number(worker.progress_pct || 0)));
             const dataState = worker.data_state || (loading ? "loading" : "observing");
             const etaText = workerEtaText(worker);
+            const showEta = worker.key === currentKey && etaText;
             const title = [
               worker.detail,
               worker.load_phase_label ? `Phase: ${worker.load_phase_label}` : null,
@@ -2172,13 +2173,113 @@ function renderAgencyStatusStrip(workers = [], currentKey = null, { loading = fa
               <span>${String(worker.step || 0).padStart(2, "0")}</span>
               <strong>${escapeHtml(worker.label || prettyLabel(worker.key))}</strong>
               <small>${escapeHtml(prettyLabel(worker.load_phase || dataState))} - ${escapeHtml(worker.progress_label || prettyLabel(worker.status || "loading"))}</small>
-              ${etaText ? `<small class="agency-status-eta">${escapeHtml(etaText)}</small>` : ""}
+              ${showEta ? `<small class="agency-status-eta">${escapeHtml(etaText)}</small>` : ""}
               <div class="agency-status-progress" aria-hidden="true"><i style="width: ${pct}%"></i></div>
             </button>
           `;
           }
         )
         .join("")}
+    </div>
+  `;
+}
+
+function agencyBaselineState(cycle = {}) {
+  const progress = cycle.data_progress || {};
+  const baseline = cycle.initial_baseline || progress.baseline || {};
+  const ready = cycle.baseline_ready === true || baseline.ready === true || progress.phase === "ongoing_updates";
+  return { ...baseline, ready };
+}
+
+function agencyStageTitle(cycle = {}, currentWorker = {}) {
+  const baseline = agencyBaselineState(cycle);
+  if (!baseline.ready) {
+    return `First-load baseline needs ${currentWorker?.label || "worker data"}`;
+  }
+  if (cycle.can_submit_orders) {
+    return "Ready for supervised Alpaca paper approval";
+  }
+  if (cycle.can_preview_orders) {
+    return "Ready to preview Alpaca paper tickets";
+  }
+  return `Next required worker: ${currentWorker?.label || "Agency"}`;
+}
+
+function renderAgencyNextStepGuide(cycle = {}, currentWorker = {}) {
+  const baseline = agencyBaselineState(cycle);
+  const etaText = workerEtaText(currentWorker);
+  const currentLabel = currentWorker?.label || "the current worker";
+  let title = "Follow Me";
+  let body = "The agency is ready for your next supervised action.";
+  let steps = [];
+
+  if (!baseline.ready) {
+    title = "Do This Next";
+    body = "Finish the first-load baseline before trusting selection or execution. This is a data-readiness step only; it cannot submit Alpaca orders.";
+    steps = [
+      ["1", "Run Initial Baseline", "Refresh the required workers until every required agent is baseline-ready."],
+      ["2", `Watch ${currentLabel}`, `Wait for this worker to finish. ${etaText ? `Estimated time: ${etaText}.` : "Its progress bar is the one that matters now."}`],
+      ["3", "Open The Worker If It Stalls", "Use the worker screen to inspect remaining data, source errors, and diagnostics."]
+    ];
+  } else if (cycle.can_submit_orders) {
+    title = "Ready For Approval";
+    body = "Selection and risk checks are ready. The next human step is to inspect the prepared Alpaca paper order tickets and approve only if they match your intent.";
+    steps = [
+      ["1", "Open Execution", "Review every buy/sell ticket, size, stop, target, and broker warning."],
+      ["2", "Approve Paper Orders", "Submit only after the final confirmation phrase is shown and the order list is correct."]
+    ];
+  } else if (cycle.can_preview_orders) {
+    title = "Preview Orders Next";
+    body = "The agency has enough selection and risk information to build paper-order previews, but submission remains guarded.";
+    steps = [
+      ["1", "Open Execution", "Generate the Alpaca paper preview without submitting."],
+      ["2", "Review Final Selection", "Expand each candidate report before deciding whether to approve later."]
+    ];
+  } else {
+    title = "Continue The Cycle";
+    body = "The first-load baseline is complete. Keep the agency current, then review Selection, Risk, and Execution when candidates appear.";
+    steps = [
+      ["1", "Run Agency Cycle", "Refresh live data, recompute selection, and update risk snapshots."],
+      ["2", `Review ${currentLabel}`, "Open the current worker if it is waiting, gated, or reviewing."],
+      ["3", "Wait For Final Selection", "Execution stays disabled until Selection and Risk both clear."]
+    ];
+  }
+
+  const nextActions = (cycle.next_actions || []).slice(0, 3);
+
+  return `
+    <div class="agency-guide-copy">
+      <strong>${escapeHtml(title)}</strong>
+      <p>${escapeHtml(body)}</p>
+    </div>
+    <ol class="agency-guide-steps">
+      ${steps
+        .map(
+          ([step, stepTitle, stepBody]) => `
+            <li>
+              <span>${escapeHtml(step)}</span>
+              <div>
+                <strong>${escapeHtml(stepTitle)}</strong>
+                <small>${escapeHtml(stepBody)}</small>
+              </div>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+    ${
+      nextActions.length
+        ? `<div class="agency-guide-notes">
+            <span>Current notes</span>
+            <ul>${nextActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </div>`
+        : ""
+    }
+    <div class="process-action-row">
+      ${runAgencyCycleButton()}
+      ${advanceCycleButton("Do Next Safe Step")}
+      ${agencyActionButton(cycle.primary_action)}
+      ${currentWorker?.view ? `<button type="button" class="panel-action runtime-action-button" data-agent-view="${escapeHtml(currentWorker.view)}"><span class="material-symbols-outlined">open_in_new</span>Open Current Worker</button>` : ""}
     </div>
   `;
 }
@@ -2252,13 +2353,14 @@ function renderAgencyCyclePanel(cycle) {
   const currentWorker = cycle.workers.find((worker) => worker.key === cycle.current_worker_key) || cycle.workers[0];
   const dataProgress = cycle.data_progress || {};
   const currentEtaText = workerEtaText(currentWorker);
+  const stageTitle = agencyStageTitle(cycle, currentWorker);
 
   return `
     <section class="agency-cycle-panel panel">
       <div class="agency-cycle-head">
         <div>
           <div class="section-kicker">Autonomous Cycle</div>
-          <h2>${escapeHtml(currentWorker?.label || "Agency")} is the current stage</h2>
+          <h2>${escapeHtml(stageTitle)}</h2>
           <p>${escapeHtml(cycle.summary || "")}</p>
         </div>
         <div class="agency-cycle-head-status">
@@ -2288,16 +2390,7 @@ function renderAgencyCyclePanel(cycle) {
           <small>${escapeHtml(cycle.supervision || "")}</small>
         </div>
         <div class="agency-cycle-actions">
-          <strong>Next Action</strong>
-          <ul>
-            ${(cycle.next_actions || []).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-          </ul>
-          <div class="process-action-row">
-            ${runAgencyCycleButton()}
-            ${advanceCycleButton()}
-            ${agencyActionButton(cycle.primary_action)}
-            ${currentWorker?.view ? `<button type="button" class="panel-action runtime-action-button" data-agent-view="${escapeHtml(currentWorker.view)}"><span class="material-symbols-outlined">open_in_new</span>Open Worker</button>` : ""}
-          </div>
+          ${renderAgencyNextStepGuide(cycle, currentWorker)}
           ${
             state.agencyRunState && state.agencyRunState !== "running"
               ? `<div class="cycle-advance-result ${state.agencyRunResult?.ok === false ? "bearish" : "neutral"}">${escapeHtml(state.agencyRunState)}</div>`
@@ -2313,21 +2406,6 @@ function renderAgencyCyclePanel(cycle) {
               : ""
           }
         </div>
-      </div>
-      <div class="agency-cycle-timeline">
-        ${cycle.workers
-          .map(
-            (worker) => `
-              <button type="button" class="agency-cycle-step ${worker.status_class || "neutral"} data-${escapeHtml(worker.data_state || "observing")} ${worker.key === cycle.current_worker_key ? "active" : ""}" data-agent-view="${escapeHtml(worker.view || "overview")}">
-                <span>${String(worker.step).padStart(2, "0")}</span>
-                <strong>${escapeHtml(worker.label)}</strong>
-                <small>${escapeHtml(prettyLabel(worker.load_phase || worker.data_state || worker.status))} - ${escapeHtml(worker.progress_label || worker.metric || "")}</small>
-                <em>${escapeHtml([workerEtaText(worker), worker.refresh_cadence_label || worker.automation_label || "automatic"].filter(Boolean).join(" | "))}</em>
-                <div class="agency-status-progress" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, Number(worker.progress_pct || 0)))}%"></i></div>
-              </button>
-            `
-          )
-          .join("")}
       </div>
       ${
         cycle.recent_advances?.length
@@ -5517,64 +5595,42 @@ function renderAgencyCommandCenter() {
     }
   ];
 
+  const cycle = state.agencyCycle || {};
+  const cycleWorkers = Array.isArray(cycle.workers) ? cycle.workers : [];
+  const baseline = agencyBaselineState(cycle);
+  const commandCurrentWorker = cycleWorkers.find((worker) => worker.key === cycle.current_worker_key) || cycleWorkers.find((worker) => worker.baseline_required && !worker.baseline_ready) || cycleWorkers[0] || null;
+  const baselineLabel = baseline.ready
+    ? "Complete"
+    : `${baseline.ready_count || 0}/${baseline.required_count || cycleWorkers.length || 12}`;
+  const paperState = cycle.can_submit_orders ? "Approval Ready" : cycle.can_preview_orders ? "Preview Ready" : "Guarded";
+
   elements.agencyCommandCenter.innerHTML = `
-    <section class="agency-hero panel">
-      <div class="agency-hero-copy">
-        <div class="section-kicker">Autonomous Trade Agency</div>
-        <h1>Worker dashboards from universe to Alpaca paper approval</h1>
-        <p>The agency works toward a supervised 3% weekly target. It narrows the S&P 100 + QQQ universe, ranks the best setups, risk-checks the plan, then prepares paper orders for your explicit approval.</p>
+    <section class="agency-command-summary panel">
+      <div class="agency-command-title">
+        <div class="section-kicker">Command Center</div>
+        <h1>Follow the agency to the next safe step</h1>
+        <p>This screen is the checklist. Finish the first-load baseline, keep the workers refreshed, then review Selection, Risk, and Execution before any Alpaca paper order is approved.</p>
       </div>
-      <div class="agency-goal-card">
-        <span>Weekly Target</span>
-        <strong>+3%</strong>
-        <small>Target and risk budget, not a guaranteed result.</small>
-        <div class="runtime-progress"><span style="width:${Math.min(100, Math.max(8, ((monitor.total_position_value || 0) / Math.max(1, risk.equity || monitor.account?.equity || 1)) * 100))}%"></span></div>
+      <div class="agency-command-stats">
+        <div class="agency-command-stat ${baseline.ready ? "bullish" : "neutral"}">
+          <span>First Load</span>
+          <strong>${escapeHtml(baselineLabel)}</strong>
+          <small>${escapeHtml(baseline.ready ? "All required workers are baseline-ready." : "Finish this before trusting selection.")}</small>
+        </div>
+        <div class="agency-command-stat ${commandCurrentWorker?.status_class || "neutral"}">
+          <span>Next Worker</span>
+          <strong>${escapeHtml(commandCurrentWorker?.label || "Loading")}</strong>
+          <small>${escapeHtml(commandCurrentWorker?.progress_label || "Waiting for worker status.")}</small>
+        </div>
+        <div class="agency-command-stat ${cycle.can_submit_orders ? "bullish" : "neutral"}">
+          <span>Alpaca Paper</span>
+          <strong>${escapeHtml(paperState)}</strong>
+          <small>${escapeHtml(cycle.can_submit_orders ? "User approval is still required." : "Submission remains disabled until gates clear.")}</small>
+        </div>
       </div>
     </section>
     ${renderAgencyCyclePanel(state.agencyCycle)}
-    <section class="agent-roster">
-      ${agents
-        .map(
-          (agent) => `
-            <article class="agent-card">
-              <div class="agent-card-head">
-                <span class="agent-step">${agent.step}</span>
-                <span class="sentiment-badge ${agent.statusClass}">${escapeHtml(prettyLabel(agent.status))}</span>
-              </div>
-              <div class="agent-title-row">
-                <span class="material-symbols-outlined">${agent.icon}</span>
-                <strong>${escapeHtml(agent.name)}</strong>
-              </div>
-              <p>${escapeHtml(agent.mission)}</p>
-              <div class="agent-card-metric">
-                <b>${escapeHtml(agent.metric)}</b>
-                <span>${escapeHtml(agent.metricLabel)}</span>
-              </div>
-              <div class="agent-card-actions">
-                <button type="button" class="panel-action compact-action" data-agent-view="${agent.view}">Open</button>
-                ${agent.href ? `<a class="panel-action compact-action" href="${agent.href}">Deep</a>` : ""}
-              </div>
-            </article>
-          `
-        )
-        .join("")}
-    </section>
     ${renderAgencyRunLog()}
-    <section class="agent-flow panel">
-      <div>
-        <div class="section-kicker">Operating Flow</div>
-        <h2>Start at Command, then follow the workers left to right</h2>
-        <p>Run safe one-shot data refreshes when evidence is stale. Review Selection, Risk, and Execution before any paper transaction reaches Alpaca.</p>
-      </div>
-      <div class="workflow-control-actions">
-        ${runAgencyCycleButton()}
-        ${runtimeActionButton("refresh_universe", null, "Refresh Universe", "sync")}
-        ${runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database")}
-        ${runtimeActionButton("poll_once", "sec_fundamentals", "SEC Batch", "account_balance")}
-        ${runtimeActionButton("poll_once", "live_news", "Poll News", "newspaper")}
-        ${runtimeActionButton("poll_once", "market_flow", "Poll Flow", "monitoring")}
-      </div>
-    </section>
   `;
 }
 

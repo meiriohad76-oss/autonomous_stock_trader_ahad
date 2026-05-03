@@ -410,11 +410,20 @@ function statusClass(status) {
   return "neutral";
 }
 
-function currentWorker(workers) {
+function currentWorker(workers, { canPreview = false, canSubmit = false } = {}) {
+  const pendingBaselineWorker = workers.find((worker) => worker.baseline_required && !worker.baseline_ready);
+  if (pendingBaselineWorker) {
+    return pendingBaselineWorker;
+  }
+
+  const executionWorker = workers.find((worker) => worker.key === "execution");
+  if ((canPreview || canSubmit) && executionWorker) {
+    return executionWorker;
+  }
+
   return (
     workers.find((worker) => worker.data_state === "blocked") ||
     workers.find((worker) => worker.data_state === "loading") ||
-    workers.find((worker) => worker.baseline_required && !worker.baseline_ready) ||
     workers.find((worker) => worker.status === "review" && !worker.data_ready) ||
     workers.find((worker) => ["deterministic_selection", "final_selection"].includes(worker.key) && worker.status === "review") ||
     workers.find((worker) => worker.data_state === "review") ||
@@ -1521,8 +1530,7 @@ export function buildAgencyCycleStatus({
   const canPreview = baselineReady && workflowCanPreview;
   const canSubmit = baselineReady && workflowCanSubmit;
   const canUseForDecisions = baselineReady && workflowCanUseForDecisions;
-  const executionWorker = workers.find((worker) => worker.key === "execution");
-  const current = (canSubmit || canPreview) && executionWorker ? executionWorker : currentWorker(workers);
+  const current = currentWorker(workers, { canPreview, canSubmit });
   const mode = canSubmit
     ? "ready_for_paper_approval"
     : canPreview

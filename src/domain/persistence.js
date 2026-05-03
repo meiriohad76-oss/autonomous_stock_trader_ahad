@@ -2091,7 +2091,7 @@ function saveSqliteFundamentalWarehouse(db, store, now) {
     insertFundamentalScore.run(row.score_id, row.ticker, row.as_of, row.sector, row.quality_score, row.growth_score, row.valuation_score, row.balance_sheet_score, row.efficiency_score, row.earnings_stability_score, row.sector_score, row.reporting_confidence_score, row.data_freshness_score, row.peer_comparability_score, row.rule_confidence, row.llm_confidence, row.anomaly_penalty, row.final_confidence, row.composite_fundamental_score, row.rating_label, row.valuation_label, row.direction_label, row.regime_label, JSON.stringify(row.reason_codes || []), JSON.stringify(row.score_metadata || {}));
   }
   for (const row of rows.fundamentalStates) {
-    insertFundamentalState.run(row.state_id, row.ticker, row.as_of, row.sector, row.rank_in_sector, row.rank_global, row.composite_fundamental_score, row.confidence, row.score_delta_30d, row.rating_label, row.valuation_label, row.direction_label, row.regime_label, JSON.stringify(row.top_strengths || []), JSON.stringify(row.top_weaknesses || []), JSON.stringify(row.state_metadata || {}));
+    insertFundamentalState.run(row.state_id, row.ticker, row.as_of, row.sector, row.rank_in_sector, row.rank_global, row.composite_fundamental_score, row.confidence, finiteOrNull(row.score_delta_30d) ?? 0, row.rating_label, row.valuation_label, row.direction_label, row.regime_label, JSON.stringify(row.top_strengths || []), JSON.stringify(row.top_weaknesses || []), JSON.stringify(row.state_metadata || {}));
   }
 }
 
@@ -2284,7 +2284,7 @@ async function savePostgresFundamentalWarehouse(client, store, now) {
          top_strengths = EXCLUDED.top_strengths,
          top_weaknesses = EXCLUDED.top_weaknesses,
          state_metadata = EXCLUDED.state_metadata`,
-      [row.state_id, row.ticker, row.as_of, row.sector, row.rank_in_sector, row.rank_global, row.composite_fundamental_score, row.confidence, row.score_delta_30d, row.rating_label, row.valuation_label, row.direction_label, row.regime_label, row.top_strengths || [], row.top_weaknesses || [], JSON.stringify(row.state_metadata || {})]
+      [row.state_id, row.ticker, row.as_of, row.sector, row.rank_in_sector, row.rank_global, row.composite_fundamental_score, row.confidence, finiteOrNull(row.score_delta_30d) ?? 0, row.rating_label, row.valuation_label, row.direction_label, row.regime_label, row.top_strengths || [], row.top_weaknesses || [], JSON.stringify(row.state_metadata || {})]
     );
   }
 }

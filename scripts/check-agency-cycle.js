@@ -80,8 +80,8 @@ if (!cycle.refresh_cadence || !cycle.workers.every((worker) => worker.load_phase
   throw new Error("Agency cycle workers should expose baseline phase and refresh cadence telemetry.");
 }
 
-if (cycle.current_worker_key !== "signals") {
-  throw new Error(`Expected Signals Agent to be current blocker, got ${cycle.current_worker_key}.`);
+if (cycle.current_worker_key !== "fundamentals") {
+  throw new Error(`Expected earliest unfinished baseline worker to be current blocker, got ${cycle.current_worker_key}.`);
 }
 
 const pendingFundamentals = cycle.workers.find((worker) => worker.key === "fundamentals");
@@ -92,9 +92,9 @@ if (!/SEC limit plan/.test(pendingFundamentals.estimation_basis || "")) {
   throw new Error("Fundamentals ETA should explain the SEC batch/cadence basis.");
 }
 
-const signalAdvance = chooseAgencyCycleAdvance(cycle);
-if (signalAdvance.type !== "runtime_bundle" || !signalAdvance.actions?.some((action) => action.source === "market_flow")) {
-  throw new Error("Signals advance should run a guarded refresh bundle that includes money flow.");
+const fundamentalsAdvance = chooseAgencyCycleAdvance(cycle);
+if (fundamentalsAdvance.type !== "runtime" || fundamentalsAdvance.payload?.source !== "sec_fundamentals") {
+  throw new Error("Fundamentals advance should run the guarded SEC fundamentals batch while baseline catch-up is incomplete.");
 }
 
 if (cycle.can_submit_orders) {
@@ -234,6 +234,6 @@ console.log(JSON.stringify({
   status: "ok",
   workers: cycle.workers.length,
   current_worker: cycle.current_worker_label,
-  signal_advance: signalAdvance.label,
+  baseline_advance: fundamentalsAdvance.label,
   ready_mode: readyCycle.mode
 }, null, 2));
