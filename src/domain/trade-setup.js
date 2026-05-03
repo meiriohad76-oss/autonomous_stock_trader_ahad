@@ -138,6 +138,21 @@ function evidenceFlowWeight(item) {
   return clamp(baseWeight, 0, 1) * tierMultiplier;
 }
 
+function isMoneyFlowItem(item) {
+  return BULLISH_FLOW_EVENT_TYPES.has(item.event_type) || BEARISH_FLOW_EVENT_TYPES.has(item.event_type);
+}
+
+function isDirectMoneyFlowEvidence(item) {
+  const observationLevel = item.evidence_quality?.observation_level;
+  const sourceName = String(item.source_name || "").toLowerCase();
+  return (
+    ["official_filing", "delayed_trade_prints"].includes(observationLevel) ||
+    sourceName === "polygon_trades" ||
+    sourceName === "iex_trades" ||
+    sourceName === "sec_edgar"
+  );
+}
+
 function pricePlan(action, currentPrice, conviction, beta = 1) {
   if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
     return {
@@ -424,6 +439,10 @@ function computeSetup({
     : 0.45;
   const alertQualityCount = docs.filter((item) => item.display_tier === "alert").length;
   const weakQualityCount = docs.filter((item) => ["context", "suppress"].includes(item.display_tier)).length;
+  const moneyFlowItems = docs.filter(isMoneyFlowItem);
+  const inferredFlowCount = moneyFlowItems.filter((item) => item.evidence_quality?.observation_level === "bar_derived_inferred").length;
+  const directFlowCount = moneyFlowItems.filter(isDirectMoneyFlowEvidence).length;
+  const rssHeadlineCount = docs.filter((item) => item.evidence_quality?.observation_level === "rss_headline_only").length;
 
   let longScore = 0;
   let shortScore = 0;
@@ -451,6 +470,12 @@ function computeSetup({
   }
   if (weakQualityCount > 0) {
     riskFlags.push(`${weakQualityCount} recent evidence item${weakQualityCount === 1 ? " is" : "s are"} low signal or context-only`);
+  }
+  if (inferredFlowCount > 0 && directFlowCount === 0) {
+    riskFlags.push("money-flow evidence is inferred from bars only; no direct trade-print, insider, or filing confirmation");
+  }
+  if (rssHeadlineCount > 0) {
+    riskFlags.push(`${rssHeadlineCount} news item${rssHeadlineCount === 1 ? " is" : "s are"} RSS/headline matched and should be source-checked`);
   }
 
   if (flowBalance > 0) {
@@ -701,7 +726,10 @@ function computeSetup({
     evidence_quality: {
       average_downstream_weight: round(qualityAverage, 3),
       alert_quality_items: alertQualityCount,
-      weak_quality_items: weakQualityCount
+      weak_quality_items: weakQualityCount,
+      inferred_flow_items: inferredFlowCount,
+      direct_flow_items: directFlowCount,
+      rss_headline_items: rssHeadlineCount
     },
     recent_alerts: alerts.slice(0, 3).map((item) => ({
       alert_type: item.alert_type,

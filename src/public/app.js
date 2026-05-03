@@ -424,6 +424,13 @@ function evidenceQualityLabel(value) {
   return prettyLabel(value.data_quality_label || value.display_tier || "quality n/a");
 }
 
+function evidenceVerificationLabel(value) {
+  if (!value) {
+    return "verification n/a";
+  }
+  return prettyLabel(value.verification_status || value.observation_level || "verification n/a");
+}
+
 function getRuntimeAction(action, source = null) {
   return (state.runtimeReliability?.available_actions || []).find(
     (item) => item.action === action && (source === null || item.source === source)
@@ -4857,6 +4864,7 @@ function renderSignalDrawer() {
         <div class="workspace-stat-card"><span>Event Type</span><strong>${prettyLabel(signal.eventType)}</strong></div>
         <div class="workspace-stat-card"><span>Confidence</span><strong>${formatNumber(signal.confidence * 100, 0)}%</strong></div>
         <div class="workspace-stat-card"><span>Evidence Quality</span><strong>${evidenceQualityLabel(signal.evidenceQuality)}</strong></div>
+        <div class="workspace-stat-card"><span>Verification</span><strong>${evidenceVerificationLabel(signal.evidenceQuality)}</strong></div>
         <div class="workspace-stat-card"><span>Downstream Weight</span><strong>${signal.downstreamWeight !== null && signal.downstreamWeight !== undefined ? formatNumber(signal.downstreamWeight, 2) : "n/a"}</strong></div>
         <div class="workspace-stat-card"><span>Source</span><strong>${signal.sourceName || signal.subtitle}</strong></div>
       `;
@@ -4869,6 +4877,9 @@ function renderSignalDrawer() {
     [
       signal.timestamp ? `Observed ${relativeTime(signal.timestamp)} at ${formatTime(signal.timestamp)}.` : null,
       signal.sourceName ? `Source: ${signal.sourceName}.` : null,
+      signal.evidenceQuality?.observation_level ? `Observation level: ${prettyLabel(signal.evidenceQuality.observation_level)}.` : null,
+      signal.evidenceQuality?.verification_status ? `Verification: ${prettyLabel(signal.evidenceQuality.verification_status)}.` : null,
+      ...(signal.evidenceQuality?.reliability_warnings || []),
       signal.evidenceQuality?.explanation ? `Evidence quality: ${signal.evidenceQuality.explanation}` : null,
       signal.ticker ? `Related ticker: ${signal.ticker}.` : "This signal is market-level rather than ticker-specific.",
       `Current classification: ${signal.label.toLowerCase()}.`,

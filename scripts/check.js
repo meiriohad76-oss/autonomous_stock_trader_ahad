@@ -516,6 +516,9 @@ const flowSignal = detectMarketFlowSignal(
 if (!flowSignal || flowSignal.direction !== "buy") {
   throw new Error("Market flow detector failed to identify an abnormal bullish flow signal.");
 }
+if (flowSignal.eventType !== "abnormal_volume_buying" || flowSignal.directBlockPrint !== false) {
+  throw new Error("Bar-derived market flow must stay abnormal-volume only; direct block prints require the trade-print collector.");
+}
 
 const mockedCompanyFacts = {
   facts: {

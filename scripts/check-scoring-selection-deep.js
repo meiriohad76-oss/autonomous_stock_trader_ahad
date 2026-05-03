@@ -255,7 +255,20 @@ function sentimentState(ticker, sentiment, overrides = {}) {
   };
 }
 
-function scoredDocument(ticker, eventType, sentiment, { publishedAt = now, quality = 0.9, tier = "alert" } = {}) {
+function scoredDocument(
+  ticker,
+  eventType,
+  sentiment,
+  {
+    publishedAt = now,
+    quality = 0.9,
+    tier = "alert",
+    observationLevel = "provider_linked_news",
+    verificationStatus = "provider_entity_linked",
+    sourceName = "fixture_wire",
+    sourceType = "news"
+  } = {}
+) {
   const docId = `${ticker}-${eventType}-${publishedAt}`;
   return {
     score: {
@@ -268,15 +281,22 @@ function scoredDocument(ticker, eventType, sentiment, { publishedAt = now, quali
       final_confidence: 0.86,
       downstream_weight: quality,
       display_tier: tier,
-      evidence_quality: { downstream_weight: quality, display_tier: tier },
+      evidence_quality: {
+        downstream_weight: quality,
+        display_tier: tier,
+        observation_level: observationLevel,
+        verification_status: verificationStatus,
+        reliability_multiplier: quality,
+        reliability_warnings: []
+      },
       explanation_short: `${ticker} ${eventType} fixture.`
     },
     normalized: {
       doc_id: docId,
       primary_ticker: ticker,
       headline: `${ticker} ${eventType} evidence`,
-      source_name: "fixture_wire",
-      source_type: "news",
+      source_name: sourceName,
+      source_type: sourceType,
       published_at: publishedAt,
       canonical_url: `https://fixture-news.invalid/${ticker}/${eventType}`,
       source_metadata: { ticker_hint: ticker }
@@ -488,22 +508,53 @@ async function testMarketAgent() {
 
 async function testSignalsAndDeterministicSelection() {
   const bullishDocs = [
-    scoredDocument("WIN", "institutional_buying", 0.85),
+    scoredDocument("WIN", "institutional_buying", 0.85, {
+      observationLevel: "official_filing",
+      verificationStatus: "verified_official_source",
+      sourceName: "sec_edgar",
+      sourceType: "filing"
+    }),
     scoredDocument("WIN", "smart_money_accumulation", 0.8),
-    scoredDocument("WIN", "block_trade_buying", 0.75),
+    scoredDocument("WIN", "block_trade_buying", 0.75, {
+      observationLevel: "delayed_trade_prints",
+      verificationStatus: "direct_trade_prints_delayed",
+      sourceName: "polygon_trades",
+      sourceType: "api"
+    }),
     scoredDocument("STALE", "institutional_buying", 0.95, { publishedAt: old }),
     scoredDocument("LOWQ", "institutional_buying", 0.8, { quality: 0.2, tier: "context" })
   ];
   const bearishDocs = [
-    scoredDocument("FALL", "institutional_selling", -0.88),
+    scoredDocument("FALL", "institutional_selling", -0.88, {
+      observationLevel: "official_filing",
+      verificationStatus: "verified_official_source",
+      sourceName: "sec_edgar",
+      sourceType: "filing"
+    }),
     scoredDocument("FALL", "smart_money_distribution", -0.82),
-    scoredDocument("FALL", "block_trade_selling", -0.8)
+    scoredDocument("FALL", "block_trade_selling", -0.8, {
+      observationLevel: "delayed_trade_prints",
+      verificationStatus: "direct_trade_prints_delayed",
+      sourceName: "polygon_trades",
+      sourceType: "api"
+    })
+  ];
+  const inferredOnlyDocs = [
+    scoredDocument("INFER", "abnormal_volume_buying", 0.72, {
+      quality: 0.46,
+      tier: "watch",
+      observationLevel: "bar_derived_inferred",
+      verificationStatus: "inferred_from_ohlcv",
+      sourceName: "market_flow",
+      sourceType: "market_flow"
+    })
   ];
   const store = makeStore({
     fundamentals: [
       fundamentalRow("WIN"),
       fundamentalRow("STALE"),
       fundamentalRow("LOWQ"),
+      fundamentalRow("INFER"),
       fundamentalRow("FALL", {
         initial_screen: { stage: "reject", summary: "Fails first-pass screen." },
         direction_label: "bearish_headwind",
@@ -518,10 +569,11 @@ async function testSignalsAndDeterministicSelection() {
       sentimentState("WIN", 0.72),
       sentimentState("STALE", 0.45, { momentum_delta: 0.12, story_velocity: 4 }),
       sentimentState("LOWQ", 0.5, { momentum_delta: 0.14, story_velocity: 4 }),
+      sentimentState("INFER", 0.52, { momentum_delta: 0.16, story_velocity: 4 }),
       sentimentState("FALL", -0.72),
       sentimentState("MISSING", 0.72)
     ],
-    docs: [...bullishDocs, ...bearishDocs],
+    docs: [...bullishDocs, ...bearishDocs, ...inferredOnlyDocs],
     alerts: [
       { alert_type: "high_confidence_positive", entity_key: "WIN", created_at: now, headline: "WIN positive", confidence: 0.9 },
       { alert_type: "high_confidence_negative", entity_key: "FALL", created_at: now, headline: "FALL negative", confidence: 0.9 },
@@ -548,6 +600,7 @@ async function testSignalsAndDeterministicSelection() {
   const win = findSetup(riskOn, "WIN");
   const stale = findSetup(riskOn, "STALE");
   const lowQuality = findSetup(riskOn, "LOWQ");
+  const inferredOnly = findSetup(riskOn, "INFER");
   const fall = findSetup(riskOff, "FALL");
   const missing = findSetup(riskOn, "MISSING");
   const winBalanced = findSetup(balanced, "WIN");
@@ -558,6 +611,11 @@ async function testSignalsAndDeterministicSelection() {
   assert.ok(stale.recent_documents.length === 0, "Stale evidence should be excluded from deterministic selection.");
   assert.ok(stale.conviction < win.conviction, "Fresh flow evidence should score above stale-only evidence.");
   assert.ok(lowQuality.evidence_quality.weak_quality_items > 0, "Low-quality signal evidence should be visible to the selector.");
+  assert.ok(inferredOnly.evidence_quality.inferred_flow_items > 0, "Inferred-only money flow should be counted separately.");
+  assert.ok(
+    inferredOnly.risk_flags.some((item) => /inferred from bars only/i.test(item)),
+    "Inferred-only money flow should add a source reliability risk flag."
+  );
   assert.ok(
     lowQuality.conviction < win.conviction,
     `Low-quality evidence should not score like high-quality evidence. WIN=${win.conviction} LOWQ=${lowQuality.conviction}`
@@ -574,7 +632,8 @@ async function testSignalsAndDeterministicSelection() {
   record("Signals Agent", "freshness_quality_money_flow", {
     win_conviction: win.conviction,
     stale_conviction: stale.conviction,
-    low_quality_conviction: lowQuality.conviction
+    low_quality_conviction: lowQuality.conviction,
+    inferred_only_flags: inferredOnly.risk_flags.length
   });
   record("Deterministic Selection Agent", "thresholds_runtime_edge_cases", {
     long: win.action,

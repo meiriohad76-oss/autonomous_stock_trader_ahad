@@ -56,6 +56,28 @@ ALPACA_SECRET_KEY=your_alpaca_secret
 
 The Fundamental Market Reference worker also accepts `FUNDAMENTAL_MARKET_DATA_PROVIDER=alpaca`. In that mode Alpaca updates price/change fields, while SEC filings and the existing fundamental model continue to supply business-quality metrics. Use Twelve Data if you need provider-supplied market cap, enterprise value, beta, and valuation fields from the same adapter.
 
+## Signal Verification Levels
+
+Every evidence item now carries a verification level before it can influence alerts, money-flow radar, deterministic selection, LLM selection, or final selection:
+
+- `official_filing`: SEC-backed insider, 13F, or company-filing evidence.
+- `delayed_trade_prints`: provider trade prints from Polygon/IEX. These can create `block_trade_buying` or `block_trade_selling`, but direction is still inferred from print price versus a reference price.
+- `bar_derived_inferred`: market-flow radar from OHLCV bar anomalies. This can support `abnormal_volume_buying` or `abnormal_volume_selling`, but it is not a confirmed block print.
+- `provider_linked_news`: structured news provider evidence such as Marketaux entity-linked news.
+- `rss_headline_only`: Google/Yahoo RSS fallback. Useful for discovery, but source-check before treating it as a catalyst.
+- `social_stream`: social/crowd evidence, useful as context only unless confirmed elsewhere.
+
+The Evidence Quality Agent exposes these as:
+
+- `observation_level`
+- `verification_status`
+- `reliability_multiplier`
+- `reliability_warnings`
+
+The multiplier reduces downstream score weight for weaker provenance. For example, bar-derived flow and RSS headline matches can still appear in the dashboard, but they should not carry the same weight as official filings or direct delayed trade prints.
+
+Important rule: `market_flow` can no longer create `block_trade_*` events. Only the trade-print collector may create block-trade labels. Bar-derived market-flow signals are labeled as abnormal-volume evidence with a warning.
+
 ## SEC Flow
 
 SEC collectors now use retry-aware request helpers:

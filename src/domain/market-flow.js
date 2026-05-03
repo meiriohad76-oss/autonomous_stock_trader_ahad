@@ -75,7 +75,8 @@ export function detectMarketFlowSignal(barHistory, config) {
     Math.max(1, referenceBars.length);
   const baselineMove = recentMoves.slice(1).reduce((sum, value) => sum + value, 0) / Math.max(1, recentMoves.length - 1);
   const latestMove = (latest.close - previous.close) / Math.max(0.01, previous.close);
-  const intrabarMove = (latest.close - latest.open) / Math.max(0.01, latest.open);
+  const latestOpen = Number(latest.open || previous.close || latest.close || 0);
+  const intrabarMove = latestOpen > 0 ? (latest.close - latestOpen) / Math.max(0.01, latestOpen) : latestMove;
   const volumeSpike = (latest.volume || 0) / Math.max(1, baselineVolume);
   const latestDollarVolume = Math.max(0, (latest.close || 0) * (latest.volume || 0));
   const dollarVolumeSpike = latestDollarVolume / Math.max(1, baselineDollarVolume);
@@ -95,15 +96,8 @@ export function detectMarketFlowSignal(barHistory, config) {
     return null;
   }
 
-  const blockTrade = hasBlockTradeSignature;
   const direction = directionalMove >= 0 ? "buy" : "sell";
-  const eventType = blockTrade
-    ? direction === "buy"
-      ? "block_trade_buying"
-      : "block_trade_selling"
-    : direction === "buy"
-      ? "abnormal_volume_buying"
-      : "abnormal_volume_selling";
+  const eventType = direction === "buy" ? "abnormal_volume_buying" : "abnormal_volume_selling";
 
   return {
     timestamp: latest.timestamp,
@@ -118,19 +112,22 @@ export function detectMarketFlowSignal(barHistory, config) {
     latestVolume: Math.round(latest.volume || 0),
     latestDollarVolume: round(latestDollarVolume, 2),
     baselineDollarVolume: round(baselineDollarVolume, 2),
-    severity: blockTrade ? "block" : "abnormal_volume"
+    severity: hasBlockTradeSignature ? "possible_block_like_volume" : "abnormal_volume",
+    directBlockPrint: false
   };
 }
 
 function buildRawFlowDocument(entry, flow, config) {
   const phraseByType = {
     abnormal_volume_buying: "abnormal volume surge and bullish tape flow",
-    abnormal_volume_selling: "abnormal volume surge and bearish tape flow",
-    block_trade_buying: "block trade accumulation and institutional block buying",
-    block_trade_selling: "block trade distribution and institutional block selling"
+    abnormal_volume_selling: "abnormal volume surge and bearish tape flow"
   };
   const verb = flow.direction === "buy" ? "rose" : "fell";
   const sourceUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(entry.ticker)}/chart/`;
+  const severityNote =
+    flow.severity === "possible_block_like_volume"
+      ? "The size is large enough to resemble block-like participation, but it is still bar-derived and not a confirmed exchange block print."
+      : "This is a bar-derived abnormal-volume signal.";
 
   return {
     source_name: "market_flow",
@@ -139,7 +136,7 @@ function buildRawFlowDocument(entry, flow, config) {
     canonical_url: sourceUrl,
     url: sourceUrl,
     title: `${entry.ticker}: ${phraseByType[flow.eventType]}`,
-    body: `${entry.company} showed ${phraseByType[flow.eventType]} with price moving ${verb} ${round(Math.abs(flow.latestMove) * 100, 2)}% on approximately ${flow.latestVolume.toLocaleString()} shares. Estimated notional turnover was about $${Math.round(flow.latestDollarVolume).toLocaleString()} with roughly ${flow.volumeSpike}x normal share volume and ${flow.dollarVolumeSpike}x normal dollar volume. This is an inferred live tape-flow signal rather than a direct exchange block print.`,
+    body: `${entry.company} showed ${phraseByType[flow.eventType]} with price moving ${verb} ${round(Math.abs(flow.latestMove) * 100, 2)}% on approximately ${flow.latestVolume.toLocaleString()} shares. Estimated notional turnover was about $${Math.round(flow.latestDollarVolume).toLocaleString()} with roughly ${flow.volumeSpike}x normal share volume and ${flow.dollarVolumeSpike}x normal dollar volume. ${severityNote}`,
     language: "en",
     published_at: flow.timestamp,
     fetched_at: new Date().toISOString(),
@@ -150,6 +147,10 @@ function buildRawFlowDocument(entry, flow, config) {
       flow_event_type: flow.eventType,
       flow_direction: flow.direction,
       flow_severity: flow.severity,
+      observation_level: "bar_derived_inferred",
+      verification_status: "inferred_from_ohlcv",
+      direct_block_print: false,
+      reliability_warning: "Market-flow radar is inferred from price/volume bars; only the trade-print collector can confirm block prints.",
       source_url: sourceUrl,
       inferred_from_provider: config.marketDataProvider,
       volume_spike: flow.volumeSpike,

@@ -40,7 +40,7 @@ for (const item of evidenceSnapshot.items) {
   assert(item.evidence_id, "Evidence item is missing evidence_id.");
   assert(item.doc_id, "Evidence item is missing doc_id.");
   assert(item.score_id, "Evidence item is missing score_id.");
-  assert(item.ticker, "Evidence item is missing ticker.");
+  assert(item.ticker || item.data_quality_label === "source_limited", "Evidence item is missing ticker without being source-limited.");
   assert(
     ["high_quality", "needs_confirmation", "stale", "duplicate", "low_signal", "source_limited"].includes(
       item.data_quality_label
@@ -55,7 +55,11 @@ for (const item of evidenceSnapshot.items) {
   assertScore(item.corroboration_score, "corroboration_score");
   assertScore(item.extraction_quality_score, "extraction_quality_score");
   assertScore(item.mapping_confidence, "mapping_confidence");
+  assertScore(item.reliability_multiplier, "reliability_multiplier");
   assertScore(item.downstream_weight, "downstream_weight");
+  assert(item.observation_level, "Evidence item is missing observation_level.");
+  assert(item.verification_status, "Evidence item is missing verification_status.");
+  assert(Array.isArray(item.reliability_warnings), "Evidence item reliability_warnings must be an array.");
 }
 
 const weightedScores = app.store.documentScores.filter((score) => score.evidence_quality && Number.isFinite(score.downstream_weight));

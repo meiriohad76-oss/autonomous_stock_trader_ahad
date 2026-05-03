@@ -11,6 +11,27 @@ function buildSeenKey(ticker) {
   return `trade_print:${ticker}:${dateSlot()}`;
 }
 
+function normalizeTradeTimestamp(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value === "string" && Number.isNaN(Number(value))) {
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+  if (numeric > 1e15) {
+    return new Date(numeric / 1_000_000).toISOString();
+  }
+  if (numeric > 1e12) {
+    return new Date(numeric).toISOString();
+  }
+  return new Date(numeric * 1000).toISOString();
+}
+
 async function fetchPolygonTrades(ticker, apiKey, timeoutMs) {
   const url = `${POLYGON_BASE}/${encodeURIComponent(ticker)}?limit=50&sort=timestamp&order=desc&apiKey=${encodeURIComponent(apiKey)}`;
   const controller = new AbortController();
@@ -22,7 +43,11 @@ async function fetchPolygonTrades(ticker, apiKey, timeoutMs) {
     });
     if (!response.ok) throw new Error(`Polygon trades ${response.status}`);
     const json = await response.json();
-    return (json?.results ?? []).map((t) => ({ price: t.price, size: t.size }));
+    return (json?.results ?? []).map((t) => ({
+      price: t.price,
+      size: t.size,
+      timestamp: normalizeTradeTimestamp(t.sip_timestamp || t.participant_timestamp || t.trf_timestamp || t.timestamp)
+    }));
   } finally {
     clearTimeout(timer);
   }
@@ -39,7 +64,11 @@ async function fetchIexTrades(ticker, apiKey, timeoutMs) {
     });
     if (!response.ok) throw new Error(`IEX trades ${response.status}`);
     const json = await response.json();
-    return (Array.isArray(json) ? json : []).map((t) => ({ price: t.price, size: t.size }));
+    return (Array.isArray(json) ? json : []).map((t) => ({
+      price: t.price,
+      size: t.size,
+      timestamp: normalizeTradeTimestamp(t.tradeTime || t.timestamp || t.time || t.date)
+    }));
   } finally {
     clearTimeout(timer);
   }
@@ -56,6 +85,7 @@ function classifyTrades(trades, basePrice, minNotionalUsd) {
   let buyNotional = 0;
   let sellNotional = 0;
   let blockCount = 0;
+  let latestTimestamp = null;
   const referencePrice =
     Number(basePrice) > 0
       ? Number(basePrice)
@@ -65,6 +95,9 @@ function classifyTrades(trades, basePrice, minNotionalUsd) {
     const notional = trade.price * trade.size;
     if (notional < minNotionalUsd) continue;
     blockCount += 1;
+    if (trade.timestamp && (!latestTimestamp || new Date(trade.timestamp) > new Date(latestTimestamp))) {
+      latestTimestamp = trade.timestamp;
+    }
     if (trade.price >= referencePrice) {
       buyNotional += notional;
     } else {
@@ -72,14 +105,15 @@ function classifyTrades(trades, basePrice, minNotionalUsd) {
     }
   }
 
-  return { buyNotional, sellNotional, blockCount };
+  return { buyNotional, sellNotional, blockCount, latestTimestamp, referencePrice };
 }
 
-function buildRawDocument(entry, action, buyNotional, sellNotional, blockCount, provider) {
+function buildRawDocument(entry, action, buyNotional, sellNotional, blockCount, provider, latestTimestamp, referencePrice) {
   const isBuy = action === "block_trade_buying";
   const dominantNotional = isBuy ? buyNotional : sellNotional;
   const usd = (dominantNotional / 1e6).toFixed(1);
   const sourceName = provider === "iex" ? "iex_trades" : "polygon_trades";
+  const observedAt = latestTimestamp || new Date().toISOString();
   return {
     source_name: sourceName,
     source_type: "api",
@@ -87,20 +121,25 @@ function buildRawDocument(entry, action, buyNotional, sellNotional, blockCount, 
     canonical_url: `https://finance.yahoo.com/quote/${entry.ticker}`,
     url: `https://finance.yahoo.com/quote/${entry.ticker}`,
     title: `${entry.ticker} ${isBuy ? "large block buying" : "large block selling"} - $${usd}M notional (${blockCount} prints)`,
-    body: `${isBuy ? "Large block buying" : "Large block selling"} detected in ${entry.ticker}. ${blockCount} block trade print${blockCount === 1 ? "" : "s"} with $${usd}M dominant notional flow. ${isBuy ? "Institutional block buying" : "Institutional block selling"} signal.`,
+    body: `${isBuy ? "Large block buying" : "Large block selling"} detected in ${entry.ticker}. ${blockCount} delayed trade print${blockCount === 1 ? "" : "s"} crossed the configured block threshold with $${usd}M dominant notional flow. Direction is inferred from print price versus a reference price, not full order-book aggressor data.`,
     language: "en",
-    published_at: new Date().toISOString(),
+    published_at: observedAt,
     fetched_at: new Date().toISOString(),
     source_metadata: {
       ticker_hint: entry.ticker,
       sector_hint: entry.sector,
       collector: `${provider}_trade_prints`,
       action,
+      observation_level: "delayed_trade_prints",
+      verification_status: "direct_trade_prints_delayed",
+      classification_method: "print_price_vs_reference_price",
+      reliability_warning: "Trade-print direction is inferred without full order-book aggressor context.",
+      reference_price: referencePrice,
       block_count: blockCount,
       buy_notional_usd: buyNotional,
       sell_notional_usd: sellNotional
     },
-    raw_payload: { buyNotional, sellNotional, blockCount }
+    raw_payload: { buyNotional, sellNotional, blockCount, latestTimestamp, referencePrice }
   };
 }
 
@@ -180,7 +219,7 @@ export function createTradePrintsCollector(app) {
           continue;
         }
 
-        const { buyNotional, sellNotional, blockCount } = classifyTrades(trades, entry.base_price, config.tradePrintsBlockTradeMinNotionalUsd);
+        const { buyNotional, sellNotional, blockCount, latestTimestamp, referencePrice } = classifyTrades(trades, entry.base_price, config.tradePrintsBlockTradeMinNotionalUsd);
         if (blockCount === 0) {
           skipped += 1;
           continue;
@@ -188,7 +227,7 @@ export function createTradePrintsCollector(app) {
 
         const action = buyNotional >= sellNotional ? "block_trade_buying" : "block_trade_selling";
         store.seenExternalDocuments.add(seenKey);
-        await pipeline.processRawDocument(buildRawDocument(entry, action, buyNotional, sellNotional, blockCount, config.tradePrintsProvider));
+        await pipeline.processRawDocument(buildRawDocument(entry, action, buyNotional, sellNotional, blockCount, config.tradePrintsProvider, latestTimestamp, referencePrice));
         ingested += 1;
 
         await new Promise((resolve) => setTimeout(resolve, 200));
