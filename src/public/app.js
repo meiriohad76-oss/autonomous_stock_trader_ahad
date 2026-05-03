@@ -3693,7 +3693,7 @@ function renderSelectionDecisionPanel(finalSelection) {
   const summary = executableCount
     ? `${executableCount} final candidate(s) can move to Risk and Alpaca preview. Paper submission still requires explicit approval.`
     : watchCount || noTradeCount
-      ? "Selection completed, but the current output is monitor-only. Watch names can be reviewed; they are not Alpaca-ready trades."
+      ? "Selection completed, but the current output is monitor-only. Watch and no-trade names can be reviewed; they are not Alpaca-ready trades."
       : "The selector has no visible buy, sell, or watch candidate yet.";
 
   const reasons = [];
@@ -3741,10 +3741,13 @@ function renderSelectionDecisionPanel(finalSelection) {
   const visibleReasons = reasons.slice(0, 6);
   const nextCards = [];
   if (strongest) {
+    const reportAction = strongest.final_action === "no_trade"
+      ? `Review ${strongest.ticker} no-trade report`
+      : `Review ${strongest.ticker} ${prettyLabel(strongest.final_action)} report`;
     nextCards.push(`
       <button type="button" class="selection-next-card primary" data-final-selection-ticker="${escapeHtml(strongest.ticker)}">
         <span class="material-symbols-outlined">fact_check</span>
-        <strong>Open ${escapeHtml(strongest.ticker)} report</strong>
+        <strong>${escapeHtml(reportAction)}</strong>
         <small>See every agent vote, score component, and blocker.</small>
       </button>
     `);
@@ -3784,6 +3787,7 @@ function renderSelectionDecisionPanel(finalSelection) {
           <span><strong>${finalBuy}</strong> final buy</span>
           <span><strong>${finalSell}</strong> final sell</span>
           <span><strong>${watchCount}</strong> watch/review</span>
+          <span><strong>${noTradeCount}</strong> no-trade</span>
           <span><strong>${executableCount}</strong> Alpaca-ready</span>
         </div>
       </div>
@@ -5136,18 +5140,33 @@ function renderTradingWorkflowStatus() {
   const blockers = workflow.blockers || [];
   const warnings = workflow.warnings || [];
   const actions = workflow.next_actions || [];
+  const finalCounts = state.finalSelection?.counts || {};
+  const finalVisible = finalCounts.visible || (state.finalSelection?.candidates || []).length || 0;
+  const finalExecutable = finalCounts.executable || 0;
+  const monitorOnlySelection = workflow.can_use_for_decisions && finalVisible > 0 && finalExecutable === 0;
+  const readinessClass = monitorOnlySelection ? "neutral" : workflowStatusClass(workflow.status);
+  const readinessTitle = monitorOnlySelection ? "Analysis complete: no trade" : prettyLabel(workflow.status);
+  const readinessSummary = monitorOnlySelection
+    ? "The agency has enough data to review decisions, but Selection produced only watch/no-trade reports. Nothing should move to Alpaca until a final buy/sell candidate appears."
+    : workflow.summary;
+  const decisionLabel = workflow.can_use_for_decisions ? "Data Ready" : "Data Blocked";
+  const previewLabel = finalExecutable
+    ? workflow.can_preview_orders ? "Preview Ready" : "Preview Limited"
+    : "No Preview Candidate";
+  const previewClass = finalExecutable && workflow.can_preview_orders ? "bullish" : "neutral";
+  const submitLabel = workflow.can_submit_orders ? "Paper Submit Ready" : "Submit Guarded";
 
   return `
-    <div class="workflow-readiness-card ${workflowStatusClass(workflow.status)}">
+    <div class="workflow-readiness-card ${readinessClass}">
       <div>
         <div class="section-kicker">End-To-End Readiness</div>
-        <h3>${prettyLabel(workflow.status)}</h3>
-        <p>${escapeHtml(workflow.summary)}</p>
+        <h3>${escapeHtml(readinessTitle)}</h3>
+        <p>${escapeHtml(readinessSummary)}</p>
       </div>
       <div class="workflow-readiness-flags">
-        <span class="sentiment-badge ${workflow.can_use_for_decisions ? "bullish" : "bearish"}">${workflow.can_use_for_decisions ? "Decision Ready" : "Decision Blocked"}</span>
-        <span class="sentiment-badge ${workflow.can_preview_orders ? "bullish" : "neutral"}">${workflow.can_preview_orders ? "Preview Ready" : "Preview Limited"}</span>
-        <span class="sentiment-badge ${workflow.can_submit_orders ? "bullish" : "neutral"}">${workflow.can_submit_orders ? "Paper Submit Ready" : "Submit Gated"}</span>
+        <span class="sentiment-badge ${workflow.can_use_for_decisions ? "bullish" : "bearish"}">${decisionLabel}</span>
+        <span class="sentiment-badge ${previewClass}">${previewLabel}</span>
+        <span class="sentiment-badge ${workflow.can_submit_orders ? "bullish" : "neutral"}">${submitLabel}</span>
       </div>
     </div>
     <details class="workflow-diagnostics-details">
