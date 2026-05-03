@@ -914,6 +914,17 @@ function trackedFundamentalCompanies(store) {
   return universe.map((company) => liveByTicker.get(company.ticker) || company);
 }
 
+function activePollingFlag(source = {}, staleMs = 600_000) {
+  if (!source.polling) {
+    return false;
+  }
+  const lastPollTime = new Date(source.last_poll_at || 0).getTime();
+  if (!Number.isFinite(lastPollTime) || lastPollTime <= 0) {
+    return true;
+  }
+  return Date.now() - lastPollTime <= Math.max(60_000, Number(staleMs || 600_000));
+}
+
 function buildSecFundamentalsQueue(store, config, options = {}) {
   const parsedLimit = Math.floor(Number(options.limit || 20));
   const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(100, parsedLimit)) : 20;
@@ -927,6 +938,12 @@ function buildSecFundamentalsQueue(store, config, options = {}) {
   const refreshLimit =
     Number(health.refresh_limit || 0) ||
     (configuredLimit > 0 ? Math.min(configuredLimit, companies.length) : companies.length);
+  const polling = activePollingFlag(
+    health,
+    config.autoStartSecFundamentals
+      ? Math.max(Number(config.fundamentalSecBaselinePollMs || 900_000), Number(config.secRequestTimeoutMs || 15_000) * Math.max(1, refreshLimit))
+      : Math.max(120_000, Number(config.secRequestTimeoutMs || 15_000) * Math.max(1, refreshLimit))
+  );
 
   return {
     as_of: store.health.lastUpdate,
@@ -943,7 +960,7 @@ function buildSecFundamentalsQueue(store, config, options = {}) {
     next_batch: nextBatch.slice(0, limit).map(summarizeQueueCompany),
     pending_by_sector: summarizePendingBySector(pendingCompanies),
     live_preview: liveCompanies.slice(0, limit).map(summarizeQueueCompany),
-    polling: Boolean(health.polling),
+    polling,
     last_poll_at: health.last_poll_at || null,
     last_success_at: health.last_success_at || null,
     next_poll_at: health.next_poll_at || null,
@@ -972,7 +989,12 @@ function refreshSecFundamentalsHealthPreview(store, config) {
 
   store.health.liveSources.sec_fundamentals = {
     enabled: config.fundamentalSecEnabled,
-    polling: Boolean(existing.polling),
+    polling: activePollingFlag(
+      existing,
+      config.autoStartSecFundamentals
+        ? Math.max(Number(config.fundamentalSecBaselinePollMs || 900_000), Number(config.secRequestTimeoutMs || 15_000) * Math.max(1, nextBatch.length || 1))
+        : Math.max(120_000, Number(config.secRequestTimeoutMs || 15_000) * Math.max(1, nextBatch.length || 1))
+    ),
     last_poll_at: existing.last_poll_at || null,
     last_success_at: existing.last_success_at || null,
     last_error: existing.last_error || null,

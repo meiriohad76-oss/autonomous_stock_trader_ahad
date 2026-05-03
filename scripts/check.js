@@ -12,6 +12,7 @@ const {
   materializeFundamentalPersistence
 } = await import("../src/domain/fundamental-persistence.js");
 const { buildMarketauxUrl, createLiveNewsCollector, mapMarketauxArticles, parseGoogleNewsRss } = await import("../src/domain/live-news.js");
+const { normalizeRawDocument } = await import("../src/domain/normalize.js");
 const { createMarketDataService } = await import("../src/domain/market-data.js");
 const { detectMarketFlowSignal } = await import("../src/domain/market-flow.js");
 const {
@@ -88,6 +89,80 @@ const rssItems = parseGoogleNewsRss(`
 
 if (rssItems.length !== 1 || !rssItems[0].title || !rssItems[0].link) {
   throw new Error("RSS parser failed to extract a valid Google News item.");
+}
+
+const rssBoilerplateDocument = normalizeRawDocument(
+  {
+    source_name: "google_news",
+    source_type: "rss",
+    title: "Europe wants to go to Mars but needs SpaceX to help",
+    body: "Should you invest in Nvidia right now? Stock Advisor promotional boilerplate.",
+    url: "https://www.fool.com/investing/example-space-europe",
+    published_at: new Date().toISOString(),
+    source_metadata: {
+      ticker_hint: "NVDA",
+      ticker_hint_match_scope: "headline"
+    }
+  },
+  {
+    universeEntries: [
+      { ticker: "NVDA", company_name: "NVIDIA Corp", company: "NVIDIA Corp", sector: "Information Technology" }
+    ]
+  }
+);
+
+if (rssBoilerplateDocument.primary_ticker || !rssBoilerplateDocument.processing_notes.ticker_hint_rejected) {
+  throw new Error("Google News RSS ticker hints must be rejected when the headline does not mention the ticker/company.");
+}
+
+const yahooBoilerplateDocument = normalizeRawDocument(
+  {
+    source_name: "yahoo_finance",
+    source_type: "rss",
+    title: "Europe wants to go to Mars but needs SpaceX to help",
+    body: "Should you invest in Nvidia right now? Stock Advisor promotional boilerplate.",
+    url: "https://www.fool.com/investing/example-space-europe",
+    published_at: new Date().toISOString(),
+    source_metadata: {
+      ticker_hint: "NVDA",
+      ticker_hint_match_scope: "headline"
+    }
+  },
+  {
+    universeEntries: [
+      { ticker: "NVDA", company_name: "NVIDIA Corp", company: "NVIDIA Corp", sector: "Information Technology" }
+    ]
+  }
+);
+
+if (yahooBoilerplateDocument.primary_ticker || !yahooBoilerplateDocument.processing_notes.ticker_hint_rejected) {
+  throw new Error("Yahoo/RSS ticker hints must be rejected when only promotional boilerplate mentions the company.");
+}
+
+const marketauxWeakEntityDocument = normalizeRawDocument(
+  {
+    source_name: "marketaux",
+    source_type: "rss",
+    title: "Europe wants to go to Mars but needs SpaceX to help",
+    body: "European space policy story without chipmaker operating context.",
+    url: "https://www.fool.com/investing/example-space-europe",
+    published_at: new Date().toISOString(),
+    source_metadata: {
+      ticker_hint: "NVDA",
+      ticker_hint_match_scope: "provider_entity",
+      collector: "marketaux_news",
+      marketaux_entity_match_score: 0.12
+    }
+  },
+  {
+    universeEntries: [
+      { ticker: "NVDA", company_name: "NVIDIA Corp", company: "NVIDIA Corp", sector: "Information Technology" }
+    ]
+  }
+);
+
+if (marketauxWeakEntityDocument.primary_ticker || !marketauxWeakEntityDocument.processing_notes.ticker_hint_rejected) {
+  throw new Error("Weak Marketaux entity hints must be rejected when the source text does not support the ticker.");
 }
 
 const yahooRssItems = parseGoogleNewsRss(`

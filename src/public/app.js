@@ -332,7 +332,11 @@ function workerEtaText(worker = {}) {
   const estimate = worker.completion_estimate || {};
   const fullEstimate = worker.full_extraction_estimate || {};
   if (estimate.label && estimate.label !== "complete") {
-    return `ETA ${estimate.label}`;
+    const label = String(estimate.label);
+    if (/waiting|blocked|manual|action/i.test(label)) {
+      return `Action needed: ${label}`;
+    }
+    return `ETA ${label}`;
   }
   if (fullEstimate.label && fullEstimate.label !== "complete" && fullEstimate.label !== "full reference coverage complete") {
     return `Full ${fullEstimate.label}`;
@@ -2194,7 +2198,7 @@ function agencyBaselineState(cycle = {}) {
 function agencyStageTitle(cycle = {}, currentWorker = {}) {
   const baseline = agencyBaselineState(cycle);
   if (!baseline.ready) {
-    return `First-load baseline needs ${currentWorker?.label || "worker data"}`;
+    return `Current blocker: ${currentWorker?.label || "worker data"}`;
   }
   if (cycle.can_submit_orders) {
     return "Ready for supervised Alpaca paper approval";
@@ -2203,6 +2207,47 @@ function agencyStageTitle(cycle = {}, currentWorker = {}) {
     return "Ready to preview Alpaca paper tickets";
   }
   return `Next required worker: ${currentWorker?.label || "Agency"}`;
+}
+
+function agencyCurrentWorkerForDisplay(cycle = {}) {
+  const workers = Array.isArray(cycle.workers) ? cycle.workers : [];
+  if (!workers.length) {
+    return null;
+  }
+  const baseline = agencyBaselineState(cycle);
+  const firstBaselineBlocker = workers.find((worker) => worker.baseline_required && !worker.baseline_ready);
+  if (!baseline.ready && firstBaselineBlocker) {
+    return firstBaselineBlocker;
+  }
+  return workers.find((worker) => worker.key === cycle.current_worker_key) || firstBaselineBlocker || workers[0] || null;
+}
+
+function agencyNextFlowWorker(cycle = {}, currentWorker = {}) {
+  const workers = Array.isArray(cycle.workers) ? cycle.workers : [];
+  if (!workers.length) {
+    return null;
+  }
+  const currentStep = Number(currentWorker?.step || cycle.current_worker_step || 0);
+  return workers.find((worker) => Number(worker.step || 0) > currentStep) || workers[0] || null;
+}
+
+function workerReadinessLabel(worker = {}) {
+  return `${prettyLabel(worker.data_state || worker.status || "loading")} - ${worker.progress_label || worker.metric || "waiting"}`;
+}
+
+function workerProgressPct(worker = {}) {
+  return Math.min(100, Math.max(0, Number(worker.progress_pct || 0)));
+}
+
+function renderCommandReadinessCard({ label, value, detail, statusClass = "neutral", progressPct = null }) {
+  return `
+    <div class="agency-command-stat ${statusClass}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(detail)}</small>
+      ${progressPct !== null ? `<div class="agency-status-progress" aria-hidden="true"><i style="width:${workerProgressPct({ progress_pct: progressPct })}%"></i></div>` : ""}
+    </div>
+  `;
 }
 
 function renderAgencyNextStepGuide(cycle = {}, currentWorker = {}) {
@@ -2214,12 +2259,12 @@ function renderAgencyNextStepGuide(cycle = {}, currentWorker = {}) {
   let steps = [];
 
   if (!baseline.ready) {
-    title = "Do This Next";
+    title = "Recommended Next Step";
     body = "Finish the first-load baseline before trusting selection or execution. This is a data-readiness step only; it cannot submit Alpaca orders.";
     steps = [
-      ["1", "Run Initial Baseline", "Refresh the required workers until every required agent is baseline-ready."],
-      ["2", `Watch ${currentLabel}`, `Wait for this worker to finish. ${etaText ? `Estimated time: ${etaText}.` : "Its progress bar is the one that matters now."}`],
-      ["3", "Open The Worker If It Stalls", "Use the worker screen to inspect remaining data, source errors, and diagnostics."]
+      ["1", "Click Run Initial Baseline", "This is the main button. It runs the next bounded data pass and will not submit an Alpaca order."],
+      ["2", `Watch ${currentLabel}`, `${etaText ? `${etaText}.` : "Use the current worker progress bar as the source of truth."}`],
+      ["3", "If It Does Not Move", "Open the current worker and inspect remaining data, source errors, and diagnostics."]
     ];
   } else if (cycle.can_submit_orders) {
     title = "Ready For Approval";
@@ -2275,7 +2320,7 @@ function renderAgencyNextStepGuide(cycle = {}, currentWorker = {}) {
           </div>`
         : ""
     }
-    <div class="process-action-row">
+    <div class="process-action-row agency-guide-actions">
       ${runAgencyCycleButton()}
       ${advanceCycleButton("Do Next Safe Step")}
       ${agencyActionButton(cycle.primary_action)}
@@ -2350,7 +2395,8 @@ function renderAgencyCyclePanel(cycle) {
     `;
   }
 
-  const currentWorker = cycle.workers.find((worker) => worker.key === cycle.current_worker_key) || cycle.workers[0];
+  const currentWorker = agencyCurrentWorkerForDisplay(cycle) || cycle.workers[0];
+  const nextWorker = agencyNextFlowWorker(cycle, currentWorker);
   const dataProgress = cycle.data_progress || {};
   const currentEtaText = workerEtaText(currentWorker);
   const stageTitle = agencyStageTitle(cycle, currentWorker);
@@ -2359,9 +2405,9 @@ function renderAgencyCyclePanel(cycle) {
     <section class="agency-cycle-panel panel">
       <div class="agency-cycle-head">
         <div>
-          <div class="section-kicker">Autonomous Cycle</div>
+          <div class="section-kicker">12-Agent Readiness Map</div>
           <h2>${escapeHtml(stageTitle)}</h2>
-          <p>${escapeHtml(cycle.summary || "")}</p>
+          <p>${escapeHtml(nextWorker ? `After this: ${nextWorker.label} - ${workerReadinessLabel(nextWorker)}.` : cycle.summary || "")}</p>
         </div>
         <div class="agency-cycle-head-status">
           <span class="sentiment-badge ${cycle.status_class || "neutral"}">${escapeHtml(prettyLabel(cycle.mode_label || cycle.status || "observing"))}</span>
@@ -2369,26 +2415,9 @@ function renderAgencyCyclePanel(cycle) {
           <div class="agency-cycle-progress"><span style="width:${Math.min(100, Math.max(0, Number(dataProgress.pct || 0)))}%"></span></div>
         </div>
       </div>
-      ${renderAgencyStatusStrip(cycle.workers, cycle.current_worker_key)}
+      ${renderAgencyStatusStrip(cycle.workers, currentWorker?.key)}
       ${renderAgencyLoadPhases(cycle)}
       <div class="agency-cycle-focus">
-        <div class="agency-cycle-current ${currentWorker?.status_class || "neutral"} data-${escapeHtml(currentWorker?.data_state || "observing")}">
-          <span>Step ${String(cycle.current_worker_step || currentWorker?.step || 1).padStart(2, "0")}</span>
-          <strong>${escapeHtml(currentWorker?.label || "Current Worker")}</strong>
-          <div class="agency-current-readiness">
-            <b>${escapeHtml(prettyLabel(currentWorker?.data_state || "observing"))}</b>
-            <small>${escapeHtml(currentWorker?.progress_label || "")}</small>
-            <div class="agency-status-progress"><i style="width:${Math.min(100, Math.max(0, Number(currentWorker?.progress_pct || 0)))}%"></i></div>
-          </div>
-          ${currentEtaText ? `<div class="agency-estimate-line"><span>${escapeHtml(currentEtaText)}</span>${currentWorker?.completion_estimate?.basis ? `<small>${escapeHtml(currentWorker.completion_estimate.basis)}</small>` : ""}</div>` : ""}
-          <p>${escapeHtml(currentWorker?.detail || "Waiting for telemetry.")}</p>
-          ${
-            currentWorker?.remaining?.length
-              ? `<ul class="agency-remaining-list">${currentWorker.remaining.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
-              : ""
-          }
-          <small>${escapeHtml(cycle.supervision || "")}</small>
-        </div>
         <div class="agency-cycle-actions">
           ${renderAgencyNextStepGuide(cycle, currentWorker)}
           ${
@@ -2405,6 +2434,23 @@ function renderAgencyCyclePanel(cycle) {
                 ? `<div class="cycle-advance-result neutral">Advancing the current worker. No order will be submitted.</div>`
               : ""
           }
+        </div>
+        <div class="agency-cycle-current ${currentWorker?.status_class || "neutral"} data-${escapeHtml(currentWorker?.data_state || "observing")}">
+          <span>Step ${String(currentWorker?.step || cycle.current_worker_step || 1).padStart(2, "0")}</span>
+          <strong>${escapeHtml(currentWorker?.label || "Current Worker")}</strong>
+          <div class="agency-current-readiness">
+            <b>${escapeHtml(prettyLabel(currentWorker?.data_state || "observing"))}</b>
+            <small>${escapeHtml(currentWorker?.progress_label || "")}</small>
+            <div class="agency-status-progress"><i style="width:${Math.min(100, Math.max(0, Number(currentWorker?.progress_pct || 0)))}%"></i></div>
+          </div>
+          ${currentEtaText ? `<div class="agency-estimate-line"><span>${escapeHtml(currentEtaText)}</span>${currentWorker?.completion_estimate?.basis ? `<small>${escapeHtml(currentWorker.completion_estimate.basis)}</small>` : ""}</div>` : ""}
+          <p>${escapeHtml(currentWorker?.detail || "Waiting for telemetry.")}</p>
+          ${
+            currentWorker?.remaining?.length
+              ? `<ul class="agency-remaining-list">${currentWorker.remaining.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+              : ""
+          }
+          <small>${escapeHtml(cycle.supervision || "")}</small>
         </div>
       </div>
       ${
@@ -3254,6 +3300,10 @@ function renderLeaderboard() {
 }
 
 function renderFeed() {
+  if (!elements.liveFeedList) {
+    return;
+  }
+
   const allItems = dedupeSignals(state.liveFeed).sort((a, b) => new Date(signalTimestamp(b) || 0) - new Date(signalTimestamp(a) || 0));
   const feedItems = state.searchTerm
     ? allItems.filter((item) =>
@@ -5598,39 +5648,54 @@ function renderAgencyCommandCenter() {
   const cycle = state.agencyCycle || {};
   const cycleWorkers = Array.isArray(cycle.workers) ? cycle.workers : [];
   const baseline = agencyBaselineState(cycle);
-  const commandCurrentWorker = cycleWorkers.find((worker) => worker.key === cycle.current_worker_key) || cycleWorkers.find((worker) => worker.baseline_required && !worker.baseline_ready) || cycleWorkers[0] || null;
+  const commandCurrentWorker = agencyCurrentWorkerForDisplay(cycle);
+  const commandNextWorker = agencyNextFlowWorker(cycle, commandCurrentWorker);
   const baselineLabel = baseline.ready
     ? "Complete"
     : `${baseline.ready_count || 0}/${baseline.required_count || cycleWorkers.length || 12}`;
   const paperState = cycle.can_submit_orders ? "Approval Ready" : cycle.can_preview_orders ? "Preview Ready" : "Guarded";
+  const baselinePct = Math.min(100, Math.max(0, Number(baseline.pct || 0)));
+  const baselineRemaining = Math.max(0, Number(baseline.required_count || cycleWorkers.length || 12) - Number(baseline.ready_count || 0));
 
   elements.agencyCommandCenter.innerHTML = `
     <section class="agency-command-summary panel">
       <div class="agency-command-title">
         <div class="section-kicker">Command Center</div>
-        <h1>Follow the agency to the next safe step</h1>
-        <p>This screen is the checklist. Finish the first-load baseline, keep the workers refreshed, then review Selection, Risk, and Execution before any Alpaca paper order is approved.</p>
+        <h1>${escapeHtml(agencyStageTitle(cycle, commandCurrentWorker || {}))}</h1>
+        <p>Finish the highlighted blocker first. Then move to Selection, Risk, and Alpaca paper approval.</p>
       </div>
       <div class="agency-command-stats">
-        <div class="agency-command-stat ${baseline.ready ? "bullish" : "neutral"}">
-          <span>First Load</span>
-          <strong>${escapeHtml(baselineLabel)}</strong>
-          <small>${escapeHtml(baseline.ready ? "All required workers are baseline-ready." : "Finish this before trusting selection.")}</small>
-        </div>
-        <div class="agency-command-stat ${commandCurrentWorker?.status_class || "neutral"}">
-          <span>Next Worker</span>
-          <strong>${escapeHtml(commandCurrentWorker?.label || "Loading")}</strong>
-          <small>${escapeHtml(commandCurrentWorker?.progress_label || "Waiting for worker status.")}</small>
-        </div>
-        <div class="agency-command-stat ${cycle.can_submit_orders ? "bullish" : "neutral"}">
-          <span>Alpaca Paper</span>
-          <strong>${escapeHtml(paperState)}</strong>
-          <small>${escapeHtml(cycle.can_submit_orders ? "User approval is still required." : "Submission remains disabled until gates clear.")}</small>
-        </div>
+        ${renderCommandReadinessCard({
+          label: "First-Load Readiness",
+          value: baselineLabel,
+          detail: baseline.ready ? "All required workers are baseline-ready." : `${baselineRemaining} required worker(s) still blocking the first full cycle.`,
+          statusClass: baseline.ready ? "bullish" : "neutral",
+          progressPct: baselinePct
+        })}
+        ${renderCommandReadinessCard({
+          label: "Blocking Worker Now",
+          value: commandCurrentWorker?.label || "Loading",
+          detail: commandCurrentWorker ? workerReadinessLabel(commandCurrentWorker) : "Waiting for worker status.",
+          statusClass: `${commandCurrentWorker?.status_class || "neutral"} current`,
+          progressPct: commandCurrentWorker ? workerProgressPct(commandCurrentWorker) : 0
+        })}
+        ${renderCommandReadinessCard({
+          label: "Next Worker After This",
+          value: commandNextWorker?.label || "Loading",
+          detail: commandNextWorker ? workerReadinessLabel(commandNextWorker) : "Shown after the current worker is known.",
+          statusClass: commandNextWorker?.status_class || "neutral",
+          progressPct: commandNextWorker ? workerProgressPct(commandNextWorker) : 0
+        })}
+        ${renderCommandReadinessCard({
+          label: "Alpaca Paper",
+          value: paperState,
+          detail: cycle.can_submit_orders ? "User approval is still required." : "Submission remains disabled until Selection and Risk clear.",
+          statusClass: cycle.can_submit_orders ? "bullish" : "neutral",
+          progressPct: cycle.can_submit_orders ? 100 : cycle.can_preview_orders ? 70 : 25
+        })}
       </div>
     </section>
     ${renderAgencyCyclePanel(state.agencyCycle)}
-    ${renderAgencyRunLog()}
   `;
 }
 

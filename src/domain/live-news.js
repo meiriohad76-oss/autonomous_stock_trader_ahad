@@ -60,6 +60,7 @@ function buildSeenKey(entry, item) {
 }
 
 function buildRawDocument(entry, item, provider) {
+  const isMarketauxEntity = provider.key === "marketaux" && item.marketauxEntity?.symbol;
   return {
     source_name: provider.sourceName,
     source_type: "rss",
@@ -73,6 +74,7 @@ function buildRawDocument(entry, item, provider) {
     fetched_at: new Date().toISOString(),
     source_metadata: {
       ticker_hint: entry.ticker,
+      ticker_hint_match_scope: isMarketauxEntity ? "provider_entity" : "headline",
       sector_hint: entry.sector,
       collector: provider.collector,
       upstream_source: item.source || provider.label,

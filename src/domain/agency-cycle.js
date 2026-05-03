@@ -443,7 +443,7 @@ function buildWorker(base, index, status, detail, metric, action = base.action, 
   const remaining = Array.isArray(data.remaining) ? data.remaining.filter(Boolean) : [];
   const baselineRequired = data.baseline_required ?? true;
   const baselineReady = data.baseline_ready ?? data.data_ready ?? dataReadyForState(dataState);
-  const loadPhase = data.load_phase || (baselineRequired && !baselineReady ? "initial_baseline" : "ongoing_updates");
+  const loadPhase = data.load_phase || (!baselineRequired ? "supervised_gate" : baselineReady ? "ongoing_updates" : "initial_baseline");
   const refreshCadenceMs = data.refresh_cadence_ms ?? null;
   const refreshState = data.refresh_state || (data.loading || dataState === "loading" ? "refreshing" : baselineReady ? "scheduled" : "baseline_pending");
   const estimate = normalizeEstimate(data.completion_estimate, Boolean(baselineReady));
@@ -842,7 +842,8 @@ export function buildAgencyCycleStatus({
   const freshDecisionEvidence = workflowStatus?.live_data?.fresh_decision_evidence_count || 0;
   const livePricingReady = Boolean(workflowStatus?.live_data?.live_pricing_ready);
   const secLiveCount = secQueue?.live_sec_companies ?? Math.max(0, trackedCount - pendingSec);
-  const secPolling = Boolean(secQueue?.polling);
+  const secAutoStart = cfg.autoStartSecFundamentals !== false && secQueue?.auto_start !== false;
+  const secPolling = Boolean(secQueue?.polling && secAutoStart);
   const selectorRan =
     Number(tradeSetups?.counts?.tracked_tickers || 0) > 0 ||
     setupCounts.visible > 0 ||
@@ -994,6 +995,13 @@ export function buildAgencyCycleStatus({
           ? `${secLiveCount}/${trackedCount} companies are SEC-backed, meeting the ${Math.round(minSecCoveragePct * 100)}% baseline threshold. Remaining names continue as background SEC catch-up.`
           : "SEC-backed fundamentals baseline is complete."
       })
+    : trackedCount && !secAutoStart
+      ? completionEstimate({
+          phase: "initial_baseline",
+          ms: null,
+          label: "waiting for SEC Batch",
+          basis: "SEC fundamentals auto-start is disabled on this Pi profile. Click SEC Batch or Run Initial Baseline to process the next bounded SEC batch."
+        })
     : trackedCount
       ? completionEstimate({
           phase: "initial_baseline",
@@ -1143,15 +1151,21 @@ export function buildAgencyCycleStatus({
       refresh_cadence_ms: secCadenceMs,
       refresh_cadence_label: fundamentalsBaselineReady
         ? `ongoing SEC refresh ${cadenceLabel(secCadenceMs)}`
-        : `initial SEC catch-up ${cadenceLabel(secCadenceMs)}`,
+        : secAutoStart
+          ? `initial SEC catch-up ${cadenceLabel(secCadenceMs)}`
+          : "manual SEC batch",
       completion_estimate: secEstimate,
       full_extraction_estimate: secCatchupEstimate,
-      refresh_state: refreshStateFor({
-        sources: [secRuntimeSource],
-        baselineReady: fundamentalsBaselineReady,
-        intervalMs: secCadenceMs,
-        nextRefreshAt: secQueue?.next_poll_at || null
-      }),
+      refresh_state: secAutoStart
+        ? refreshStateFor({
+            sources: [secRuntimeSource],
+            baselineReady: fundamentalsBaselineReady,
+            intervalMs: secCadenceMs,
+            nextRefreshAt: secQueue?.next_poll_at || null
+          })
+        : fundamentalsBaselineReady
+          ? "scheduled"
+          : "baseline_pending",
       next_refresh_at: secQueue?.next_poll_at || nextAtFrom(secRuntimeSource, secCadenceMs)
     },
     market: {
@@ -1245,8 +1259,8 @@ export function buildAgencyCycleStatus({
     llm_selection: { baseline_ready: llmBaselineReady },
     final_selection: { baseline_ready: finalBaselineReady },
     risk: { baseline_ready: riskBaselineReady },
-    execution: { baseline_ready: executionBaselineReady },
-    portfolio: { baseline_ready: portfolioBaselineReady },
+    execution: { baseline_ready: executionBaselineReady, baseline_required: false },
+    portfolio: { baseline_ready: portfolioBaselineReady, baseline_required: false },
     learning: { baseline_ready: learningBaselineReady }
   };
 
@@ -1276,7 +1290,7 @@ export function buildAgencyCycleStatus({
             progress_pct: fundamentalsProgressPct,
             progress_current: secLiveCount,
             progress_target: trackedCount,
-            progress_label: `${secLiveCount}/${trackedCount} SEC-backed${secPolling ? "; polling now" : "; background catch-up"}`,
+            progress_label: `${secLiveCount}/${trackedCount} SEC-backed${secPolling ? "; polling now" : secAutoStart ? "; background catch-up" : "; manual batch needed"}`,
             remaining: [
               `${pendingSec} names awaiting live SEC fundamentals`,
               secRunEstimate,

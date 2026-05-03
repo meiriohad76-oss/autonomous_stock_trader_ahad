@@ -37,8 +37,31 @@ export function normalizeRawDocument(raw, options = {}) {
   const bodyText = normalizeWhitespace(raw.body);
   const combined = `${headline} ${bodyText}`;
   const hintedTicker = raw.source_metadata?.ticker_hint?.toUpperCase?.() || null;
-  const detectedTickers = detectTickers(combined, universeEntries);
-  const primaryTicker = hintedTicker || detectedTickers[0] || null;
+  const headlineTickers = detectTickers(headline, universeEntries);
+  const fullTextTickers = detectTickers(combined, universeEntries);
+  const hintMatchScope = raw.source_metadata?.ticker_hint_match_scope || "provider_entity";
+  const hintMatchTickers = hintMatchScope === "headline" ? headlineTickers : fullTextTickers;
+  const providerEntityMatchScore = Number(raw.source_metadata?.marketaux_entity_match_score);
+  const providerEntityRequiresEvidence = raw.source_name === "marketaux" || raw.source_metadata?.collector === "marketaux_news";
+  const providerEntityAccepted = hintMatchScope === "provider_entity" && (
+    !providerEntityRequiresEvidence ||
+    fullTextTickers.includes(hintedTicker) ||
+    (Number.isFinite(providerEntityMatchScore) && providerEntityMatchScore >= 0.55)
+  );
+  const hintedTickerAccepted = Boolean(
+    hintedTicker &&
+      (
+        providerEntityAccepted ||
+        (hintMatchScope !== "provider_entity" && hintMatchTickers.includes(hintedTicker))
+      )
+  );
+  const detectedTickers =
+    hintMatchScope === "headline"
+      ? headlineTickers
+      : hintMatchScope === "provider_entity" && !providerEntityAccepted
+        ? headlineTickers
+        : fullTextTickers;
+  const primaryTicker = hintedTickerAccepted ? hintedTicker : detectedTickers[0] || null;
   const universeEntry = primaryTicker ? tickerLookup.get(primaryTicker) : null;
   const publishedAt = raw.published_at || new Date().toISOString();
   const timelinessScore = clamp(Math.exp(-differenceInHours(publishedAt) / 18), 0.08, 1);
@@ -50,7 +73,9 @@ export function normalizeRawDocument(raw, options = {}) {
     0,
     1
   );
-  const mappingConfidence = hintedTicker ? 0.94 : primaryTicker ? 0.72 : 0.18;
+  const mappingConfidence = hintedTickerAccepted
+    ? hintMatchScope === "provider_entity" ? 0.94 : hintMatchScope === "headline" ? 0.88 : 0.82
+    : primaryTicker ? 0.72 : 0.18;
   const sourceTrust = SOURCE_TRUST[raw.source_name] || 0.5;
   const sector = raw.source_metadata?.sector_hint || universeEntry?.sector || null;
   const industry = universeEntry?.industry || null;
@@ -83,7 +108,9 @@ export function normalizeRawDocument(raw, options = {}) {
     extraction_quality_score: Number(extractionQualityScore.toFixed(3)),
     mapping_confidence: Number(mappingConfidence.toFixed(3)),
     processing_notes: {
-      ticker_hint_used: Boolean(hintedTicker),
+      ticker_hint_used: hintedTickerAccepted,
+      ticker_hint_rejected: Boolean(hintedTicker && !hintedTickerAccepted),
+      ticker_hint_match_scope: hintMatchScope,
       theme_count: detectThemes(combined).length
     }
   };

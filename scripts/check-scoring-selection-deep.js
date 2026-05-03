@@ -30,7 +30,14 @@ const {
 } = await import("../src/domain/tracked-universe.js");
 const { normalizeTickerSymbol } = await import("../src/utils/helpers.js");
 
-const now = new Date("2026-05-02T13:30:00.000Z").toISOString();
+const fixtureNowMs = Date.parse("2026-05-02T13:30:00.000Z");
+const realDateNow = Date.now;
+Date.now = () => fixtureNowMs;
+process.on("exit", () => {
+  Date.now = realDateNow;
+});
+
+const now = new Date(fixtureNowMs).toISOString();
 const old = new Date(Date.parse(now) - 120 * 3_600_000).toISOString();
 
 const config = {
