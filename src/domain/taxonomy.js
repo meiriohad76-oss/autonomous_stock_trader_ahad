@@ -163,7 +163,7 @@ export const RULE_PATTERNS = [
     sentiment: 0.64,
     impact: 0.62,
     confidence: 0.88,
-    patterns: [/open-market share purchase/i, /form 4/i, /director purchased/i, /shares acquired/i],
+    patterns: [/open-market share purchase/i, /form 4/i, /director purchased/i, /insider(?:s)? (?:bought|purchased|acquired)/i],
     reasons: ["insider_buy"]
   },
   {
@@ -189,7 +189,7 @@ export const RULE_PATTERNS = [
     sentiment: 0.62,
     impact: 0.6,
     confidence: 0.86,
-    patterns: [/institutional accumulation/i, /increased position/i, /13f filing/i, /reported value changing/i],
+    patterns: [/institutional accumulation/i, /increased position/i, /13f filing/i, /reported value changing/i, /shares acquired by/i, /boosted (?:its )?position/i],
     reasons: ["institutional_buying"]
   },
   {

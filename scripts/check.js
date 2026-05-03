@@ -13,6 +13,7 @@ const {
 } = await import("../src/domain/fundamental-persistence.js");
 const { buildMarketauxUrl, createLiveNewsCollector, mapMarketauxArticles, parseGoogleNewsRss } = await import("../src/domain/live-news.js");
 const { normalizeRawDocument } = await import("../src/domain/normalize.js");
+const { classifyWithRules } = await import("../src/domain/rules.js");
 const { createMarketDataService } = await import("../src/domain/market-data.js");
 const { detectMarketFlowSignal } = await import("../src/domain/market-flow.js");
 const {
@@ -138,6 +139,79 @@ const yahooBoilerplateDocument = normalizeRawDocument(
 
 if (yahooBoilerplateDocument.primary_ticker || !yahooBoilerplateDocument.processing_notes.ticker_hint_rejected) {
   throw new Error("Yahoo/RSS ticker hints must be rejected when only promotional boilerplate mentions the company.");
+}
+
+const ambiguousFastDocument = normalizeRawDocument(
+  {
+    source_name: "google_news",
+    source_type: "rss",
+    title: "Hyperliquid momentum is fading fast as crypto traders rotate",
+    body: "The article uses the ordinary English word fast and does not mention Fastenal.",
+    url: "https://news.google.com/articles/example-fast-word",
+    published_at: new Date().toISOString(),
+    source_metadata: {
+      ticker_hint: "FAST",
+      ticker_hint_match_scope: "headline"
+    }
+  },
+  {
+    universeEntries: [
+      { ticker: "FAST", company_name: "Fastenal Company", company: "Fastenal Company", sector: "Industrials" }
+    ]
+  }
+);
+
+if (ambiguousFastDocument.primary_ticker || !ambiguousFastDocument.processing_notes.ticker_hint_rejected) {
+  throw new Error("Common-word tickers must not match ordinary language in RSS headlines.");
+}
+
+const cashtagFastDocument = normalizeRawDocument(
+  {
+    source_name: "google_news",
+    source_type: "rss",
+    title: "Fastenal $FAST shares rise after margin outlook improves",
+    body: "Fastenal shares rallied after a stronger margin outlook.",
+    url: "https://news.google.com/articles/example-fast-cashtag",
+    published_at: new Date().toISOString(),
+    source_metadata: {
+      ticker_hint: "FAST",
+      ticker_hint_match_scope: "headline"
+    }
+  },
+  {
+    universeEntries: [
+      { ticker: "FAST", company_name: "Fastenal Company", company: "Fastenal Company", sector: "Industrials" }
+    ]
+  }
+);
+
+if (cashtagFastDocument.primary_ticker !== "FAST") {
+  throw new Error("Common-word tickers should still match when supported by a cashtag/company mention.");
+}
+
+const institutionalAcquiredDocument = normalizeRawDocument(
+  {
+    source_name: "google_news",
+    source_type: "rss",
+    title: "Honeywell International Inc. $HON shares acquired by Horizon Investments",
+    body: "A registered investment advisor increased its position in Honeywell.",
+    url: "https://news.google.com/articles/example-hon-institutional",
+    published_at: new Date().toISOString(),
+    source_metadata: {
+      ticker_hint: "HON",
+      ticker_hint_match_scope: "headline"
+    }
+  },
+  {
+    universeEntries: [
+      { ticker: "HON", company_name: "Honeywell International Inc", company: "Honeywell International Inc", sector: "Industrials" }
+    ]
+  }
+);
+const institutionalAcquiredRule = classifyWithRules(institutionalAcquiredDocument);
+
+if (institutionalAcquiredRule.event_type !== "institutional_buying") {
+  throw new Error("Shares-acquired-by RSS stories should classify as institutional buying, not insider buying.");
 }
 
 const marketauxWeakEntityDocument = normalizeRawDocument(

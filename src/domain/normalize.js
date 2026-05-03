@@ -2,12 +2,53 @@ import { SOURCE_TRUST } from "./taxonomy.js";
 import { buildUniverseLookup, uniqueUniverseEntries } from "./tracked-universe.js";
 import { clamp, differenceInHours, makeId, normalizeWhitespace } from "../utils/helpers.js";
 
+const AMBIGUOUS_TICKER_WORDS = new Set([
+  "A",
+  "ALL",
+  "ARE",
+  "CAT",
+  "COST",
+  "FAST",
+  "GE",
+  "HD",
+  "LOW",
+  "MA",
+  "NOW",
+  "ON",
+  "PM",
+  "T",
+  "V"
+]);
+
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function phrasePattern(value) {
+  return new RegExp(`\\b${escapeRegex(value)}\\b`, "i");
+}
+
+function strongTickerPattern(ticker) {
+  const escaped = escapeRegex(ticker);
+  return new RegExp(`(?:\\$${escaped}\\b|\\(${escaped}\\)|\\b(?:NASDAQ|NYSE|AMEX|ticker)\\s*:?\\s*${escaped}\\b|\\b${escaped}\\s+(?:stock|shares|earnings|options)\\b)`, "i");
+}
+
+function tickerTokenFound(ticker, text) {
+  if (!ticker) {
+    return false;
+  }
+  const ambiguous = ticker.length <= 2 || AMBIGUOUS_TICKER_WORDS.has(ticker);
+  return ambiguous ? strongTickerPattern(ticker).test(text) : phrasePattern(ticker).test(text);
+}
+
 function detectTickers(text, universeEntries) {
   const matches = [];
 
   for (const entry of universeEntries) {
-    const tokens = [entry.ticker, entry.company, entry.company_name, ...entry.aliases];
-    const found = tokens.some((token) => new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
+    const companyTokens = [entry.company, entry.company_name, ...entry.aliases]
+      .map((token) => String(token || "").trim())
+      .filter((token) => token && token.toUpperCase() !== entry.ticker && token.length >= 3);
+    const found = tickerTokenFound(entry.ticker, text) || companyTokens.some((token) => phrasePattern(token).test(text));
 
     if (found) {
       matches.push(entry.ticker);
