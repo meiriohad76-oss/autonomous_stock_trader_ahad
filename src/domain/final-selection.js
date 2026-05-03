@@ -117,8 +117,14 @@ function baseDecision(setup, llm, config, portfolioPolicy) {
           ? -0.12
           : 0;
   const runtimeMultiplier = Number(setup.runtime_reliability?.adjustment_multiplier || 1);
-  const runtimePenalty = clamp(1 - runtimeMultiplier, 0, 0.35);
-  const riskFlagPenalty = Math.min(0.12, (setup.risk_flags || []).length * 0.015);
+  const rawRuntimePenalty = clamp(1 - runtimeMultiplier, 0, 0.35);
+  const rawRiskFlagPenalty = Math.min(0.12, (setup.risk_flags || []).length * 0.015);
+  const runtimePenalty = config.selectionWorkflowTestMode
+    ? Math.min(rawRuntimePenalty, Number(config.selectionWorkflowTestMaxRuntimePenalty || 0.04))
+    : rawRuntimePenalty;
+  const riskFlagPenalty = config.selectionWorkflowTestMode
+    ? Math.min(rawRiskFlagPenalty, Number(config.selectionWorkflowTestMaxRiskPenalty || 0.03))
+    : rawRiskFlagPenalty;
   const qualityAdjustment = setupQualityAdjustment(setup, deterministicAction, deterministicConviction);
   const baseScore = deterministicConviction * 0.62 + llmConfidence * 0.28;
   const score = clamp(
@@ -169,7 +175,10 @@ function baseDecision(setup, llm, config, portfolioPolicy) {
       agreement_bonus: round(agreementBonus, 4),
       setup_quality_adjustment: qualityAdjustment,
       runtime_penalty: round(runtimePenalty, 4),
-      risk_flag_penalty: round(riskFlagPenalty, 4)
+      raw_runtime_penalty: round(rawRuntimePenalty, 4),
+      risk_flag_penalty: round(riskFlagPenalty, 4),
+      raw_risk_flag_penalty: round(rawRiskFlagPenalty, 4),
+      workflow_test_mode: Boolean(config.selectionWorkflowTestMode)
     },
     reason_codes: reasonCodes
   };

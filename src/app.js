@@ -1441,6 +1441,17 @@ export function createSentimentApp() {
         screener_settings: readScreenerSettings(config),
         fundamental_screener_governance: buildFundamentalResearchGovernance(readScreenerSettings(config)),
         portfolio_policy_settings: readPortfolioPolicy(config),
+        selection_workflow_test_mode: config.selectionWorkflowTestMode,
+        selection_workflow_test_thresholds: {
+          deterministic_long: config.selectionWorkflowTestLongThreshold,
+          deterministic_short: config.selectionWorkflowTestShortThreshold,
+          direction_gap: config.selectionWorkflowTestDirectionGap,
+          watch: config.selectionWorkflowTestWatchThreshold,
+          final_conviction: config.selectionWorkflowTestFinalConviction,
+          llm_min_confidence: config.selectionWorkflowTestLlmMinConfidence,
+          max_runtime_penalty: config.selectionWorkflowTestMaxRuntimePenalty,
+          max_risk_penalty: config.selectionWorkflowTestMaxRiskPenalty
+        },
         llm_selection: {
           enabled: config.llmSelectionEnabled,
           provider: config.llmSelectionProvider,
@@ -1470,6 +1481,8 @@ export function createSentimentApp() {
         trade_prints_provider: config.tradePrintsProvider,
         trade_prints_max_tickers_per_poll: config.tradePrintsMaxTickersPerPoll,
         broker_adapter: config.brokerAdapter,
+        broker_trading_mode: config.brokerTradingMode,
+        broker_submit_enabled: config.brokerSubmitEnabled,
         execution: executionAgent.getStatus(),
         risk: {
           max_gross_exposure_pct: config.riskMaxGrossExposurePct,

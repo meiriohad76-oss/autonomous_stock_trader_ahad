@@ -180,6 +180,16 @@ const selectedTradePrintsApiKey =
   genericTradePrintsApiKey ||
   (selectedTradePrintsProvider === "iex" ? iexApiKey : polygonApiKey) ||
   "";
+const selectionWorkflowTestMode =
+  String(process.env.SELECTION_WORKFLOW_TEST_MODE || "false").toLowerCase() === "true";
+const selectionWorkflowTestLongThreshold = Number(process.env.SELECTION_WORKFLOW_TEST_LONG_THRESHOLD || 0.36);
+const selectionWorkflowTestShortThreshold = Number(process.env.SELECTION_WORKFLOW_TEST_SHORT_THRESHOLD || 0.36);
+const selectionWorkflowTestDirectionGap = Number(process.env.SELECTION_WORKFLOW_TEST_DIRECTION_GAP || 0.04);
+const selectionWorkflowTestWatchThreshold = Number(process.env.SELECTION_WORKFLOW_TEST_WATCH_THRESHOLD || 0.25);
+const selectionWorkflowTestFinalConviction = Number(process.env.SELECTION_WORKFLOW_TEST_FINAL_CONVICTION || 0.28);
+const selectionWorkflowTestLlmMinConfidence = Number(process.env.SELECTION_WORKFLOW_TEST_LLM_MIN_CONFIDENCE || 0.25);
+const selectionWorkflowTestMaxRuntimePenalty = Number(process.env.SELECTION_WORKFLOW_TEST_MAX_RUNTIME_PENALTY || 0.04);
+const selectionWorkflowTestMaxRiskPenalty = Number(process.env.SELECTION_WORKFLOW_TEST_MAX_RISK_PENALTY || 0.03);
 
 export const config = {
   piPerformanceMode,
@@ -290,7 +300,9 @@ export const config = {
   brokerProvider: process.env.BROKER_PROVIDER || "alpaca",
   brokerAdapter: String(process.env.BROKER_ADAPTER || "rest").toLowerCase(),
   brokerTradingMode: process.env.BROKER_TRADING_MODE || "paper",
-  brokerSubmitEnabled: String(process.env.BROKER_SUBMIT_ENABLED || "false").toLowerCase() === "true",
+  brokerSubmitEnabled: selectionWorkflowTestMode
+    ? false
+    : String(process.env.BROKER_SUBMIT_ENABLED || "false").toLowerCase() === "true",
   brokerRequestTimeoutMs: Number(process.env.BROKER_REQUEST_TIMEOUT_MS || 12000),
   alpacaApiKeyId,
   alpacaApiSecretKey,
@@ -306,7 +318,18 @@ export const config = {
   alpacaMcpSecretKey: firstCredential("ALPACA_SECRET_KEY", "ALPACA_API_SECRET_KEY"),
   alpacaMcpPaperTrade: process.env.ALPACA_PAPER_TRADE || "true",
   alpacaMcpToolsets: process.env.ALPACA_TOOLSETS || "account,trading,assets,stock-data,news",
-  executionMinConviction: Number(process.env.EXECUTION_MIN_CONVICTION || 0.62),
+  selectionWorkflowTestMode,
+  selectionWorkflowTestLongThreshold,
+  selectionWorkflowTestShortThreshold,
+  selectionWorkflowTestDirectionGap,
+  selectionWorkflowTestWatchThreshold,
+  selectionWorkflowTestFinalConviction,
+  selectionWorkflowTestLlmMinConfidence,
+  selectionWorkflowTestMaxRuntimePenalty,
+  selectionWorkflowTestMaxRiskPenalty,
+  executionMinConviction: selectionWorkflowTestMode
+    ? selectionWorkflowTestFinalConviction
+    : Number(process.env.EXECUTION_MIN_CONVICTION || 0.62),
   executionMinNotionalUsd: Number(process.env.EXECUTION_MIN_NOTIONAL_USD || 25),
   executionMaxOrderNotionalUsd: Number(process.env.EXECUTION_MAX_ORDER_NOTIONAL_USD || 1000),
   executionMaxPositionPct: Number(process.env.EXECUTION_MAX_POSITION_PCT || 0.03),
@@ -316,7 +339,9 @@ export const config = {
   executionDefaultOrderType: process.env.EXECUTION_DEFAULT_ORDER_TYPE || "market",
   executionDefaultTimeInForce: process.env.EXECUTION_DEFAULT_TIME_IN_FORCE || "day",
   portfolioWeeklyTargetPct: Number(process.env.PORTFOLIO_WEEKLY_TARGET_PCT || 0.03),
-  portfolioExecutionMinConviction: Number(process.env.PORTFOLIO_EXECUTION_MIN_CONVICTION || process.env.EXECUTION_MIN_CONVICTION || 0.62),
+  portfolioExecutionMinConviction: selectionWorkflowTestMode
+    ? selectionWorkflowTestFinalConviction
+    : Number(process.env.PORTFOLIO_EXECUTION_MIN_CONVICTION || process.env.EXECUTION_MIN_CONVICTION || 0.62),
   portfolioMaxWeeklyDrawdownPct: Number(process.env.PORTFOLIO_MAX_WEEKLY_DRAWDOWN_PCT || 0.04),
   portfolioMaxPositions: Number(process.env.PORTFOLIO_MAX_POSITIONS || process.env.EXECUTION_MAX_POSITIONS || 10),
   portfolioMaxNewPositionsPerCycle: Number(process.env.PORTFOLIO_MAX_NEW_POSITIONS_PER_CYCLE || 3),
@@ -333,7 +358,9 @@ export const config = {
   llmSelectionEnabled: String(process.env.LLM_SELECTION_ENABLED || "false").toLowerCase() === "true",
   llmSelectionProvider,
   llmSelectionModel,
-  llmSelectionMinConfidence: Number(process.env.LLM_SELECTION_MIN_CONFIDENCE || 0.58),
+  llmSelectionMinConfidence: selectionWorkflowTestMode
+    ? selectionWorkflowTestLlmMinConfidence
+    : Number(process.env.LLM_SELECTION_MIN_CONFIDENCE || 0.58),
   llmSelectionMaxCandidates: Number(process.env.LLM_SELECTION_MAX_CANDIDATES || 12),
   llmSelectionMaxOutputTokens: Number(process.env.LLM_SELECTION_MAX_OUTPUT_TOKENS || 2500),
   llmSelectionRequestTimeoutMs: Number(process.env.LLM_SELECTION_REQUEST_TIMEOUT_MS || 30000),

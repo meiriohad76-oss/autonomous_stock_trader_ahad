@@ -99,6 +99,17 @@ function qualitativeAction(setup, config) {
     };
   }
 
+  if (config.selectionWorkflowTestMode) {
+    const scoreGapMinimum = Number(config.selectionWorkflowTestDirectionGap || 0.04);
+    const minConfidence = Number(config.selectionWorkflowTestLlmMinConfidence || config.llmSelectionMinConfidence || 0.25);
+    if (scoreGap >= scoreGapMinimum && confidence >= minConfidence) {
+      return {
+        action: deterministicAction,
+        confidence: round(confidence, 3)
+      };
+    }
+  }
+
   if (deterministicAction === "long" && fundamentals.screen_stage === "reject") {
     return { action: "watch", confidence: round(Math.min(confidence, 0.58), 3) };
   }
@@ -136,6 +147,10 @@ function summarizeSupport(setup) {
 
 function summarizeConcerns(setup, llmAction) {
   const concerns = [...(setup.risk_flags || [])];
+
+  if (setup.runtime_reliability?.test_mode) {
+    concerns.unshift("workflow test mode is active; this is a path test, not a production-quality trade signal");
+  }
 
   if (setup.action !== llmAction) {
     concerns.unshift(`qualitative review demoted deterministic ${setup.action} to ${llmAction}`);

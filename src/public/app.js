@@ -544,14 +544,15 @@ function advanceCycleButton(label = "Advance Cycle") {
   `;
 }
 
-function runAgencyCycleButton(label = "Run Agency Cycle") {
+function runAgencyCycleButton(label = "Run Agency Cycle", options = {}) {
   const disabled = state.agencyRunState === "running" || state.agencyAdvanceState === "running" || state.runtimeActionState === "running";
   const baselineMode = state.agencyCycle?.baseline_ready === false || state.agencyCycle?.mode === "initial_baseline";
   const buttonLabel = baselineMode && label === "Run Agency Cycle" ? "Run Initial Baseline" : label;
+  const primaryClass = options.primary === false ? "" : " agency-run-action";
   return `
     <button
       type="button"
-      class="panel-action runtime-action-button agency-run-action"
+      class="panel-action runtime-action-button${primaryClass}"
       data-agency-run="true"
       ${disabled ? "disabled" : ""}
       title="${escapeHtml(baselineMode ? "Run the first-load baseline, including bounded SEC fundamentals catch-up. This never submits an Alpaca order." : "Run a bounded agency cycle: refresh data workers, recompute selection, refresh risk and portfolio snapshots. This never submits an Alpaca order.")}"
@@ -2210,6 +2211,20 @@ function agencyStageTitle(cycle = {}, currentWorker = {}) {
   return `Next required worker: ${currentWorker?.label || "Agency"}`;
 }
 
+function agencyCommandSubtitle(cycle = {}) {
+  const baseline = agencyBaselineState(cycle);
+  if (!baseline.ready) {
+    return "Finish the first-load baseline first. This only refreshes data and cannot submit Alpaca orders.";
+  }
+  if (cycle.can_submit_orders) {
+    return "Review the prepared paper tickets in Execution, then approve only after checking size, stops, targets, and warnings.";
+  }
+  if (cycle.can_preview_orders) {
+    return "Open Execution to preview Alpaca paper tickets. Submission is still guarded and requires explicit approval.";
+  }
+  return "Run the next safe step, then review Selection, Risk, and Execution when candidates appear.";
+}
+
 function agencyCurrentWorkerForDisplay(cycle = {}) {
   const workers = Array.isArray(cycle.workers) ? cycle.workers : [];
   if (!workers.length) {
@@ -2322,7 +2337,12 @@ function renderAgencyNextStepGuide(cycle = {}, currentWorker = {}) {
         : ""
     }
     <div class="process-action-row agency-guide-actions">
-      ${runAgencyCycleButton()}
+      ${
+        cycle.can_preview_orders || cycle.can_submit_orders
+          ? `<button type="button" class="panel-action agency-primary-action" data-agent-view="execution"><span class="material-symbols-outlined">order_approve</span>Open Execution Preview</button>`
+          : ""
+      }
+      ${runAgencyCycleButton(cycle.can_preview_orders || cycle.can_submit_orders ? "Refresh Agency Cycle" : "Run Agency Cycle", { primary: !(cycle.can_preview_orders || cycle.can_submit_orders) })}
       ${advanceCycleButton("Do Next Safe Step")}
       ${agencyActionButton(cycle.primary_action)}
       ${currentWorker?.view ? `<button type="button" class="panel-action runtime-action-button" data-agent-view="${escapeHtml(currentWorker.view)}"><span class="material-symbols-outlined">open_in_new</span>Open Current Worker</button>` : ""}
@@ -2418,8 +2438,6 @@ function renderAgencyCyclePanel(cycle) {
           <div class="agency-cycle-progress"><span style="width:${Math.min(100, Math.max(0, Number(dataProgress.pct || 0)))}%"></span></div>
         </div>
       </div>
-      ${renderAgencyStatusStrip(cycle.workers, currentWorker?.key)}
-      ${renderAgencyLoadPhases(cycle)}
       <div class="agency-cycle-focus">
         <div class="agency-cycle-actions">
           ${renderAgencyNextStepGuide(cycle, currentWorker)}
@@ -2456,6 +2474,8 @@ function renderAgencyCyclePanel(cycle) {
           <small>${escapeHtml(cycle.supervision || "")}</small>
         </div>
       </div>
+      ${renderAgencyStatusStrip(cycle.workers, currentWorker?.key)}
+      ${renderAgencyLoadPhases(cycle)}
       ${
         cycle.recent_advances?.length
           ? `<div class="cycle-advance-log">
@@ -5762,6 +5782,8 @@ function renderAgencyCommandCenter() {
   const flowStatus = workflow.status || "loading";
   const activeSignals = (state.alerts?.length || 0) + (state.highImpact?.length || 0) + moneyFlowCount;
   const learning = buildLearningAnalysis();
+  const workflowTestMode = Boolean(state.config?.selection_workflow_test_mode);
+  const testThresholds = state.config?.selection_workflow_test_thresholds || {};
 
   const agents = [
     {
@@ -5916,8 +5938,24 @@ function renderAgencyCommandCenter() {
       <div class="agency-command-title">
         <div class="section-kicker">Command Center</div>
         <h1>${escapeHtml(agencyStageTitle(cycle, commandCurrentWorker || {}))}</h1>
-        <p>Finish the highlighted blocker first. Then move to Selection, Risk, and Alpaca paper approval.</p>
+        <p>${escapeHtml(agencyCommandSubtitle(cycle))}</p>
       </div>
+      ${
+        workflowTestMode
+          ? `<div class="workflow-test-banner">
+              <div>
+                <span class="sentiment-badge bearish">Workflow Test Mode</span>
+                <strong>Thresholds are lowered so we can test the end-to-end path.</strong>
+                <p>This is not a production-quality trade decision. Alpaca submission is forced guarded; use this only to verify Command -> Selection -> Risk -> Execution Preview.</p>
+              </div>
+              <div class="workflow-test-thresholds">
+                <span>Rules ${formatNumber((testThresholds.deterministic_long || 0) * 100, 0)}%</span>
+                <span>LLM ${formatNumber((testThresholds.llm_min_confidence || 0) * 100, 0)}%</span>
+                <span>Final ${formatNumber((testThresholds.final_conviction || 0) * 100, 0)}%</span>
+              </div>
+            </div>`
+          : ""
+      }
       <div class="agency-command-stats">
         ${renderCommandReadinessCard({
           label: "First-Load Readiness",
@@ -5927,7 +5965,7 @@ function renderAgencyCommandCenter() {
           progressPct: baselinePct
         })}
         ${renderCommandReadinessCard({
-          label: "Blocking Worker Now",
+          label: baseline.ready ? "Current Required Step" : "Blocking Worker Now",
           value: commandCurrentWorker?.label || "Loading",
           detail: commandCurrentWorker ? workerReadinessLabel(commandCurrentWorker) : "Waiting for worker status.",
           statusClass: `${commandCurrentWorker?.status_class || "neutral"} current`,
@@ -5941,9 +5979,9 @@ function renderAgencyCommandCenter() {
           progressPct: commandNextWorker ? workerProgressPct(commandNextWorker) : 0
         })}
         ${renderCommandReadinessCard({
-          label: "Alpaca Paper",
+          label: "Alpaca Paper Flow",
           value: paperState,
-          detail: cycle.can_submit_orders ? "User approval is still required." : "Submission remains disabled until Selection and Risk clear.",
+          detail: cycle.can_preview_orders ? "Preview allowed; submission stays guarded." : "Submission remains disabled until Selection and Risk clear.",
           statusClass: cycle.can_submit_orders ? "bullish" : "neutral",
           progressPct: cycle.can_submit_orders ? 100 : cycle.can_preview_orders ? 70 : 25
         })}

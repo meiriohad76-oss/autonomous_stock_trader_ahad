@@ -43,6 +43,34 @@ const RUNTIME_CRITICALITY_MULTIPLIERS = {
 const DIRECTION_GAP_MINIMUM = 0.08;
 const WATCH_SCORE_THRESHOLD = 0.38;
 
+function workflowTestMode(config = {}) {
+  return Boolean(config?.selectionWorkflowTestMode);
+}
+
+function effectiveThreshold(baseThreshold, testThreshold, config = {}) {
+  if (!workflowTestMode(config)) {
+    return Number(baseThreshold);
+  }
+  const parsed = Number(testThreshold);
+  return Number.isFinite(parsed) ? Math.min(Number(baseThreshold), parsed) : Number(baseThreshold);
+}
+
+function effectiveDirectionGap(config = {}) {
+  if (!workflowTestMode(config)) {
+    return DIRECTION_GAP_MINIMUM;
+  }
+  const parsed = Number(config.selectionWorkflowTestDirectionGap);
+  return Number.isFinite(parsed) ? parsed : DIRECTION_GAP_MINIMUM;
+}
+
+function effectiveWatchThreshold(config = {}) {
+  if (!workflowTestMode(config)) {
+    return WATCH_SCORE_THRESHOLD;
+  }
+  const parsed = Number(config.selectionWorkflowTestWatchThreshold);
+  return Number.isFinite(parsed) ? parsed : WATCH_SCORE_THRESHOLD;
+}
+
 function buildDocumentLookup(store) {
   return new Map(store.normalizedDocuments.map((doc) => [doc.doc_id, doc]));
 }
@@ -297,14 +325,14 @@ function buildRuntimeReliabilityAdjustment(runtimeReliabilitySnapshot) {
   };
 }
 
-function buildDecisionBlockers({ action, longScore, shortScore, longThreshold, shortThreshold }) {
+function buildDecisionBlockers({ action, longScore, shortScore, longThreshold, shortThreshold, directionGap, watchThreshold }) {
   if (action === "long" || action === "short") {
     return [];
   }
 
   const blockers = [];
-  const longGapTarget = shortScore + DIRECTION_GAP_MINIMUM;
-  const shortGapTarget = longScore + DIRECTION_GAP_MINIMUM;
+  const longGapTarget = shortScore + directionGap;
+  const shortGapTarget = longScore + directionGap;
 
   if (longScore < longThreshold) {
     blockers.push({
@@ -346,13 +374,13 @@ function buildDecisionBlockers({ action, longScore, shortScore, longThreshold, s
     });
   }
 
-  if (Math.max(longScore, shortScore) < WATCH_SCORE_THRESHOLD) {
+  if (Math.max(longScore, shortScore) < watchThreshold) {
     blockers.push({
       key: "below_watch_threshold",
       detail: "Best directional score is below the watch threshold.",
       value: round(Math.max(longScore, shortScore), 3),
-      threshold: WATCH_SCORE_THRESHOLD,
-      gap: round(WATCH_SCORE_THRESHOLD - Math.max(longScore, shortScore), 3)
+      threshold: watchThreshold,
+      gap: round(watchThreshold - Math.max(longScore, shortScore), 3)
     });
   }
 
@@ -367,7 +395,8 @@ function computeSetup({
   alerts,
   macroRegimeSnapshot,
   runtimeReliabilitySnapshot,
-  earningsCalendar
+  earningsCalendar,
+  config = {}
 }) {
   const companyName = fundamentalRow?.company_name || sentimentRow?.entity_name || ticker;
   const sector = fundamentalRow?.sector || "Unknown";
@@ -524,6 +553,7 @@ function computeSetup({
   const rawLongScore = round(longScore, 3);
   const rawShortScore = round(shortScore, 3);
   const runtimeAdjustment = buildRuntimeReliabilityAdjustment(runtimeReliabilitySnapshot);
+  const testModeActive = workflowTestMode(config);
   const runtimeMultiplier = runtimeAdjustment.adjustment_multiplier;
 
   if (runtimeMultiplier < 0.995) {
@@ -556,15 +586,19 @@ function computeSetup({
 
   const bestScore = round(Math.max(longScore, shortScore), 3);
   const scoreGap = round(Math.abs(longScore - shortScore), 3);
-  const longThreshold = Number(macroRegimeSnapshot?.long_threshold || 0.56);
-  const shortThreshold = Number(macroRegimeSnapshot?.short_threshold || 0.56);
+  const productionLongThreshold = Number(macroRegimeSnapshot?.long_threshold || 0.56);
+  const productionShortThreshold = Number(macroRegimeSnapshot?.short_threshold || 0.56);
+  const longThreshold = effectiveThreshold(productionLongThreshold, config.selectionWorkflowTestLongThreshold, config);
+  const shortThreshold = effectiveThreshold(productionShortThreshold, config.selectionWorkflowTestShortThreshold, config);
+  const directionGapMinimum = effectiveDirectionGap(config);
+  const watchThreshold = effectiveWatchThreshold(config);
   let action = "no_trade";
 
-  if (longScore >= longThreshold && longScore >= shortScore + DIRECTION_GAP_MINIMUM) {
+  if (longScore >= longThreshold && longScore >= shortScore + directionGapMinimum) {
     action = "long";
-  } else if (shortScore >= shortThreshold && shortScore >= longScore + DIRECTION_GAP_MINIMUM) {
+  } else if (shortScore >= shortThreshold && shortScore >= longScore + directionGapMinimum) {
     action = "short";
-  } else if (bestScore >= WATCH_SCORE_THRESHOLD) {
+  } else if (bestScore >= watchThreshold) {
     action = "watch";
   }
 
@@ -572,7 +606,18 @@ function computeSetup({
   const hasFundamentalSupport = screenStage === "eligible" && directionLabel !== "bearish_headwind";
   const tradePlan = pricePlan(action, currentPrice, conviction, beta);
   const setupLabelValue = setupLabel(action, longScore, shortScore, screenStage);
-  const decisionBlockers = buildDecisionBlockers({ action, longScore, shortScore, longThreshold, shortThreshold });
+  if (testModeActive) {
+    riskFlags.push("workflow test mode lowered selection thresholds for supervised end-to-end testing");
+  }
+  const decisionBlockers = buildDecisionBlockers({
+    action,
+    longScore,
+    shortScore,
+    longThreshold,
+    shortThreshold,
+    directionGap: directionGapMinimum,
+    watchThreshold
+  });
 
   return {
     ticker,
@@ -605,15 +650,24 @@ function computeSetup({
     decision_thresholds: {
       long_threshold: round(longThreshold, 3),
       short_threshold: round(shortThreshold, 3),
-      direction_gap_minimum: DIRECTION_GAP_MINIMUM,
-      watch_threshold: WATCH_SCORE_THRESHOLD,
+      direction_gap_minimum: round(directionGapMinimum, 3),
+      watch_threshold: round(watchThreshold, 3),
+      production_long_threshold: round(productionLongThreshold, 3),
+      production_short_threshold: round(productionShortThreshold, 3),
+      workflow_test_mode: testModeActive,
       best_score: bestScore,
       score_gap: scoreGap,
       long_missing_to_threshold: round(Math.max(0, longThreshold - longScore), 3),
       short_missing_to_threshold: round(Math.max(0, shortThreshold - shortScore), 3)
     },
     decision_blockers: decisionBlockers,
-    runtime_reliability: runtimeAdjustment,
+    runtime_reliability: testModeActive
+      ? {
+          ...runtimeAdjustment,
+          test_mode: true,
+          test_mode_note: "Selection thresholds are lowered for supervised end-to-end workflow testing."
+        }
+      : runtimeAdjustment,
     macro_regime: macroRegimeSnapshot
       ? {
           regime_label: macroRegimeSnapshot.regime_label,
@@ -700,7 +754,8 @@ export function buildTradeSetupsSnapshot(
           .sort((a, b) => new Date(latestAlertTimestamp(b) || 0) - new Date(latestAlertTimestamp(a) || 0)),
         macroRegimeSnapshot: regimeSnapshot,
         runtimeReliabilitySnapshot,
-        earningsCalendar: store.earningsCalendar
+        earningsCalendar: store.earningsCalendar,
+        config: store.config
       })
     )
     .filter((setup) => setup.conviction >= minConviction)
