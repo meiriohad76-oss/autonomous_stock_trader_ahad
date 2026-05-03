@@ -711,6 +711,44 @@ function overrideMetric(metrics, key, nextValue) {
   return isFiniteNumber(nextValue) ? { ...metrics, [key]: Number(nextValue) } : metrics;
 }
 
+function dateOnlyOr(value, fallback) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : fallback;
+}
+
+function normalizeCompanyForScoring(company = {}) {
+  const qualityFlags = company.quality_flags || {};
+  const anomalyFlags = Array.isArray(qualityFlags.anomaly_flags) ? qualityFlags.anomaly_flags : [];
+  const asOf = Number.isFinite(new Date(company.as_of).getTime()) ? company.as_of : new Date().toISOString();
+  const filingDate = dateOnlyOr(company.filing_date, asOf.slice(0, 10));
+  const periodEnd = dateOnlyOr(company.period_end, filingDate);
+  return {
+    ...company,
+    ticker: company.ticker || "UNKNOWN",
+    sector: company.sector || "Unknown",
+    metrics: company.metrics || {},
+    quality_flags: {
+      rule_confidence: 0.5,
+      reporting_confidence_score: 0,
+      data_freshness_score: 0,
+      peer_comparability_score: 0.5,
+      llm_confidence: 0,
+      missing_fields_count: 99,
+      restatement_flag: false,
+      ...qualityFlags,
+      anomaly_flags: anomalyFlags
+    },
+    previous_composite_score: isFiniteNumber(company.previous_composite_score) ? Number(company.previous_composite_score) : 0.5,
+    as_of: asOf,
+    filing_date: filingDate,
+    period_end: periodEnd,
+    form_type: company.form_type || "10-Q",
+    notes: Array.isArray(company.notes) ? company.notes : [],
+    summary: company.summary || "Fundamental row is incomplete and needs refreshed provider data.",
+    filing_url: company.filing_url || null
+  };
+}
+
 function anomalyPenalty(company) {
   const flags = company.quality_flags;
   return clamp(
@@ -1042,7 +1080,8 @@ function evaluateInitialScreener(company, settings, scoreContext = {}) {
 }
 
 function mergeCompanyWithMarketReference(company, reference) {
-  let metrics = { ...company.metrics };
+  const baseCompany = normalizeCompanyForScoring(company);
+  let metrics = { ...baseCompany.metrics };
   metrics = overrideMetric(metrics, "pe_ttm", reference?.trailing_pe);
   metrics = overrideMetric(metrics, "price_to_sales_ttm", reference?.price_to_sales_ttm);
   metrics = overrideMetric(metrics, "ev_to_ebitda_ttm", reference?.enterprise_to_ebitda);
@@ -1055,15 +1094,15 @@ function mergeCompanyWithMarketReference(company, reference) {
   metrics = overrideMetric(metrics, "fcf_yield", reference?.fcf_yield);
 
   return {
-    ...company,
+    ...baseCompany,
     metrics,
     quality_flags: {
-      ...company.quality_flags,
+      ...baseCompany.quality_flags,
       data_freshness_score: reference?.live
-        ? Math.max(company.quality_flags.data_freshness_score, 0.99)
-        : company.quality_flags.data_freshness_score
+        ? Math.max(baseCompany.quality_flags.data_freshness_score, 0.99)
+        : baseCompany.quality_flags.data_freshness_score
     },
-    market_reference: reference || company.market_reference || null
+    market_reference: reference || baseCompany.market_reference || null
   };
 }
 
@@ -1302,9 +1341,10 @@ export function buildInitialScreenerSnapshot(leaderboard = [], screenerSettings 
 }
 
 function buildSnapshot(sample, companies, screenerSettings) {
-  const sectorScores = buildSectorScores(sample, companies);
-  const leaderboard = companies
-    .map((company) => scoreCompany(company, companies, sectorScores, screenerSettings))
+  const normalizedCompanies = companies.map((company) => normalizeCompanyForScoring(company));
+  const sectorScores = buildSectorScores(sample, normalizedCompanies);
+  const leaderboard = normalizedCompanies
+    .map((company) => scoreCompany(company, normalizedCompanies, sectorScores, screenerSettings))
     .sort((a, b) => b.composite_fundamental_score - a.composite_fundamental_score)
     .map((item, index) => ({ ...item, rank_global: index + 1 }));
 
@@ -1323,14 +1363,14 @@ function buildSnapshot(sample, companies, screenerSettings) {
   const changes = withRanks
     .map((item, index) => buildChangeEvent(item, index, withRanks.length))
     .sort((a, b) => new Date(b.as_of) - new Date(a.as_of));
-  const completeness = companies.map((company) => clamp(1 - company.quality_flags.missing_fields_count * 0.05, 0.7, 1));
+  const completeness = normalizedCompanies.map((company) => clamp(1 - company.quality_flags.missing_fields_count * 0.05, 0.7, 1));
 
   return {
     asOf: sample.as_of,
     summary: {
       coverage_count: withRanks.length,
       sectors_covered: sectors.length,
-      new_filings_today: companies.filter((company) => company.filing_date === sample.as_of.slice(0, 10)).length,
+      new_filings_today: normalizedCompanies.filter((company) => company.filing_date === sample.as_of.slice(0, 10)).length,
       average_confidence: round(average(withRanks.map((item) => item.final_confidence)), 3),
       average_composite_score: round(average(withRanks.map((item) => item.composite_fundamental_score)), 3),
       data_completeness: round(average(completeness), 3)

@@ -414,7 +414,15 @@ async function testFundamentalsAgent() {
         data_freshness_score: 0.7,
         anomaly_flags: ["comparability_risk"]
       }
-    })
+    }),
+    {
+      ticker: "INCOMPLETE",
+      company_name: "Incomplete Live Row",
+      data_source: "live_sec_filing",
+      sector: "Information Technology",
+      market_cap_bucket: "large_cap",
+      as_of: now
+    }
   ]);
 
   const snapshot = engine.getSnapshot();
@@ -422,6 +430,7 @@ async function testFundamentalsAgent() {
   const pending = snapshot.leaderboard.find((row) => row.ticker === "PENDING");
   const screenPassWeak = snapshot.leaderboard.find((row) => row.ticker === "SCREENPASSWEAK");
   const bad = snapshot.leaderboard.find((row) => row.ticker === "LIVEBAD");
+  const incomplete = snapshot.leaderboard.find((row) => row.ticker === "INCOMPLETE");
 
   assert.equal(liveGood.initial_screen.stage, "eligible", "Strong live SEC-backed row should be eligible.");
   assert.equal(pending.initial_screen.stage, "watch", "Pending SEC refresh must not become eligible.");
@@ -431,6 +440,8 @@ async function testFundamentalsAgent() {
     "Low-composite demotion should explain the composite floor."
   );
   assert.equal(bad.initial_screen.stage, "reject", "Weak/stale fundamentals should reject.");
+  assert.equal(incomplete.initial_screen.stage, "reject", "Incomplete live rows should reject instead of crashing the screener.");
+  assert.ok(Number.isFinite(incomplete.composite_fundamental_score), "Incomplete live rows should still receive a bounded score.");
   assert.ok(
     snapshot.leaderboard
       .filter((row) => row.initial_screen?.stage === "eligible")

@@ -83,6 +83,7 @@ function updateHealthSnapshot(store, config, cacheSize, options = {}) {
 }
 
 function buildSyntheticReference(company) {
+  const metrics = company.metrics || {};
   const unit = deterministicUnit(`${company.ticker}:${company.company_name}`);
   const basePrice = round(45 + unit * 420, 2);
   const percentChange = round((unit - 0.5) * 0.06, 4);
@@ -90,8 +91,8 @@ function buildSyntheticReference(company) {
   const marketCapRange = company.market_cap_bucket === "mega_cap" ? 2_300_000_000_000 : 280_000_000_000;
   const marketCap = Math.round(marketCapBase + unit * marketCapRange);
   const sharesOutstanding = Math.round(marketCap / Math.max(5, basePrice));
-  const enterpriseValue = Math.round(marketCap * (1 + Math.max(0, company.metrics.debt_to_equity || 0) * 0.08));
-  const leveredFreeCashFlow = Math.round((company.metrics.fcf_yield || 0.03) * marketCap);
+  const enterpriseValue = Math.round(marketCap * (1 + Math.max(0, metrics.debt_to_equity || 0) * 0.08));
+  const leveredFreeCashFlow = Math.round((metrics.fcf_yield || 0.03) * marketCap);
 
   return {
     ticker: company.ticker,
@@ -105,17 +106,17 @@ function buildSyntheticReference(company) {
     enterprise_value: enterpriseValue,
     shares_outstanding: sharesOutstanding,
     beta: round(0.85 + unit * 0.9, 3),
-    trailing_pe: company.metrics.pe_ttm,
-    price_to_sales_ttm: company.metrics.price_to_sales_ttm,
-    enterprise_to_ebitda: company.metrics.ev_to_ebitda_ttm,
-    peg: company.metrics.peg,
-    gross_margin: company.metrics.gross_margin,
-    operating_margin: company.metrics.operating_margin,
-    net_margin: company.metrics.net_margin,
-    return_on_equity_ttm: company.metrics.roe,
-    quarterly_revenue_growth: company.metrics.revenue_growth_yoy,
+    trailing_pe: metrics.pe_ttm,
+    price_to_sales_ttm: metrics.price_to_sales_ttm,
+    enterprise_to_ebitda: metrics.ev_to_ebitda_ttm,
+    peg: metrics.peg,
+    gross_margin: metrics.gross_margin,
+    operating_margin: metrics.operating_margin,
+    net_margin: metrics.net_margin,
+    return_on_equity_ttm: metrics.roe,
+    quarterly_revenue_growth: metrics.revenue_growth_yoy,
     levered_free_cash_flow_ttm: leveredFreeCashFlow,
-    fcf_yield: company.metrics.fcf_yield
+    fcf_yield: metrics.fcf_yield
   };
 }
 
