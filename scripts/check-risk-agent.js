@@ -1,11 +1,19 @@
-process.env.DATABASE_ENABLED = "false";
-process.env.BROKER_SUBMIT_ENABLED = "false";
-process.env.RISK_MAX_GROSS_EXPOSURE_PCT = "0.35";
-process.env.RISK_MAX_SINGLE_NAME_EXPOSURE_PCT = "0.08";
-process.env.RISK_MAX_OPEN_ORDERS = "10";
-
-const { config } = await import("../src/config.js");
 const { buildPortfolioRiskSnapshot, evaluateExecutionRisk } = await import("../src/domain/risk-agent.js");
+
+const config = {
+  executionDefaultEquityUsd: 100000,
+  executionMaxOrderNotionalUsd: 1000,
+  executionMaxPositionPct: 0.08,
+  portfolioMaxPositionPct: 0.08,
+  portfolioMaxGrossExposurePct: 0.35,
+  portfolioMaxNewPositionsPerCycle: 8,
+  portfolioCashReservePct: 0.1,
+  portfolioMaxPositions: 10,
+  riskMaxGrossExposurePct: 0.35,
+  riskMaxSingleNameExposurePct: 0.08,
+  riskMaxOpenOrders: 10,
+  riskBlockWhenRuntimeConstrained: false
+};
 
 const portfolio = buildPortfolioRiskSnapshot({
   account: {
