@@ -35,6 +35,7 @@ const elements = {
   screenerSettings: document.querySelector("#screener-settings"),
   screenerCandidates: document.querySelector("#screener-candidates"),
   screenerWatchlist: document.querySelector("#screener-watchlist"),
+  screenerRejected: document.querySelector("#screener-rejected"),
   screenerStageChips: document.querySelector("#screener-stage-chips"),
   backtestSummary: document.querySelector("#backtest-summary"),
   backtestTests: document.querySelector("#backtest-tests"),
@@ -267,10 +268,26 @@ function dashboardUrl() {
   if (state.onlyChanged) {
     params.set("onlyChanged", "true");
   }
-  if (state.screenStage) {
-    params.set("screenStage", state.screenStage);
-  }
   return `/api/fundamentals/dashboard?${params.toString()}`;
+}
+
+function stageRows(stage = state.screenStage) {
+  const rows = state.dashboard?.leaderboard || [];
+  return stage ? rows.filter((item) => item.initial_screen?.stage === stage) : rows;
+}
+
+function stageCount(stage) {
+  return (state.dashboard?.leaderboard || []).filter((item) => item.initial_screen?.stage === stage).length;
+}
+
+function stageEmptyMessage(stage) {
+  if (stage === "eligible") {
+    return "No names currently pass the current screener settings.";
+  }
+  if (stage === "watch") {
+    return "No watch-stage names right now.";
+  }
+  return "No rejected names match the current non-stage filters.";
 }
 
 async function loadDashboard() {
@@ -335,7 +352,7 @@ async function loadDashboard() {
     state.backtest = state.backtest || null;
   }
 
-  const availableTickers = (state.dashboard?.leaderboard || []).map((item) => item.ticker);
+  const availableTickers = stageRows().map((item) => item.ticker);
   if (!state.selectedTicker || !availableTickers.includes(state.selectedTicker)) {
     state.selectedTicker = availableTickers[0] || null;
   }
@@ -346,8 +363,11 @@ async function loadDashboard() {
 
 function renderSummary() {
   const summary = state.dashboard?.summary || {};
-  elements.coverageCount.textContent = summary.coverage_count || 0;
-  elements.sectorCount.textContent = `${summary.sectors_covered || 0} sectors`;
+  const activeRows = stageRows();
+  elements.coverageCount.textContent = state.screenStage ? activeRows.length : summary.coverage_count || 0;
+  elements.sectorCount.textContent = state.screenStage
+    ? `${titleCase(state.screenStage)} view`
+    : `${summary.sectors_covered || 0} sectors`;
   elements.averageConfidence.textContent = pct(summary.average_confidence, 0);
   elements.dataCompleteness.textContent = `${pct(summary.data_completeness, 0)} complete`;
   elements.newFilings.textContent = summary.new_filings_today || 0;
@@ -421,11 +441,17 @@ function renderBacktest() {
 
 function renderScreener() {
   const screener = state.dashboard?.screener || {};
+  const allRows = state.dashboard?.leaderboard || [];
+  const activeRows = stageRows();
+  const stageSourceRows = state.screenStage ? activeRows : allRows;
+  const eligibleRows = stageSourceRows.filter((item) => item.initial_screen?.stage === "eligible");
+  const watchRows = stageSourceRows.filter((item) => item.initial_screen?.stage === "watch");
+  const rejectedRows = stageSourceRows.filter((item) => item.initial_screen?.stage === "reject");
   const stageOptions = [
-    { key: "", label: "All tracked" },
-    { key: "eligible", label: "Eligible" },
-    { key: "watch", label: "Watch" },
-    { key: "reject", label: "Reject" }
+    { key: "", label: `All tracked (${screener.tracked_count || allRows.length || 0})` },
+    { key: "eligible", label: `Eligible (${stageCount("eligible")})` },
+    { key: "watch", label: `Watch (${stageCount("watch")})` },
+    { key: "reject", label: `Reject (${stageCount("reject")})` }
   ];
 
   const liveSecBacked = screener.live_sec_backed_count || 0;
@@ -453,9 +479,9 @@ function renderScreener() {
 
   elements.screenerSummary.innerHTML = `
     <article class="summary-card"><span>Tracked</span><strong>${screener.tracked_count || 0}</strong></article>
-    <article class="summary-card"><span>Eligible</span><strong>${screener.eligible_count || 0}</strong></article>
-    <article class="summary-card"><span>Watch</span><strong>${screener.watch_count || 0}</strong></article>
-    <article class="summary-card"><span>Rejected</span><strong>${screener.rejected_count || 0}</strong></article>
+    <article class="summary-card"><span>Eligible</span><strong>${stageCount("eligible")}</strong></article>
+    <article class="summary-card"><span>Watch</span><strong>${stageCount("watch")}</strong></article>
+    <article class="summary-card"><span>Rejected</span><strong>${stageCount("reject")}</strong></article>
     <article class="summary-card"><span>Pass Rate</span><strong>${pct(screener.pass_rate || 0, 0)}</strong></article>
     <article class="summary-card"><span>Criteria</span><strong>${(screener.criteria || []).length}</strong></article>
     <article class="summary-card"><span>SEC Live</span><strong>${liveSecBacked || healthLiveCompanies}</strong></article>
@@ -617,7 +643,47 @@ function renderScreener() {
         .join("")
     : `<p class="subtle">No watch-stage names right now.</p>`;
 
-  for (const card of [...elements.screenerCandidates.querySelectorAll("[data-screener-ticker]"), ...elements.screenerWatchlist.querySelectorAll("[data-screener-ticker]")]) {
+  const renderStageCards = (rows, stage) => rows.length
+    ? rows
+        .slice(0, 12)
+        .map((item) => {
+          const screen = item.initial_screen || {};
+          const failedChecks = screen.failed_checks || item.failed_checks || [];
+          return `
+            <article class="feed-card" data-screener-ticker="${item.ticker}">
+              <div class="feed-card-head">
+                <strong>${item.ticker}</strong>
+                <span>${item.sector}</span>
+              </div>
+              <p>${item.company_name}</p>
+              <div class="score-row">
+                <span>Screen ${score(screen.score ?? item.screen_score)}</span>
+                <span>${pct(item.final_confidence, 0)} conf</span>
+              </div>
+              <div class="score-row">
+                <span>Checks ${screen.passed_count ?? item.passed_count ?? 0}/${screen.total_checks ?? item.total_checks ?? 0}</span>
+                <span>${stage === "reject" ? titleCase(item.rating_label) : sourceLabel(item.data_source)}</span>
+              </div>
+              ${
+                stage !== "eligible" && failedChecks.length
+                  ? `<p class="subtle">${failedChecks.slice(0, 2).join(", ")}</p>`
+                  : ""
+              }
+            </article>
+          `;
+        })
+        .join("")
+    : `<p class="subtle">${stageEmptyMessage(stage)}</p>`;
+
+  elements.screenerCandidates.innerHTML = renderStageCards(eligibleRows, "eligible");
+  elements.screenerWatchlist.innerHTML = renderStageCards(watchRows, "watch");
+  elements.screenerRejected.innerHTML = renderStageCards(rejectedRows, "reject");
+
+  for (const card of [
+    ...elements.screenerCandidates.querySelectorAll("[data-screener-ticker]"),
+    ...elements.screenerWatchlist.querySelectorAll("[data-screener-ticker]"),
+    ...elements.screenerRejected.querySelectorAll("[data-screener-ticker]")
+  ]) {
     card.addEventListener("click", async () => {
       state.selectedTicker = card.dataset.screenerTicker;
       await loadSelectedDetail();
@@ -668,7 +734,7 @@ function renderSectors() {
 }
 
 function renderLeaderboard() {
-  const rows = state.dashboard?.leaderboard || [];
+  const rows = stageRows();
   elements.leaderboardExplainer.textContent =
     "This table is the full ranking model after the stage-one screener. Screen shows the first-pass gate result. Composite is the blended overall score. Confidence measures data trust, not upside. Rating is the qualitative interpretation. Delta 30d shows how the composite changed over the last month.";
   elements.leaderboardBody.innerHTML = rows.length
@@ -700,7 +766,8 @@ function renderLeaderboard() {
 }
 
 function renderChanges() {
-  const changes = state.dashboard?.changes || [];
+  const visibleTickers = new Set(stageRows().map((item) => item.ticker));
+  const changes = (state.dashboard?.changes || []).filter((item) => !state.screenStage || visibleTickers.has(item.ticker));
   elements.changesFeed.innerHTML = changes.length
     ? changes
         .map(

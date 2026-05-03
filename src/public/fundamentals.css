@@ -567,6 +567,12 @@ h1 {
   margin-bottom: 18px;
 }
 
+.screener-stage-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -771,6 +777,10 @@ h1 {
   .hero-grid,
   .detail-summary,
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .screener-stage-grid {
     grid-template-columns: 1fr;
   }
 
