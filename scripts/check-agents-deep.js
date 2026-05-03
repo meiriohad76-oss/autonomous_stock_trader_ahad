@@ -788,12 +788,26 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
   if (agent.key === "llm_selection") {
     const finalSelection = await app.getFinalSelection({ window: options.window, limit: options.limit, minConviction: 0 });
     const llm = finalSelection.llm_agent || finalSelection.llm_selection || {};
+    const llmMode = llm.mode || finalSelection.llm_mode || "unknown";
+    const llmStatus = llm.status || finalSelection.llm_status || "unknown";
+    const llmProvider = llm.provider || finalSelection.llm_provider || null;
+    const realProviderConnected =
+      llmProvider &&
+      !["shadow", "local_shadow", "enabled_without_provider", "waiting_for_provider"].includes(String(llmMode).toLowerCase()) &&
+      !["enabled_without_provider", "waiting_for_provider"].includes(String(llmStatus).toLowerCase());
     agent.output_summary = sanitize({
       llm_agent: llm,
       recommendation_count: llm.recommendations?.length || finalSelection.candidates?.filter((item) => item.llm_action).length || 0,
       sample: (llm.recommendations || finalSelection.candidates || []).slice(0, 10)
     });
-    addCheck(agent, "llm_mode", llm.mode || finalSelection.llm_mode ? "pass" : "warning", `LLM mode: ${llm.mode || finalSelection.llm_mode || "unknown"}.`);
+    addCheck(
+      agent,
+      "llm_mode",
+      realProviderConnected ? "pass" : "warning",
+      realProviderConnected
+        ? `LLM provider connected: ${llmProvider}; mode ${llmMode}.`
+        : `LLM lane is not connected to an external provider; mode ${llmMode}, status ${llmStatus}.`
+    );
   }
 
   if (agent.key === "final_selection") {

@@ -218,10 +218,24 @@ async function main() {
   const missingReports = candidates
     .filter((candidate) => !(candidate?.selection_report || candidate?.report || candidate?.decision_report))
     .map((candidate) => candidate?.ticker);
+  const llmAgent = finalSelection?.llm_agent || finalSelection?.llm_selection || {};
+  const llmMode = llmAgent.mode || finalSelection?.llm_mode || "unknown";
+  const llmStatus = llmAgent.status || finalSelection?.llm_status || "unknown";
+  const llmProvider = llmAgent.provider || finalSelection?.llm_provider || null;
+  const externalLlmConnected =
+    llmProvider &&
+    !["shadow", "local_shadow", "enabled_without_provider", "waiting_for_provider"].includes(String(llmMode).toLowerCase()) &&
+    !["enabled_without_provider", "waiting_for_provider"].includes(String(llmStatus).toLowerCase());
   addCheck("final_selection_report_contract", missingReports.length ? "warning" : "pass", {
     candidates: candidates.length,
     missing_report: missingReports.slice(0, 30),
     counts: finalSelection?.counts || null
+  });
+  addCheck("llm_provider_connected", externalLlmConnected ? "pass" : "warning", {
+    mode: llmMode,
+    status: llmStatus,
+    provider: llmProvider,
+    note: "Expected warning until OPENAI_API_KEY or LLM_SELECTION_API_KEY is configured for the live service."
   });
 
   const risk = await read("/api/risk/status");
