@@ -3,7 +3,9 @@ process.env.BROKER_PROVIDER = "alpaca";
 process.env.BROKER_TRADING_MODE = "paper";
 process.env.BROKER_SUBMIT_ENABLED = "false";
 process.env.ALPACA_API_KEY_ID = "";
+process.env.ALPACA_API_KEY = "";
 process.env.ALPACA_API_SECRET_KEY = "";
+process.env.ALPACA_SECRET_KEY = "";
 
 const { config } = await import("../src/config.js");
 const { createAlpacaBroker } = await import("../src/domain/broker-alpaca.js");
