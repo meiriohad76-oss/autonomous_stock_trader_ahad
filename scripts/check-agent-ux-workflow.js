@@ -245,9 +245,23 @@ async function checkApis() {
 
 async function checkDashboard() {
   await mkdir(outDir, { recursive: true });
-  const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+  let browser = null;
   const consoleIssues = [];
+
+  try {
+    browser = await chromium.launch();
+  } catch (error) {
+    const unsupported = /not supported|executable doesn't exist|host system is missing/i.test(error.message || "");
+    addCheck("dashboard_browser_available", unsupported ? "warning" : "fail", {
+      error: error.message,
+      note: unsupported
+        ? "The API checks ran, but this machine cannot launch Playwright Chromium. Run the same script from a workstation to inspect screenshots and report cards."
+        : "Dashboard browser audit could not start."
+    });
+    return;
+  }
+
+  const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
 
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) {
