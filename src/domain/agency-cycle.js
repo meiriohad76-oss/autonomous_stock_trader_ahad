@@ -846,8 +846,18 @@ export function buildAgencyCycleStatus({
       llmSelection?.mode ||
       llmSelection?.status
   );
+  const standaloneLlmCount = llmSelection?.recommendations?.length ||
+    Object.values(llmSelection?.counts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const normalizedStandaloneLlmSelection = standaloneLlmHasState
+    ? {
+        ...llmSelection,
+        recommendations: llmSelection?.recommendations?.length
+          ? llmSelection.recommendations
+          : Array.from({ length: standaloneLlmCount }, () => ({}))
+      }
+    : null;
   const effectiveLlmSelection =
-    (standaloneLlmHasState ? llmSelection : null) ||
+    normalizedStandaloneLlmSelection ||
     (finalSelection?.llm_agent
       ? {
           ...finalSelection.llm_agent,
