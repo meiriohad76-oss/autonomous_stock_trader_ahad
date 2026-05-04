@@ -234,20 +234,22 @@ async function main() {
   const llmMode = llmAgent.mode || finalSelection?.llm_mode || "unknown";
   const llmStatus = llmAgent.status || finalSelection?.llm_status || "unknown";
   const llmProvider = llmAgent.provider || finalSelection?.llm_provider || null;
-  const externalLlmConnected =
-    llmProvider &&
-    !["shadow", "local_shadow", "enabled_without_provider", "waiting_for_provider"].includes(String(llmMode).toLowerCase()) &&
-    !["enabled_without_provider", "waiting_for_provider"].includes(String(llmStatus).toLowerCase());
+  const externalLlmReady =
+    String(llmProvider || "").toLowerCase() === "openai" &&
+    String(llmMode || "").toLowerCase() === "openai_json_review" &&
+    String(llmStatus || "").toLowerCase() === "ready";
   addCheck("final_selection_report_contract", missingReports.length ? "warning" : "pass", {
     candidates: candidates.length,
     missing_report: missingReports.slice(0, 30),
     counts: finalSelection?.counts || null
   });
-  addCheck("llm_provider_connected", externalLlmConnected ? "pass" : "warning", {
+  addCheck("llm_provider_connected", externalLlmReady ? "pass" : "warning", {
     mode: llmMode,
     status: llmStatus,
     provider: llmProvider,
-    note: "Expected warning until OPENAI_API_KEY or LLM_SELECTION_API_KEY is configured for the live service."
+    model: llmAgent.model || finalSelection?.llm_model || null,
+    last_error: llmAgent.last_error || null,
+    note: "Expected warning until OPENAI_API_KEY or LLM_SELECTION_API_KEY is configured and the OpenAI JSON review succeeds."
   });
 
   const risk = await read("/api/risk/status");

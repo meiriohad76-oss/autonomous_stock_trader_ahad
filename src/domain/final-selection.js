@@ -569,10 +569,26 @@ export function buildFinalSelectionSnapshot({
     positionMonitor,
     config
   }).slice(0, limit);
+  const llmAgent = {
+    enabled: Boolean(llmSelection?.enabled),
+    configured: Boolean(llmSelection?.configured),
+    status: llmSelection?.status || "unavailable",
+    mode: llmSelection?.mode || "unavailable",
+    provider: llmSelection?.provider || null,
+    model: llmSelection?.model || null,
+    last_error: llmSelection?.last_error || null,
+    summary: llmSelection?.summary || null,
+    prompt_version: llmSelection?.prompt_version || null,
+    counts: llmSelection?.counts || {}
+  };
 
   return {
     as_of: new Date().toISOString(),
     window,
+    llm_provider: llmAgent.provider,
+    llm_mode: llmAgent.mode,
+    llm_status: llmAgent.status,
+    llm_model: llmAgent.model,
     algorithm: {
       name: "dual_selector_policy_arbitration",
       steps: [
@@ -597,13 +613,7 @@ export function buildFinalSelectionSnapshot({
       counts: tradeSetups?.counts || {},
       summary: "Rules-based selector using fundamentals, market regime, signals, money flow, alerts, runtime reliability, and price plan."
     },
-    llm_agent: {
-      status: llmSelection?.status || "unavailable",
-      mode: llmSelection?.mode || "unavailable",
-      provider: llmSelection?.provider || null,
-      model: llmSelection?.model || null,
-      counts: llmSelection?.counts || {}
-    },
+    llm_agent: llmAgent,
     portfolio_policy: {
       max_positions: portfolioPolicy.portfolioMaxPositions,
       max_new_positions_per_cycle: portfolioPolicy.portfolioMaxNewPositionsPerCycle,

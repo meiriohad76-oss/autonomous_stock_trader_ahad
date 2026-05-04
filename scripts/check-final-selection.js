@@ -183,6 +183,15 @@ if (finalSelection.counts.executable !== 1 || !finalSelection.algorithm?.steps?.
 }
 
 if (
+  finalSelection.llm_provider !== "shadow" ||
+  finalSelection.llm_mode !== "shadow" ||
+  !finalSelection.llm_agent ||
+  finalSelection.llm_agent.prompt_version !== "llm_selection_committee_v2"
+) {
+  throw new Error("Final selector should expose top-level and nested LLM review metadata.");
+}
+
+if (
   apple.selection_report?.status !== "approved_for_alpaca_preview" ||
   !apple.selection_report?.agent_votes?.length ||
   !apple.selection_report?.evidence_summary?.why_selected?.length ||
