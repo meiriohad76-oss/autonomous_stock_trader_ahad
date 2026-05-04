@@ -1433,6 +1433,72 @@ input:focus-visible {
   border: 1px solid var(--surface-border);
 }
 
+.agent-test-report {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.032);
+  border: 1px solid rgba(126, 165, 255, 0.18);
+}
+
+.agent-test-report h3 {
+  margin: 5px 0 4px;
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.agent-test-report p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.agent-test-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-test-inputs span {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--surface-border);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.agent-test-table-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agent-test-table-grid .agent-table-shell {
+  min-width: 0;
+}
+
+.agent-test-table-grid .compact-agent-table th,
+.agent-test-table-grid .compact-agent-table td {
+  vertical-align: top;
+}
+
+.agent-test-table-grid .compact-agent-table td:last-child {
+  min-width: 220px;
+  max-width: 420px;
+  white-space: normal;
+  line-height: 1.35;
+}
+
 .agent-process-head {
   display: flex;
   align-items: flex-start;
@@ -4220,6 +4286,10 @@ input:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .agent-test-table-grid {
+    grid-template-columns: 1fr;
+  }
+
   .workflow-live-data-grid {
     grid-template-columns: 1fr;
   }
@@ -4263,6 +4333,10 @@ input:focus-visible {
   }
 
   .selector-lane-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-test-table-grid {
     grid-template-columns: 1fr;
   }
 
