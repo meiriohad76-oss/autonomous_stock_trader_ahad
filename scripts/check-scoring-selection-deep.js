@@ -760,6 +760,37 @@ async function testLlmSelectionAgent(tradeSetups) {
     globalThis.fetch = originalFetch;
   }
 
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output_text: '{"recommendations":[{"ticker":"WIN","action":"watch","confidence":0.5,"rationale":"truncated'
+      };
+    }
+  });
+
+  try {
+    const fallback = await buildLlmSelectionSnapshot({
+      config: {
+        ...config,
+        llmSelectionEnabled: true,
+        llmSelectionProvider: "openai",
+        llmSelectionModel: "gpt-5.5",
+        llmSelectionApiKey: "test-key",
+        llmSelectionApiUrl: "https://api.openai.com/v1/responses",
+        llmSelectionMaxOutputTokens: 12000
+      },
+      tradeSetups,
+      portfolioPolicy
+    });
+    assert.equal(fallback.status, "fallback_shadow", "Invalid provider JSON should fall back safely.");
+    assert.ok(/LLM_SELECTION_MAX_OUTPUT_TOKENS/.test(fallback.last_error), "Fallback error should give an output-token remediation hint.");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
   record("LLM Selection Agent", "shadow_demotions_and_openai_prompt_pack", {
     shadow_status: shadow.status,
     prompt_version: shadow.prompt_version

@@ -137,7 +137,7 @@ const alpacaApiSecretKey = firstCredential("ALPACA_API_SECRET_KEY", "ALPACA_SECR
 const llmSelectionApiKey = firstCredential("LLM_SELECTION_API_KEY", "OPENAI_API_KEY");
 const llmSelectionProvider = String(process.env.LLM_SELECTION_PROVIDER || (llmSelectionApiKey ? "openai" : "shadow")).toLowerCase();
 const llmSelectionModel =
-  process.env.LLM_SELECTION_MODEL || (llmSelectionProvider === "openai" ? "gpt-5.4-mini" : "policy-aware-shadow-reviewer");
+  process.env.LLM_SELECTION_MODEL || (llmSelectionProvider === "openai" ? "gpt-5.5" : "policy-aware-shadow-reviewer");
 const llmSelectionApiUrl =
   process.env.LLM_SELECTION_API_URL || (llmSelectionProvider === "openai" ? "https://api.openai.com/v1/responses" : "");
 const earningsApiKey = firstCredential("EARNINGS_API_KEY", "FINNHUB_API_KEY", "FMP_API_KEY", "TWELVE_DATA_API_KEY", "ALPHA_VANTAGE_API_KEY");
@@ -445,7 +445,7 @@ export const config = {
     ? selectionWorkflowTestLlmMinConfidence
     : Number(process.env.LLM_SELECTION_MIN_CONFIDENCE || 0.58),
   llmSelectionMaxCandidates: Number(process.env.LLM_SELECTION_MAX_CANDIDATES || 12),
-  llmSelectionMaxOutputTokens: Number(process.env.LLM_SELECTION_MAX_OUTPUT_TOKENS || 2500),
+  llmSelectionMaxOutputTokens: Number(process.env.LLM_SELECTION_MAX_OUTPUT_TOKENS || 12000),
   llmSelectionRequestTimeoutMs: Number(process.env.LLM_SELECTION_REQUEST_TIMEOUT_MS || 30000),
   llmSelectionApiUrl,
   llmSelectionApiKey,

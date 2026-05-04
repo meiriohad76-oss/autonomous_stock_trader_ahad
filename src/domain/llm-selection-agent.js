@@ -42,6 +42,7 @@ Output discipline:
 - risk_assessment should summarize the biggest execution/risk issue.
 - confidence_reason should explain why the confidence number is calibrated at that level.
 - missing_data should list missing or weak inputs that would improve the decision.
+- Keep every free-text field concise; one sentence is enough for rationale, alignment, risk, and confidence.
 `.trim();
 
 function isTradable(action) {
@@ -439,7 +440,15 @@ async function fetchOpenAiReview({ config, promptPack }) {
     if (!text) {
       throw new Error("OpenAI LLM selection returned no JSON text.");
     }
-    return JSON.parse(text);
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      const incompleteReason = payload?.incomplete_details?.reason || payload?.status || null;
+      const hint = "Increase LLM_SELECTION_MAX_OUTPUT_TOKENS or reduce LLM_SELECTION_MAX_CANDIDATES if this repeats.";
+      throw new Error(
+        `OpenAI LLM selection returned invalid JSON: ${error.message}. response_chars=${text.length}${incompleteReason ? ` response_status=${incompleteReason}` : ""}. ${hint}`
+      );
+    }
   } finally {
     clearTimeout(timeout);
   }

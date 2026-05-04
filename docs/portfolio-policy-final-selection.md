@@ -35,12 +35,15 @@ OpenAI configuration:
 ```env
 LLM_SELECTION_ENABLED=true
 LLM_SELECTION_PROVIDER=openai
-LLM_SELECTION_MODEL=gpt-5.4-mini
+LLM_SELECTION_MODEL=gpt-5.5
 LLM_SELECTION_API_URL=https://api.openai.com/v1/responses
 LLM_SELECTION_MAX_CANDIDATES=12
+LLM_SELECTION_MAX_OUTPUT_TOKENS=12000
 LLM_SELECTION_REQUEST_TIMEOUT_MS=30000
 OPENAI_API_KEY=
 ```
+
+If the LLM lane falls back with an invalid or unterminated JSON error, the provider most likely hit the output-token cap while filling the strict review schema. Increase `LLM_SELECTION_MAX_OUTPUT_TOKENS` or temporarily reduce `LLM_SELECTION_MAX_CANDIDATES`.
 
 ## Final Selection Procedure
 
