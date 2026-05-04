@@ -840,8 +840,14 @@ export function buildAgencyCycleStatus({
   const finalSelectionLlmCount = finalSelectionLlmReviews.length ||
     Object.values(finalSelection?.llm_agent?.counts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
   const inferredFinalSelectionReviewCount = finalSelectionLlmCount || finalCounts.visible || finalCounts.review + finalCounts.watch + finalCounts.executable;
+  const standaloneLlmHasState = Boolean(
+    llmSelection?.recommendations?.length ||
+      Object.keys(llmSelection?.counts || {}).length ||
+      llmSelection?.mode ||
+      llmSelection?.status
+  );
   const effectiveLlmSelection =
-    llmSelection ||
+    (standaloneLlmHasState ? llmSelection : null) ||
     (finalSelection?.llm_agent
       ? {
           ...finalSelection.llm_agent,
