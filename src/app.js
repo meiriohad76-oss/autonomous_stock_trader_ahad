@@ -72,6 +72,7 @@ const MONEY_FLOW_EVENT_TYPES = new Set([
 ]);
 
 const AGENCY_AUDIT_HISTORY_LIMIT = 250;
+const FINAL_SELECTION_CACHE_TTL_MS = 120_000;
 
 function cloneForAudit(value) {
   if (!value) {
@@ -1378,6 +1379,62 @@ export function createSentimentApp() {
     getRiskSnapshot: () => riskAgent.getSnapshot(),
     getPortfolioPolicy: () => readPortfolioPolicy(config)
   });
+  let finalSelectionCache = null;
+
+  function finalSelectionCacheKey({ window, limit, minConviction }) {
+    return [
+      window || config.defaultWindow,
+      Number(limit || 12),
+      minConviction ?? "default",
+      config.selectionWorkflowTestMode ? "test" : "production",
+      config.llmSelectionEnabled ? "llm-on" : "llm-off",
+      config.llmSelectionProvider,
+      config.llmSelectionModel,
+      config.llmSelectionMaxCandidates,
+      config.llmSelectionMinConfidence,
+      config.executionAllowShorts,
+      config.brokerSubmitEnabled
+    ].join("|");
+  }
+
+  async function buildFinalSelection(options = {}) {
+    const window = options.window || config.defaultWindow;
+    const limit = options.limit ? Number(options.limit) : 12;
+    const minConviction = options.minConviction !== undefined ? Number(options.minConviction) : 0.35;
+    const tradeSetups = tradeSetupAgent.getTradeSetups({
+      window,
+      limit: Math.max(limit * 3, 30),
+      minConviction
+    });
+    const [riskSnapshot, positionMonitor] = await Promise.all([
+      riskAgent.getSnapshot(),
+      positionMonitorAgent.getSnapshot({
+        window,
+        limit: Math.max(limit * 2, 25)
+      })
+    ]);
+    const portfolioPolicy = readPortfolioPolicy(config);
+    const llmSelection = await buildLlmSelectionSnapshot({
+      config,
+      tradeSetups,
+      portfolioPolicy,
+      riskSnapshot,
+      positionMonitor
+    });
+
+    const finalSelection = buildFinalSelectionSnapshot({
+      config,
+      tradeSetups,
+      llmSelection,
+      portfolioPolicy,
+      riskSnapshot,
+      positionMonitor,
+      window,
+      limit
+    });
+    rememberAgencyAudit(store, { llmSelection, finalSelection, riskSnapshot, positionMonitor });
+    return finalSelection;
+  }
   let humanApprovalAgent = null;
   const startupState = {
     started_at: new Date().toISOString(),
@@ -1985,39 +2042,45 @@ export function createSentimentApp() {
       const window = options.window || config.defaultWindow;
       const limit = options.limit ? Number(options.limit) : 12;
       const minConviction = options.minConviction !== undefined ? Number(options.minConviction) : 0.35;
-      const tradeSetups = tradeSetupAgent.getTradeSetups({
-        window,
-        limit: Math.max(limit * 3, 30),
-        minConviction
-      });
-      const [riskSnapshot, positionMonitor] = await Promise.all([
-        riskAgent.getSnapshot(),
-        positionMonitorAgent.getSnapshot({
-          window,
-          limit: Math.max(limit * 2, 25)
-        })
-      ]);
-      const portfolioPolicy = readPortfolioPolicy(config);
-      const llmSelection = await buildLlmSelectionSnapshot({
-        config,
-        tradeSetups,
-        portfolioPolicy,
-        riskSnapshot,
-        positionMonitor
-      });
+      const cacheKey = finalSelectionCacheKey({ window, limit, minConviction });
+      const nowMs = Date.now();
 
-      const finalSelection = buildFinalSelectionSnapshot({
-        config,
-        tradeSetups,
-        llmSelection,
-        portfolioPolicy,
-        riskSnapshot,
-        positionMonitor,
-        window,
-        limit
-      });
-      rememberAgencyAudit(store, { llmSelection, finalSelection, riskSnapshot, positionMonitor });
-      return finalSelection;
+      if (
+        finalSelectionCache?.key === cacheKey &&
+        finalSelectionCache.value &&
+        nowMs - finalSelectionCache.resolvedAt < FINAL_SELECTION_CACHE_TTL_MS
+      ) {
+        return finalSelectionCache.value;
+      }
+
+      if (finalSelectionCache?.key === cacheKey && finalSelectionCache.promise) {
+        return finalSelectionCache.promise;
+      }
+
+      const promise = buildFinalSelection({ window, limit, minConviction });
+      finalSelectionCache = {
+        key: cacheKey,
+        startedAt: nowMs,
+        promise,
+        value: null,
+        resolvedAt: 0
+      };
+
+      try {
+        const value = await promise;
+        finalSelectionCache = {
+          key: cacheKey,
+          promise: null,
+          value,
+          resolvedAt: Date.now()
+        };
+        return value;
+      } catch (error) {
+        if (finalSelectionCache?.promise === promise) {
+          finalSelectionCache = null;
+        }
+        throw error;
+      }
     },
     async getFinalSelectionTicker(ticker, options = {}) {
       const finalSelection = await this.getFinalSelection({
@@ -2082,29 +2145,19 @@ export function createSentimentApp() {
         riskSnapshot,
         positionMonitor
       });
-      const rawPortfolioPolicy = readPortfolioPolicy(config);
+      const limit = options.limit ? Number(options.limit) : 25;
+      const minConviction = options.minConviction !== undefined ? Number(options.minConviction) : 0.35;
       const portfolioPolicy = buildPortfolioPolicySnapshot({
         config,
         riskSnapshot,
         positionMonitor
       });
-      const llmSelection = await buildLlmSelectionSnapshot({
-        config,
-        tradeSetups,
-        portfolioPolicy: rawPortfolioPolicy,
-        riskSnapshot,
-        positionMonitor
-      });
-      const finalSelection = buildFinalSelectionSnapshot({
-        config,
-        tradeSetups,
-        llmSelection,
-        portfolioPolicy: rawPortfolioPolicy,
-        riskSnapshot,
-        positionMonitor,
+      const finalSelection = await this.getFinalSelection({
         window,
-        limit: options.limit ? Number(options.limit) : 25
+        limit,
+        minConviction
       });
+      const llmSelection = finalSelection.llm_agent || {};
 
       const agencyCycle = buildAgencyCycleStatus({
         config,

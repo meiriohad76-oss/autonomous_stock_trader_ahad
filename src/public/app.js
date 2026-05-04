@@ -3675,13 +3675,14 @@ async function loadConfig() {
 }
 
 async function loadHealth() {
+  const workflowTestParam = state.config?.selection_workflow_test_mode ? "&minConviction=0" : "";
   const [health, runtimeReliability, systemDoctor, agencyCycle, secQueue, workflowStatus, executionStatus, executionLog, riskSnapshot, positionMonitor, portfolioPolicy] = await Promise.all([
     getJson("/api/health"),
     getJson("/api/runtime-reliability").catch(() => null),
-    getJson(`/api/system/doctor?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
-    getJson(`/api/agency/cycle?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch((error) => ({ __error: error.message })),
+    getJson(`/api/system/doctor?window=${encodeURIComponent(state.activeWindow)}&limit=25${workflowTestParam}`).catch(() => null),
+    getJson(`/api/agency/cycle?window=${encodeURIComponent(state.activeWindow)}&limit=25${workflowTestParam}`).catch((error) => ({ __error: error.message })),
     getJson("/api/fundamentals/sec-queue?limit=8").catch(() => null),
-    getJson(`/api/trading-workflow/status?window=${encodeURIComponent(state.activeWindow)}&limit=25`).catch(() => null),
+    getJson(`/api/trading-workflow/status?window=${encodeURIComponent(state.activeWindow)}&limit=25${workflowTestParam}`).catch(() => null),
     getJson("/api/execution/status").catch(() => null),
     getJson("/api/execution/log").catch(() => []),
     getJson("/api/risk/status").catch(() => null),
