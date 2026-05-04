@@ -1676,14 +1676,76 @@ function conciseReason(items = [], fallback = "No detailed reason is available."
   return reasons.length ? reasons.slice(0, 2).join("; ") : fallback;
 }
 
+const FUNDAMENTAL_REPORT_FACTORS = [
+  { key: "quality_score", label: "quality" },
+  { key: "growth_score", label: "growth" },
+  { key: "valuation_score", label: "valuation" },
+  { key: "balance_sheet_score", label: "balance sheet" },
+  { key: "efficiency_score", label: "efficiency" },
+  { key: "earnings_stability_score", label: "stability" },
+  { key: "sector_score", label: "sector" }
+];
+
+function factorRows(row) {
+  return FUNDAMENTAL_REPORT_FACTORS
+    .map((factor) => ({
+      ...factor,
+      value: Number(row?.[factor.key])
+    }))
+    .filter((factor) => Number.isFinite(factor.value));
+}
+
+function factorSummary(row, direction = "strong") {
+  const factors = factorRows(row).sort((a, b) =>
+    direction === "weak" ? a.value - b.value : b.value - a.value
+  );
+  return factors
+    .slice(0, 3)
+    .map((factor) => `${factor.label} ${testReportScore(factor.value, { percent: false })}`)
+    .join(", ");
+}
+
+function checkLabels(screen, passed) {
+  const explicit = passed ? screen?.passed_checks : screen?.failed_checks;
+  if (Array.isArray(explicit) && explicit.length) {
+    return explicit;
+  }
+  return (screen?.checks || [])
+    .filter((check) => Boolean(check.passed) === passed)
+    .map((check) => check.label || prettyLabel(check.key));
+}
+
 function screenReason(row) {
   const screen = row?.initial_screen || {};
   const stage = row?.screen_stage || screen.stage || "unknown";
   const failed = [...(screen.hard_failures || []), ...(screen.failed_checks || [])];
+  const passedLabels = checkLabels(screen, true);
+  const failedLabels = checkLabels(screen, false);
+  const passedCount = Number.isFinite(Number(screen.passed_count)) ? Number(screen.passed_count) : passedLabels.length;
+  const totalChecks = Number.isFinite(Number(screen.total_checks))
+    ? Number(screen.total_checks)
+    : passedLabels.length + failedLabels.length || "n/a";
+  const composite = testReportScore(row.composite_fundamental_score, { percent: false });
+  const floor = state.config?.screener_settings?.screenerMinCompositeScoreForEligible;
+  const thresholdText = Number.isFinite(Number(floor))
+    ? `; composite floor ${testReportScore(floor, { percent: false })}`
+    : "";
+  const strongestFactors = factorSummary(row, "strong");
+  const weakestFactors = factorSummary(row, "weak");
+  const strengths = row?.top_strengths?.length
+    ? `${row.top_strengths.slice(0, 3).join(", ")} (${strongestFactors})`
+    : strongestFactors || "No factor strengths loaded.";
+  const weaknesses = row?.top_weaknesses?.length
+    ? `${row.top_weaknesses.slice(0, 3).join(", ")} (${weakestFactors})`
+    : weakestFactors || "No factor weaknesses loaded.";
+
   if (stage === "eligible") {
-    return `${screen.passed_count ?? "n/a"}/${screen.total_checks ?? "n/a"} checks passed; composite ${testReportScore(row.composite_fundamental_score, { percent: false })}.`;
+    return `${passedCount}/${totalChecks} checks passed${thresholdText}; composite ${composite}. Strongest: ${strengths}. Weakest: ${weaknesses}.`;
   }
-  return conciseReason(failed, screen.summary || `Screen stage is ${prettyLabel(stage)}.`);
+  if (stage === "watch") {
+    return `${passedCount}/${totalChecks} checks passed; needs confirmation. Weakest: ${weaknesses}. ${conciseReason(failedLabels, screen.summary || "No hard rejection, but not enough evidence for eligible.")}`;
+  }
+  return `${conciseReason(failed, conciseReason(failedLabels, screen.summary || `Screen stage is ${prettyLabel(stage)}.`))} Composite ${composite}. Weakest: ${weaknesses}.`;
 }
 
 function setupReason(setup) {
@@ -1781,21 +1843,22 @@ function buildAgentTestReport(agentKey) {
   const reports = {
     universe: {
       title: "Universe Agent User Test Report",
-      targetLabel: `${Math.min(counts.tracked || 0, target)}/${target} pass rows visible`,
+      targetLabel: `${Math.min(counts.tracked || 0, target)}/${target} included sample rows visible`,
       targetMet: (counts.tracked || 0) >= target,
       inputs: [
-        `Boundary: ${AGENCY_UNIVERSE_LABEL}`,
+        `Universe rule: member of ${AGENCY_UNIVERSE_LABEL}`,
         `${counts.tracked || 0} loaded dashboard rows`,
-        `${secCoverage.secLive} live SEC-backed rows`
+        `${secCoverage.secLive} live SEC-backed rows for downstream fundamentals`,
+        "SEC filing is data readiness, not the universe-selection reason"
       ],
-      selectedTitle: "Accepted Into Universe",
+      selectedTitle: "Included Universe Sample",
       rejectedTitle: "Excluded By Universe Boundary",
       selected: universe.slice(0, 10).map((row) =>
         agentTestRow({
           item: row.entity_key,
-          result: "in universe",
-          score: sourceLabel(row.fundamental_data_source),
-          reason: `${row.company_name || tickerCompany(row.entity_key)}; ${row.sector || tickerSector(row.entity_key)}.`
+          result: "allowed",
+          score: "boundary match",
+          reason: `${row.company_name || tickerCompany(row.entity_key)} is inside ${AGENCY_UNIVERSE_LABEL}; sector ${row.sector || tickerSector(row.entity_key)}; ${sourceLabel(row.fundamental_data_source)} is available for the next Fundamentals step.`
         })
       ),
       rejected: [
@@ -1803,7 +1866,7 @@ function buildAgentTestReport(agentKey) {
           item: "Out-of-universe symbols",
           result: "excluded",
           score: "not stored",
-          reason: `Symbols outside ${AGENCY_UNIVERSE_LABEL} are filtered before scoring and are not kept as candidate rows.`,
+          reason: `Any ticker outside ${AGENCY_UNIVERSE_LABEL} is blocked before fundamentals, signals, selection, or LLM review. It is not rejected for quality; it is outside the allowed boundary.`,
           tone: "bearish"
         })
       ]

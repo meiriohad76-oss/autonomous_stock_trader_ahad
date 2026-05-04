@@ -773,6 +773,50 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
     };
   }
 
+  function exposeFundamentalDecisionFields(fundamentalsRow) {
+    if (!fundamentalsRow) {
+      return {
+        initial_screen: null,
+        reason_codes: [],
+        top_strengths: [],
+        top_weaknesses: [],
+        quality_flags: null,
+        metric_snapshot: null,
+        quality_score: null,
+        growth_score: null,
+        valuation_score: null,
+        balance_sheet_score: null,
+        efficiency_score: null,
+        earnings_stability_score: null,
+        sector_score: null,
+        valuation_label: null,
+        direction_label: null,
+        reporting_confidence_score: null,
+        data_freshness_score: null
+      };
+    }
+
+    return {
+      initial_screen: fundamentalsRow.initial_screen || null,
+      reason_codes: fundamentalsRow.reason_codes || [],
+      top_strengths: fundamentalsRow.top_strengths || [],
+      top_weaknesses: fundamentalsRow.top_weaknesses || [],
+      quality_flags: fundamentalsRow.quality_flags || null,
+      metric_snapshot: fundamentalsRow.metric_snapshot || null,
+      quality_score: fundamentalsRow.quality_score ?? null,
+      growth_score: fundamentalsRow.growth_score ?? null,
+      valuation_score: fundamentalsRow.valuation_score ?? null,
+      balance_sheet_score: fundamentalsRow.balance_sheet_score ?? null,
+      efficiency_score: fundamentalsRow.efficiency_score ?? null,
+      earnings_stability_score: fundamentalsRow.earnings_stability_score ?? null,
+      sector_score: fundamentalsRow.sector_score ?? null,
+      valuation_label: fundamentalsRow.valuation_label || null,
+      direction_label: fundamentalsRow.direction_label || null,
+      reporting_confidence_score: fundamentalsRow.reporting_confidence_score ?? null,
+      data_freshness_score: fundamentalsRow.data_freshness_score ?? null
+    };
+  }
+
   for (const state of store.sentimentStates) {
     if (state.window !== windowKey) {
       continue;
@@ -826,6 +870,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         fundamental_rating: fundamentalsRow?.rating_label || null,
         fundamental_data_source: fundamentalsRow?.data_source || null,
         fundamental_direction_label: fundamentalsRow?.direction_label || null,
+        ...exposeFundamentalDecisionFields(fundamentalsRow),
         sentiment_visible: Boolean(sentimentState)
       };
     })
@@ -847,6 +892,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
             fundamental_rating: null,
             fundamental_data_source: null,
             fundamental_direction_label: null,
+            ...exposeFundamentalDecisionFields(null),
             sentiment_visible: true
           };
         })
