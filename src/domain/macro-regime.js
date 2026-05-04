@@ -89,6 +89,7 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
   const sectorStates = latestStatesForWindow(store, "sector", window);
   const sectorStrength = buildSectorStrengthSnapshot(store.fundamentals?.leaderboard || [], {
     sectorStates,
+    etfReferences: store.sectorEtfReferences,
     asOf: store.health.lastUpdate,
     window,
     config: store.config

@@ -32,6 +32,7 @@ export function createStore(config) {
     tradeSetupHistory: [],
     macroRegime: null,
     tradeSetups: [],
+    sectorEtfReferences: new Map(),
     earningsCalendar: new Map(),
     pendingApprovals: new Map(),
     positions: new Map(),
@@ -98,6 +99,7 @@ export function resetStore(store) {
   store.tradeSetupHistory = [];
   store.macroRegime = null;
   store.tradeSetups = [];
+  store.sectorEtfReferences = new Map();
   store.earningsCalendar = new Map();
   store.pendingApprovals = new Map();
   store.positions = new Map();

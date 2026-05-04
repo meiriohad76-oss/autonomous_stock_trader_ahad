@@ -170,6 +170,22 @@ function componentScore(returnValue) {
   return returnValue === null ? null : clamp(returnValue / FULL_STRENGTH_DAILY_RETURN, -1, 1);
 }
 
+function etfReferenceRow(proxyTicker, sector, options = {}) {
+  const references = options.etfReferences || null;
+  const reference = references instanceof Map ? references.get(proxyTicker) : references?.[proxyTicker];
+  if (!reference) {
+    return null;
+  }
+  return {
+    ticker: proxyTicker,
+    entity_key: proxyTicker,
+    company_name: `${sector} ETF proxy`,
+    sector,
+    sector_etf_proxy: true,
+    market_reference: reference
+  };
+}
+
 function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
   const proxyTicker = SECTOR_ETF_PROXIES[sector] || null;
   const maxAgeHours = Number(options.maxAgeHours || 72);
@@ -200,7 +216,9 @@ function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
     });
   }
 
-  const proxyRow = proxyTicker ? allRows.find((row) => row.ticker === proxyTicker || row.entity_key === proxyTicker) : null;
+  const proxyRow = proxyTicker
+    ? allRows.find((row) => row.ticker === proxyTicker || row.entity_key === proxyTicker) || etfReferenceRow(proxyTicker, sector, options)
+    : null;
   const proxyValidation = proxyRow ? validateMarketReference(proxyRow, { maxAgeHours }) : null;
   const etfReturn = proxyValidation?.ok ? proxyValidation.returnValue : null;
   const topConstituents = usable
@@ -272,6 +290,8 @@ function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
       etf_proxy: proxyTicker,
       etf_return: etfReturn === null ? null : round(etfReturn, 6),
       etf_status: etfReturn === null ? (proxyTicker ? "not_available" : "not_configured") : "available",
+      etf_provider: proxyValidation?.ok ? proxyValidation.provider : null,
+      etf_as_of: proxyValidation?.ok ? proxyValidation.asOf : null,
       top_constituent_return: topConstituentReturn === null ? null : round(topConstituentReturn, 6),
       equal_weight_top_return: equalWeightTopReturn === null ? null : round(equalWeightTopReturn, 6),
       top_constituent_count: topConstituents.length,
@@ -324,6 +344,9 @@ export function buildSectorStrengthSnapshot(rows = [], options = {}) {
   const grouped = new Map();
 
   for (const row of rows) {
+    if (row?.sector_etf_proxy || row?.asset_type === "etf") {
+      continue;
+    }
     const sector = row?.sector || "Unknown";
     if (!sector || sector === "Unknown") {
       continue;

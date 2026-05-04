@@ -183,6 +183,7 @@ async function main() {
   const sectorRows = Array.isArray(watchlist?.sectors) ? watchlist.sectors : [];
   const sectorTapeRows = sectorRows.filter((sector) => sector.score_source === "sector_tape" || sector.sector_strength);
   const scoredSectorTapeRows = sectorTapeRows.filter((sector) => sector.score_available && sector.sector_strength?.score !== null);
+  const etfAvailableRows = sectorTapeRows.filter((sector) => sector.sector_strength?.etf_status === "available");
   const fakeZeroRows = sectorTapeRows
     .filter(
       (sector) =>
@@ -195,8 +196,14 @@ async function main() {
   addCheck("market_sector_tape_contract", sectorTapeRows.length >= 10 && scoredSectorTapeRows.length >= 10 && !fakeZeroRows.length ? "pass" : "warning", {
     sector_tape_rows: sectorTapeRows.length,
     scored_sector_tape_rows: scoredSectorTapeRows.length,
+    etf_available_rows: etfAvailableRows.length,
     fake_zero_rows: fakeZeroRows.slice(0, 30),
     sector_strength_summary: watchlist?.sector_strength || null
+  });
+  addCheck("market_sector_etf_proxy_data", etfAvailableRows.length >= Math.min(8, sectorTapeRows.length) ? "pass" : "warning", {
+    etf_available_rows: etfAvailableRows.length,
+    expected_minimum: Math.min(8, sectorTapeRows.length),
+    note: "ETF proxies use live quote data when available, or the provider's latest close when the market is closed. Top-stock tape remains available even if ETF providers are rate-limited."
   });
 
   const secQueue = await read("/api/fundamentals/sec-queue?limit=10");

@@ -49,7 +49,22 @@ function row(ticker, sector, percentChange, marketCap, extra = {}) {
     row("LLY", "Health Care", -0.004, 800_000_000_000),
     row("UNH", "Health Care", -0.006, 500_000_000_000)
   ];
+  const etfReferences = new Map([
+    [
+      "XLK",
+      {
+        ticker: "XLK",
+        provider: "finnhub",
+        live: true,
+        as_of: now,
+        current_price: 250,
+        absolute_change: 2.5,
+        percent_change: 0.01
+      }
+    ]
+  ]);
   const snapshot = buildSectorStrengthSnapshot(rows, {
+    etfReferences,
     sectorStates: [
       {
         entity_key: "Information Technology",
@@ -68,6 +83,8 @@ function row(ticker, sector, percentChange, marketCap, extra = {}) {
   assert.equal(tech.score_available, true, "Technology sector should have a usable top-stock tape score.");
   assert.equal(tech.sentiment_regime, "bullish", "Positive top-stock tape should classify as bullish.");
   assert.equal(tech.sector_strength.top_constituent_count, 5);
+  assert.equal(tech.sector_strength.etf_status, "available", "Technology sector should attach ETF proxy performance when available.");
+  assert.equal(tech.sector_strength.etf_provider, "finnhub");
   assert.equal(health.sector_strength.normalized_warning_count, 1, "Provider percent-unit rows should be normalized.");
   assert.equal(health.sector_strength.outlier_count, 1, "Extreme impossible provider returns should be rejected as outliers.");
   assert.ok(health.sector_strength.top_constituent_return < 0, "Health Care tape should keep the valid negative rows.");

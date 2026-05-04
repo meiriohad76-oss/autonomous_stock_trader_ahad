@@ -55,7 +55,7 @@ import { createSocialSentimentCollector } from "./domain/social-sentiment.js";
 import { createTradePrintsCollector } from "./domain/trade-prints.js";
 import { createExecutionAgent as createHumanApprovalAgent } from "./domain/execution.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
-import { buildSectorStrengthSnapshot, normalizeReferenceReturn } from "./domain/sector-strength.js";
+import { SECTOR_ETF_PROXIES, buildSectorStrengthSnapshot, normalizeReferenceReturn } from "./domain/sector-strength.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
   marketFlowVolumeSpikeThreshold: { env: "MARKET_FLOW_VOLUME_SPIKE_THRESHOLD", min: 1, max: 20, digits: 2 },
@@ -965,6 +965,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
 
   const sectorStrength = buildSectorStrengthSnapshot(fullFundamentalRows, {
     sectorStates: [...dedupedSectorStates.values()],
+    etfReferences: store.sectorEtfReferences,
     asOf: store.health.lastUpdate,
     window: windowKey,
     config
@@ -1073,6 +1074,19 @@ function trackedFundamentalCompanies(store) {
   }
 
   return universe.map((company) => liveByTicker.get(company.ticker) || company);
+}
+
+function sectorEtfProxyCompanies() {
+  return Object.entries(SECTOR_ETF_PROXIES).map(([sector, ticker]) => ({
+    ticker,
+    company_name: `${sector} Select Sector ETF proxy`,
+    company: `${sector} Select Sector ETF proxy`,
+    sector,
+    industry: "Sector ETF Proxy",
+    asset_type: "etf",
+    sector_etf_proxy: true,
+    metrics: {}
+  }));
 }
 
 function activePollingFlag(source = {}, staleMs = 600_000) {
@@ -1443,6 +1457,58 @@ export function createSentimentApp() {
     }
   }
 
+  async function refreshSectorEtfReferences() {
+    const proxies = sectorEtfProxyCompanies();
+    const health = {
+      enabled: true,
+      provider: config.fundamentalMarketDataProvider,
+      proxy_count: proxies.length,
+      last_poll_at: new Date().toISOString(),
+      last_success_at: null,
+      last_error: null,
+      refreshed_proxies: 0,
+      available_proxies: store.sectorEtfReferences?.size || 0,
+      fallback_active: false,
+      notes: "Market Agent sector ETF proxies use current quote data when available, or the provider's latest close when markets are closed."
+    };
+    store.health.liveSources.sector_etf_proxies = health;
+
+    try {
+      const referenceMap = await fundamentalMarketDataService.getReferenceBatch(proxies);
+      store.sectorEtfReferences = new Map(
+        [...referenceMap.entries()].filter(([, reference]) => reference?.live === true && reference?.provider !== "synthetic")
+      );
+      health.refreshed_proxies = referenceMap.size;
+      health.available_proxies = store.sectorEtfReferences.size;
+      health.last_success_at = new Date().toISOString();
+      health.fallback_active = [...referenceMap.values()].some((reference) => reference?.provider === "synthetic" || reference?.live !== true);
+      health.last_error =
+        store.sectorEtfReferences.size === proxies.length
+          ? null
+          : `${proxies.length - store.sectorEtfReferences.size} ETF proxy reference(s) were unavailable or fallback.`;
+      store.bus.emit("event", {
+        type: "sector_etf_proxy_update",
+        timestamp: health.last_success_at,
+        proxy_count: proxies.length,
+        available_proxies: store.sectorEtfReferences.size,
+        provider: config.fundamentalMarketDataProvider
+      });
+      return {
+        refreshed_proxies: referenceMap.size,
+        available_proxies: store.sectorEtfReferences.size,
+        proxies: [...store.sectorEtfReferences.entries()].map(([ticker, reference]) => ({
+          ticker,
+          provider: reference.provider,
+          as_of: reference.as_of,
+          percent_change: reference.percent_change
+        }))
+      };
+    } catch (error) {
+      health.last_error = error.message;
+      throw error;
+    }
+  }
+
   async function refreshBackupStatus() {
     store.health.databaseBackup = await persistence.getBackupStatus();
     return store.health.databaseBackup;
@@ -1684,6 +1750,8 @@ export function createSentimentApp() {
         fundamental_market_data_provider: config.fundamentalMarketDataProvider,
         auto_start_fundamental_market_data: config.autoStartFundamentalMarketData,
         fundamental_market_data_max_companies_per_poll: config.fundamentalMarketDataMaxCompaniesPerPoll,
+        sector_etf_proxies: SECTOR_ETF_PROXIES,
+        sector_etf_proxy_provider: config.fundamentalMarketDataProvider,
         fundamental_sec_enabled: config.fundamentalSecEnabled,
         fundamental_sec_max_companies_per_poll: config.fundamentalSecMaxCompaniesPerPoll,
         fundamental_sec_baseline_poll_ms: config.fundamentalSecBaselinePollMs,
@@ -1782,7 +1850,8 @@ export function createSentimentApp() {
         sec_13f: !config.sec13fEnabled,
         sec_fundamentals: !config.fundamentalSecEnabled,
         lightweight_state: config.databaseEnabled || !config.lightweightStateEnabled,
-        database_backup: !config.databaseEnabled || config.databaseProvider !== "sqlite" || !config.sqliteBackupEnabled
+        database_backup: !config.databaseEnabled || config.databaseProvider !== "sqlite" || !config.sqliteBackupEnabled,
+        sector_etf_proxies: false
       };
 
       function assertSourceEnabled(key) {
@@ -1886,6 +1955,8 @@ export function createSentimentApp() {
             effective_limit: limit || null,
             provider_cap: config.fundamentalMarketDataMaxCompaniesPerPoll || null
           };
+        } else if (canonicalSource === "sector_etf_proxies") {
+          result = await refreshSectorEtfReferences();
         } else if (canonicalSource === "fundamental_universe") {
           result = await ensureFundamentalCoverage({ force: true });
         } else {
@@ -2056,6 +2127,7 @@ export function createSentimentApp() {
       }, {});
       const sectorStrength = buildSectorStrengthSnapshot(trackedFundamentalCompanies(store), {
         sectorStates: Object.values(windows).filter(Boolean),
+        etfReferences: store.sectorEtfReferences,
         asOf: store.health.lastUpdate,
         window: config.defaultWindow,
         config
@@ -2865,6 +2937,7 @@ export function createSentimentApp() {
 
     launch("live_news", () => liveNewsCollector.start());
     launch("market_data", () => marketDataService.start());
+    launch("sector_etf_proxies", () => refreshSectorEtfReferences());
     launch("sec_form4", () => secInsiderCollector.start());
 
     if (config.sec13fEnabled && (config.autoStartSec13f || autonomous)) {

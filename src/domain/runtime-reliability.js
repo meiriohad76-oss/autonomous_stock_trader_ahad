@@ -402,6 +402,21 @@ function sourceSpecs(config) {
       notes: "Turns abnormal volume and price shocks into money-flow events."
     },
     {
+      key: "sector_etf_proxies",
+      label: "Sector ETF Proxies",
+      category: "prices",
+      provider: config.fundamentalMarketDataProvider,
+      enabled: true,
+      autoStart: true,
+      intervalMs: config.marketDataRefreshMs,
+      staleAfterHours: 120,
+      softErrorsWhenFresh: true,
+      criticality: "medium",
+      configured: config.fundamentalMarketDataProvider === "synthetic" || hasConfiguredLiveMarketProvider(config, config.fundamentalMarketDataProvider),
+      missingConfigReason: marketProviderMissingConfigReason(config.fundamentalMarketDataProvider, "Sector ETF proxy quotes"),
+      notes: "Feeds Market Agent sector strength with XLK/XLY/XLV-style ETF proxy performance when provider quotes are available."
+    },
+    {
       key: "earnings_calendar",
       healthKey: "yahoo_earnings_calendar",
       label: "Earnings Calendar",
@@ -771,6 +786,14 @@ function buildAvailableActions(sources, config) {
       safe: true,
       enabled: sourceCanRun("market_flow"),
       description: "Run one abnormal volume/flow scan without starting a timer."
+    },
+    {
+      action: "poll_once",
+      label: "Refresh Sector ETF Proxies",
+      source: "sector_etf_proxies",
+      safe: true,
+      enabled: sourceCanRun("sector_etf_proxies"),
+      description: "Refresh sector ETF proxy quotes for the Market Agent without touching stock fundamentals."
     },
     {
       action: "poll_once",

@@ -2609,6 +2609,7 @@ function buildAgentProcess(agentKey) {
         "Signals Agent can be filtered by sector focus."
       ],
       actions: [
+        runtimeActionButton("poll_once", "sector_etf_proxies", "Refresh ETFs", "query_stats"),
         runtimeActionButton("poll_once", "fundamental_market_data", "Refresh Pricing", "database"),
         runtimeActionButton("poll_once", "market_flow", "Poll Flow", "monitoring")
       ]
