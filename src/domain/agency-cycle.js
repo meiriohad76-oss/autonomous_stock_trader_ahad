@@ -837,12 +837,16 @@ export function buildAgencyCycleStatus({
   const finalSelectionLlmReviews = finalSelectionCandidates
     .filter((candidate) => candidate?.llm_explanation)
     .map((candidate) => candidate.llm_explanation);
+  const finalSelectionLlmCount = finalSelectionLlmReviews.length ||
+    Object.values(finalSelection?.llm_agent?.counts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
   const effectiveLlmSelection =
     llmSelection ||
     (finalSelection?.llm_agent
       ? {
           ...finalSelection.llm_agent,
-          recommendations: finalSelectionLlmReviews
+          recommendations: finalSelectionLlmReviews.length
+            ? finalSelectionLlmReviews
+            : Array.from({ length: finalSelectionLlmCount }, () => ({}))
         }
       : null);
   const sources = sourceByKey(workflowStatus);

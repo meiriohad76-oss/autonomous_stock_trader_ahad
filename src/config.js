@@ -450,6 +450,7 @@ export const config = {
   llmSelectionMaxCandidates: Number(process.env.LLM_SELECTION_MAX_CANDIDATES || 12),
   llmSelectionMaxOutputTokens: Number(process.env.LLM_SELECTION_MAX_OUTPUT_TOKENS || 12000),
   llmSelectionRequestTimeoutMs: Number(process.env.LLM_SELECTION_REQUEST_TIMEOUT_MS || 30000),
+  llmSelectionCacheMs: Number(process.env.LLM_SELECTION_CACHE_MS || 300000),
   llmSelectionApiUrl,
   llmSelectionApiKey,
   riskMaxGrossExposurePct: Number(process.env.RISK_MAX_GROSS_EXPOSURE_PCT || 0.35),

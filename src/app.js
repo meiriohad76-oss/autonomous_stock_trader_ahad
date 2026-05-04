@@ -1746,7 +1746,8 @@ export function createSentimentApp() {
           configured: Boolean(config.llmSelectionApiUrl && config.llmSelectionApiKey),
           min_confidence: config.llmSelectionMinConfidence,
           max_candidates: config.llmSelectionMaxCandidates,
-          request_timeout_ms: config.llmSelectionRequestTimeoutMs
+          request_timeout_ms: config.llmSelectionRequestTimeoutMs,
+          cache_ms: config.llmSelectionCacheMs
         },
         fundamental_market_data_provider: config.fundamentalMarketDataProvider,
         auto_start_fundamental_market_data: config.autoStartFundamentalMarketData,

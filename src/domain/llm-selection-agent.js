@@ -1,6 +1,7 @@
 import { clamp, round } from "../utils/helpers.js";
 
 const LLM_SELECTION_PROMPT_VERSION = "llm_selection_committee_v2";
+let openAiReviewCache = null;
 
 const LLM_SELECTION_INSTRUCTIONS = `
 You are the LLM Selection Agent inside a supervised multi-agent paper-trading agency.
@@ -501,7 +502,26 @@ async function openAiRecommendations({ setups, config, portfolioPolicy }) {
   const localByTicker = new Map(local.map((item) => [item.ticker, item]));
   const setupByTicker = new Map(setups.map((item) => [item.ticker, item]));
   const promptPack = buildPromptPack({ setups: reviewedSetups, portfolioPolicy, config });
-  const response = await fetchOpenAiReview({ config, promptPack });
+  const cacheMs = Math.max(0, Number(config.llmSelectionCacheMs || 300000));
+  const cacheKey = JSON.stringify({
+    model: config.llmSelectionModel,
+    prompt_version: promptPack.prompt_version,
+    policy: promptPack.policy,
+    candidates: promptPack.candidates
+  });
+  let response = null;
+  if (cacheMs && openAiReviewCache?.key === cacheKey && openAiReviewCache.expires_at > Date.now()) {
+    response = openAiReviewCache.response;
+  } else {
+    response = await fetchOpenAiReview({ config, promptPack });
+    if (cacheMs) {
+      openAiReviewCache = {
+        key: cacheKey,
+        response,
+        expires_at: Date.now() + cacheMs
+      };
+    }
+  }
   const externalByTicker = new Map((response.recommendations || []).map((item) => [String(item.ticker || "").toUpperCase(), item]));
 
   return setups.map((setup) => {
