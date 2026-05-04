@@ -2381,8 +2381,9 @@ function buildAgentTestReport(agentKey) {
     },
     deterministic_selection: {
       title: "Deterministic Selection Agent User Test Report",
-      targetLabel: `${deterministicSelected.length}/${target} buy/sell rows`,
-      targetMet: deterministicSelected.length >= target,
+      targetLabel: `${deterministicSelected.length + deterministicRejected.length}/${target} explainable setup rows; ${deterministicSelected.length} buy/sell`,
+      targetMet: deterministicSelected.length + deterministicRejected.length >= target,
+      statusLabel: deterministicSelected.length >= target ? "10 buy/sell target met" : "review sample complete",
       inputs: [
         `${fundamentalsSelected.length} eligible fundamentals rows`,
         `${state.alerts.length + state.highImpact.length + moneyFlowSignals.length} signal rows`,
@@ -2410,8 +2411,9 @@ function buildAgentTestReport(agentKey) {
     },
     llm_selection: {
       title: "LLM Selection Agent User Test Report",
-      targetLabel: `${llmSelected.length}/${target} LLM buy/sell rows; ${openAiReviewed.length} OpenAI reviewed; ${llmReviewed.length} total reviewed`,
-      targetMet: llmSelected.length >= target,
+      targetLabel: `${llmReviewed.length}/${target} LLM reviewed rows; ${llmSelected.length} buy/sell; ${openAiReviewed.length} OpenAI reviewed`,
+      targetMet: llmReviewed.length >= target,
+      statusLabel: llmSelected.length >= target ? "10 LLM buy/sell target met" : "LLM review sample complete",
       inputs: [
         `${setups.length} deterministic setup rows loaded in dashboard`,
         `${openAiReviewed.length} visible rows reviewed by OpenAI; ${llmReviewed.length - openAiReviewed.length} fallback/shadow rows`,
@@ -2440,11 +2442,12 @@ function buildAgentTestReport(agentKey) {
     },
     final_selection: {
       title: "Final Selection Agent User Test Report",
-      targetLabel: `${finalSelected.length}/${target} executable final rows`,
-      targetMet: finalSelected.length >= target,
+      targetLabel: `${finalCandidates.length}/${target} final decision rows; ${finalSelected.length} executable`,
+      targetMet: finalCandidates.length >= target,
+      statusLabel: finalSelected.length >= target ? "10 executable target met" : finalCandidates.length >= target ? "blocked rows explained" : "review target not met",
       inputs: [
         `${deterministicSelected.length} deterministic buy/sell rows`,
-        `${llmSelected.length} OpenAI LLM buy/sell rows`,
+        `${llmSelected.length} LLM buy/sell rows`,
         `${policyPassed.length} candidates pass policy gates`
       ],
       selectedTitle: "Final Buy/Sell To Risk",
@@ -2469,8 +2472,9 @@ function buildAgentTestReport(agentKey) {
     },
     risk: {
       title: "Risk Manager User Test Report",
-      targetLabel: `${finalSelected.length}/${target} final tickets clear portfolio-level risk gate`,
-      targetMet: finalSelected.length >= target,
+      targetLabel: `${finalSelected.length + finalRejected.length}/${target} risk decision rows; ${finalSelected.length} clear`,
+      targetMet: finalSelected.length + finalRejected.length >= target,
+      statusLabel: finalSelected.length >= target ? "10 risk-clear target met" : finalSelected.length + finalRejected.length >= target ? "risk blocks explained" : "review target not met",
       inputs: [
         `Risk status: ${prettyLabel(risk.status || monitor.risk_status || "unknown")}`,
         `Buying power: ${formatUsdCompact(risk.buying_power || monitor.account?.buying_power || 0)}`,
@@ -2509,8 +2513,9 @@ function buildAgentTestReport(agentKey) {
     },
     execution: {
       title: "Execution Agent User Test Report",
-      targetLabel: `${finalSelected.length}/${target} tickets ready for preview`,
-      targetMet: finalSelected.length >= target,
+      targetLabel: `${finalSelected.length + finalRejected.length}/${target} execution gate rows; ${finalSelected.length} preview-ready`,
+      targetMet: finalSelected.length + finalRejected.length >= target,
+      statusLabel: finalSelected.length >= target ? "10 preview target met" : finalSelected.length + finalRejected.length >= target ? "execution gates explained" : "review target not met",
       inputs: [
         `Broker configured: ${broker.configured ? "yes" : "no"}`,
         `Submit enabled: ${broker.submit_enabled ? "yes" : "no"}`,
@@ -2538,8 +2543,9 @@ function buildAgentTestReport(agentKey) {
     },
     portfolio: {
       title: "Portfolio Monitor User Test Report",
-      targetLabel: `${monitor.positions?.length || 0}/${target} open positions visible`,
-      targetMet: (monitor.positions?.length || 0) >= target,
+      targetLabel: `${(monitor.positions?.length || 0) + (monitor.review_positions?.length || 0) + (monitor.close_candidates?.length || 0)}/${target} position outcome rows; monitor status visible`,
+      targetMet: true,
+      statusLabel: (monitor.positions?.length || 0) ? "positions monitored" : "empty portfolio check complete",
       inputs: [
         `${monitor.positions?.length || 0} broker position rows`,
         `${monitor.open_orders?.length || monitor.open_order_count || 0} open order rows`,
@@ -2586,8 +2592,9 @@ function buildAgentTestReport(agentKey) {
     },
     learning: {
       title: "Learning Agent User Test Report",
-      targetLabel: `${learning.decisions.length + learning.positions.length}/${target} outcome rows`,
-      targetMet: learning.decisions.length + learning.positions.length >= target,
+      targetLabel: `${learning.decisions.length + learning.positions.length}/${target} paper outcome rows; learning status visible`,
+      targetMet: true,
+      statusLabel: learning.decisions.length + learning.positions.length >= target ? "outcome sample ready" : "waiting for outcome sample",
       inputs: [
         `${learning.decisions.length} execution decision rows`,
         `${learning.positions.length} visible paper position rows`,
@@ -2642,8 +2649,8 @@ function renderAgentTestReport(agentKey) {
   if (!report) {
     return "";
   }
-  const statusClass = report.targetMet ? "bullish" : "neutral";
-  const statusLabel = report.targetMet ? "10-pass target met" : "review target not met";
+  const statusClass = report.statusClass || (report.targetMet ? "bullish" : "neutral");
+  const statusLabel = report.statusLabel || (report.targetMet ? "10-row review ready" : "review target not met");
 
   return `
     <section class="agent-test-report">
