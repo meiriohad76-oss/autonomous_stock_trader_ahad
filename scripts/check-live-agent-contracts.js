@@ -179,6 +179,26 @@ async function main() {
     note: "Expected only while the user intentionally lowers the screener threshold for workflow testing."
   });
 
+  const watchlist = await read("/api/sentiment/watchlist?window=1h");
+  const sectorRows = Array.isArray(watchlist?.sectors) ? watchlist.sectors : [];
+  const sectorTapeRows = sectorRows.filter((sector) => sector.score_source === "sector_tape" || sector.sector_strength);
+  const scoredSectorTapeRows = sectorTapeRows.filter((sector) => sector.score_available && sector.sector_strength?.score !== null);
+  const fakeZeroRows = sectorTapeRows
+    .filter(
+      (sector) =>
+        sector.score_available &&
+        Number(sector.weighted_sentiment || 0) === 0 &&
+        sector.sector_strength?.top_constituent_return === null &&
+        sector.sector_strength?.etf_return === null
+    )
+    .map((sector) => sector.entity_key);
+  addCheck("market_sector_tape_contract", sectorTapeRows.length >= 8 && !fakeZeroRows.length ? "pass" : "warning", {
+    sector_tape_rows: sectorTapeRows.length,
+    scored_sector_tape_rows: scoredSectorTapeRows.length,
+    fake_zero_rows: fakeZeroRows.slice(0, 30),
+    sector_strength_summary: watchlist?.sector_strength || null
+  });
+
   const secQueue = await read("/api/fundamentals/sec-queue?limit=10");
   const trackedSec =
     secQueue?.tracked_companies || secQueue?.trackedCompanies || secQueue?.tracked_count || (Array.isArray(secQueue) ? secQueue.length : 0);

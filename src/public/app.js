@@ -921,14 +921,16 @@ function marketDataReliabilityLabel() {
 }
 
 function marketSectorScoreText(sector) {
-  return sector?.score_available ? formatNumber(sector.weighted_sentiment) : "n/a";
+  const score = sector?.sector_strength?.score ?? sector?.weighted_sentiment;
+  return sector?.score_available && score !== null && score !== undefined ? formatNumber(score) : "n/a";
 }
 
 function marketSectorConfidenceText(sector) {
   if (!sector?.score_available) {
     return "insufficient fresh signal";
   }
-  return `${formatNumber((sector.weighted_confidence || 0) * 100, 0)}% conf`;
+  const confidence = sector?.sector_strength?.confidence ?? sector.weighted_confidence ?? 0;
+  return `${formatNumber(confidence * 100, 0)}% conf`;
 }
 
 function marketSectorSourceText(sector) {
@@ -936,6 +938,11 @@ function marketSectorSourceText(sector) {
     return sector?.source_label === "no fresh sector state"
       ? "no fresh sector state"
       : "low-signal context only";
+  }
+  if (sector?.sector_strength) {
+    const top = sector.sector_strength.top_constituent_return;
+    const etf = sector.sector_strength.etf_return;
+    return `top stocks ${top === null || top === undefined ? "n/a" : formatSignedPercent(top)}; ETF ${etf === null || etf === undefined ? "n/a" : formatSignedPercent(etf)}`;
   }
   return sector?.source_label || "sector context";
 }
@@ -952,6 +959,25 @@ function marketSectorSummaries(rows = filteredLeaderboard()) {
     const live = liveSectors.find((item) => item.entity_key === sector.entity_key);
     if (!live) {
       return { ...sector, score_available: false, source_label: "no fresh sector state" };
+    }
+    if (live.score_source === "sector_tape" || live.sector_strength) {
+      const strength = live.sector_strength || {};
+      const weightedSentiment = Number(strength.score ?? live.weighted_sentiment ?? 0);
+      return {
+        ...sector,
+        ...live,
+        sentiment_regime: live.sentiment_regime || strength.label || (sentimentLabel(weightedSentiment).toLowerCase().includes("bearish")
+          ? "bearish"
+          : sentimentLabel(weightedSentiment).toLowerCase().includes("bullish")
+            ? "bullish"
+            : "neutral"),
+        weighted_sentiment: weightedSentiment,
+        weighted_confidence: Number(strength.confidence ?? live.weighted_confidence ?? sector.weighted_confidence ?? 0),
+        tracked_names: Number(live.tracked_names ?? strength.tracked_constituent_count ?? sector.tracked_names ?? 0),
+        active_names: Number(live.active_names ?? sector.active_names ?? 0),
+        score_available: Boolean(live.score_available && strength.score !== null && strength.score !== undefined),
+        source_label: live.source_label || "top-stock sector tape"
+      };
     }
     const weightedSentiment = Number(live.weighted_sentiment ?? sector.weighted_sentiment ?? 0);
     const eventTypes = live.top_event_types || [];
@@ -982,6 +1008,26 @@ function marketSectorSummaries(rows = filteredLeaderboard()) {
       continue;
     }
     const weightedSentiment = Number(live.weighted_sentiment || 0);
+    if (live.score_source === "sector_tape" || live.sector_strength) {
+      const strength = live.sector_strength || {};
+      merged.push({
+        ...live,
+        entity_key: live.entity_key,
+        sentiment_regime: live.sentiment_regime || strength.label || (sentimentLabel(weightedSentiment).toLowerCase().includes("bearish")
+          ? "bearish"
+          : sentimentLabel(weightedSentiment).toLowerCase().includes("bullish")
+            ? "bullish"
+            : "neutral"),
+        weighted_sentiment: Number(strength.score ?? weightedSentiment),
+        weighted_confidence: Number(strength.confidence ?? live.weighted_confidence ?? 0),
+        average_momentum: 0,
+        tracked_names: Number(live.tracked_names ?? strength.tracked_constituent_count ?? 0),
+        active_names: Number(live.active_names || 0),
+        score_available: Boolean(live.score_available && strength.score !== null && strength.score !== undefined),
+        source_label: live.source_label || "top-stock sector tape"
+      });
+      continue;
+    }
     merged.push({
       entity_key: live.entity_key,
       sentiment_regime: live.sentiment_regime || (sentimentLabel(weightedSentiment).toLowerCase().includes("bearish")
@@ -1003,9 +1049,8 @@ function marketSectorSummaries(rows = filteredLeaderboard()) {
   }
 
   return merged.sort((a, b) => {
-    const aLive = a.source_label === "live sentiment state" ? 1 : 0;
-    const bLive = b.source_label === "live sentiment state" ? 1 : 0;
-    return bLive - aLive || Math.abs(b.weighted_sentiment) - Math.abs(a.weighted_sentiment) || b.weighted_confidence - a.weighted_confidence;
+    const availableDiff = Number(Boolean(b.score_available)) - Number(Boolean(a.score_available));
+    return availableDiff || Math.abs(b.weighted_sentiment) - Math.abs(a.weighted_sentiment) || b.weighted_confidence - a.weighted_confidence;
   });
 }
 
@@ -1975,7 +2020,7 @@ function buildAgentTestReport(agentKey) {
   const deterministicSelected = setups.filter((setup) => ["long", "short"].includes(setup.action));
   const deterministicRejected = setups.filter((setup) => !["long", "short"].includes(setup.action));
   const scoredMarketSectors = marketSectors.filter((sector) => sector.score_available);
-  const marketCoverageCount = activeRows.length + scoredMarketSectors.length;
+  const unscoredMarketSectors = marketSectors.filter((sector) => !sector.score_available);
   const openAiReviewed = finalCandidates.filter((candidate) => candidate.llm_explanation?.reviewer === "openai");
   const llmSelected = openAiReviewed.filter((candidate) => ["long", "short"].includes(candidate.llm_action));
   const llmRejected = openAiReviewed.filter((candidate) => !["long", "short"].includes(candidate.llm_action));
@@ -2047,39 +2092,75 @@ function buildAgentTestReport(agentKey) {
     },
     market: {
       title: "Market Agent User Test Report",
-      targetLabel: `${marketCoverageCount}/${target} fresh market-context rows`,
-      targetMet: marketCoverageCount >= target,
+      targetLabel: `${scoredMarketSectors.length}/${target} scored sector rows`,
+      targetMet: scoredMarketSectors.length >= target,
       inputs: [
         `Macro regime: ${prettyLabel(state.macroRegime?.regime_label || "unknown")} (${testReportScore(state.macroRegime?.conviction, { percent: true })} conviction)`,
         `${marketSectors.length} sector context rows`,
         `${scoredMarketSectors.length} sectors with usable fresh score`,
         `${activeRows.length} names with fresh market-signal rows`,
-        `Sector source: sentiment/news/flow context, not pure ETF price performance`,
+        `Sector source: top-stock tape, optional sector ETF proxy, and usable sentiment/flow context`,
         `Price source: ${marketDataReliabilityLabel()}`
       ],
       selectedTitle: "Market Context Accepted",
-      rejectedTitle: "No Fresh Market Signal",
-      selected: (activeRows.length ? activeRows : setups.filter((setup) => setup.macro_regime)).map((item) =>
-        agentTestRow({
-          item: item.entity_key || item.ticker,
-          result: item.sentiment_regime || item.macro_regime?.bias_label || "context",
-          score: item.weighted_sentiment !== undefined ? testReportScore(item.weighted_sentiment, { percent: false }) : testReportScore(item.score_components?.gap, { percent: true }),
-          reason: item.entity_key
-            ? `${formatNumber((item.weighted_confidence || 0) * 100, 1)}% confidence; ${formatSignedPercent(item.momentum_delta || 0)} momentum. This is market context only, not final selection.`
-            : `${prettyLabel(item.macro_regime?.regime_label || "macro")} regime included in setup scoring.`
+      rejectedTitle: "Market Context Held Back",
+      selected: scoredMarketSectors
+        .map((sector) => {
+          const strength = sector.sector_strength || {};
+          return agentTestRow({
+            item: sector.entity_key,
+            result: strength.label || sector.sentiment_regime || "context",
+            score: testReportScore(strength.score ?? sector.weighted_sentiment, { percent: false }),
+            reason: `${sector.entity_key} has usable sector tape: top-stock return ${
+              strength.top_constituent_return === null || strength.top_constituent_return === undefined
+                ? "n/a"
+                : formatSignedPercent(strength.top_constituent_return)
+            } from ${strength.top_constituent_count || 0}/${strength.tracked_constituent_count || sector.tracked_names || 0} top constituents; ETF ${
+              strength.etf_proxy || "n/a"
+            } ${strength.etf_return === null || strength.etf_return === undefined ? "n/a" : formatSignedPercent(strength.etf_return)}; quality ${
+              strength.data_quality || "unknown"
+            }.`
+          });
         })
-      ),
-      rejected: universe
-        .filter((row) => !row.sentiment_visible)
-        .slice(0, 30)
-        .map((row) =>
+        .concat(
+          activeRows.slice(0, Math.max(0, target - scoredMarketSectors.length)).map((item) =>
+            agentTestRow({
+              item: item.entity_key || item.ticker,
+              result: item.sentiment_regime || item.macro_regime?.bias_label || "context",
+              score:
+                item.weighted_sentiment !== undefined
+                  ? testReportScore(item.weighted_sentiment, { percent: false })
+                  : testReportScore(item.score_components?.gap, { percent: true }),
+              reason: item.entity_key
+                ? `${formatNumber((item.weighted_confidence || 0) * 100, 1)}% confidence; ${formatSignedPercent(item.momentum_delta || 0)} momentum. This is market context only, not final selection.`
+                : `${prettyLabel(item.macro_regime?.regime_label || "macro")} regime included in setup scoring.`
+            })
+          )
+        ),
+      rejected: unscoredMarketSectors
+        .slice(0, 10)
+        .map((sector) =>
           agentTestRow({
-            item: row.entity_key,
-            result: "inactive",
+            item: sector.entity_key,
+            result: "held",
             score: "n/a",
-            reason: "No fresh market-signal row is visible in the selected dashboard window, so this stock stays out of Market Agent context even if it remains in the fundamentals universe.",
+            reason: sector.sector_strength?.summary || `No usable sector score is available. Source state: ${marketSectorSourceText(sector)}.`,
             tone: "neutral"
           })
+        )
+        .concat(
+          universe
+            .filter((row) => !row.sentiment_visible)
+            .slice(0, Math.max(0, 10 - unscoredMarketSectors.length))
+            .map((row) =>
+              agentTestRow({
+                item: row.entity_key,
+                result: "inactive",
+                score: "n/a",
+                reason: "No fresh market-signal row is visible in the selected dashboard window, so this stock stays out of Market Agent context even if it remains in the fundamentals universe.",
+                tone: "neutral"
+              })
+            )
         )
     },
     signals: {
@@ -2520,7 +2601,7 @@ function buildAgentProcess(agentKey) {
           : "Strongest sectors: unavailable until fresh sector signals arrive.",
         `Active names: ${topTickersLabel(activeRows, 4)}`,
         `Market bias: ${prettyLabel(state.macroRegime?.bias_label || "balanced")}`,
-        "Sector labels reflect live sentiment/news/flow context, not pure ETF price performance."
+        "Sector labels reflect top-stock price tape, optional ETF proxy data, and usable sentiment/news/flow context."
       ],
       handoff: [
         "Selection Agent receives sector tailwind/headwind context.",
@@ -4083,7 +4164,7 @@ function renderSectorStrip() {
     button.className = `sector-chip ${sentimentClass(sector.sentiment_regime)}`;
     button.innerHTML = `
       <span>${sector.entity_key}</span>
-      <strong>${formatNumber(sector.weighted_sentiment)}</strong>
+      <strong>${marketSectorScoreText(sector)}</strong>
     `;
     button.addEventListener("click", async () => {
       state.selectedSector = sector.entity_key;
@@ -4982,7 +5063,7 @@ function renderMarketsView() {
   elements.marketsBreadth.innerHTML = `
     <div class="workspace-stat-card"><span>Macro Regime</span><strong>${prettyLabel(macro.regime_label || "unknown")}</strong><small>${escapeHtml(macro.summary || "No macro summary loaded.")}</small></div>
     <div class="workspace-stat-card"><span>Macro Bias</span><strong>${prettyLabel(macro.bias_label || "unknown")}</strong><small>${testReportScore(macro.conviction, { percent: true })} conviction</small></div>
-    <div class="workspace-stat-card"><span>Sector Signal Source</span><strong>sentiment + flow</strong><small>Not pure ETF price performance.</small></div>
+    <div class="workspace-stat-card"><span>Sector Signal Source</span><strong>stock tape</strong><small>Top constituents, optional ETF proxy, and usable sentiment/flow.</small></div>
     <div class="workspace-stat-card"><span>Price Data</span><strong>${escapeHtml(marketDataReliabilityLabel())}</strong><small>Price fallback lowers trust in market-flow context.</small></div>
     <div class="workspace-stat-card"><span>Scored Sectors</span><strong>${scoredSectorCount}</strong><small>${scoredSectorCount ? "Fresh sector score available." : "No usable fresh sector score."}</small></div>
     <div class="workspace-stat-card"><span>Bullish Sectors</span><strong>${sectors.filter((sector) => sector.score_available && sector.sentiment_regime === "bullish").length}</strong></div>
@@ -5019,6 +5100,13 @@ function renderMarketsView() {
   const sectorFeed = activeSector
     ? state.liveFeed.filter((item) => item.ticker && tickerSector(item.ticker) === activeSector.entity_key).slice(0, 3)
     : [];
+  const activeStrength = activeSector?.sector_strength || {};
+  const activeTopReturn =
+    activeStrength.top_constituent_return === null || activeStrength.top_constituent_return === undefined
+      ? "n/a"
+      : formatSignedPercent(activeStrength.top_constituent_return);
+  const activeEtfReturn =
+    activeStrength.etf_return === null || activeStrength.etf_return === undefined ? "n/a" : formatSignedPercent(activeStrength.etf_return);
   elements.marketsSectorFocus.innerHTML = activeSector
     ? `
         <div class="sector-focus-shell">
@@ -5026,14 +5114,16 @@ function renderMarketsView() {
             <div>
               <div class="section-kicker">Sector Focus</div>
               <h3>${activeSector.entity_key}</h3>
-              <p>${activeSector.score_available ? prettyLabel(activeSector.sentiment_regime) : "No usable fresh"} sentiment score across ${sectorMembers.length} visible names, with ${activeSector.active_names || 0} currently carrying live sentiment flow. This is sentiment/news/flow context, not pure sector ETF price performance.</p>
+              <p>${activeSector.score_available ? prettyLabel(activeSector.sentiment_regime) : "No usable fresh"} sector tape score across ${sectorMembers.length} visible names. Top-stock tape is ${activeTopReturn}; ETF proxy ${activeStrength.etf_proxy || "n/a"} is ${activeEtfReturn}; usable sentiment/flow is included only when fresh.</p>
             </div>
             <button type="button" class="panel-action" data-clear-sector>Clear</button>
           </div>
           <div class="workspace-detail-grid">
-            <div class="workspace-stat-card"><span>Weighted Sentiment</span><strong>${marketSectorScoreText(activeSector)}</strong></div>
-            <div class="workspace-stat-card"><span>Sector Confidence</span><strong>${activeSector.score_available ? `${formatNumber(activeSector.weighted_confidence * 100, 0)}%` : "n/a"}</strong></div>
-            <div class="workspace-stat-card"><span>Active Sentiment Names</span><strong>${activeSector.active_names || 0}</strong></div>
+            <div class="workspace-stat-card"><span>Sector Score</span><strong>${marketSectorScoreText(activeSector)}</strong></div>
+            <div class="workspace-stat-card"><span>Confidence</span><strong>${activeSector.score_available ? `${formatNumber((activeStrength.confidence ?? activeSector.weighted_confidence ?? 0) * 100, 0)}%` : "n/a"}</strong></div>
+            <div class="workspace-stat-card"><span>Top 10 Tape</span><strong>${activeTopReturn}</strong><small>${activeStrength.top_constituent_count || 0}/${activeStrength.tracked_constituent_count || activeSector.tracked_names || 0} constituents</small></div>
+            <div class="workspace-stat-card"><span>ETF Proxy</span><strong>${activeStrength.etf_proxy || "n/a"}</strong><small>${activeEtfReturn}</small></div>
+            <div class="workspace-stat-card"><span>Data Quality</span><strong>${prettyLabel(activeStrength.data_quality || "unknown")}</strong><small>${activeStrength.rejected_count || 0} held out</small></div>
             <div class="workspace-stat-card"><span>Recent Feed Items</span><strong>${sectorFeed.length}</strong></div>
           </div>
           <ul class="workspace-list inline-list">
@@ -5240,7 +5330,7 @@ function renderMarketsSectorChart(sectors) {
       return `
         <g class="sector-bar-group ${state.selectedSector === sector.entity_key ? "is-selected" : ""}" data-sector="${sector.entity_key}">
           <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth}" height="${scoreAvailable ? Math.max(10, barHeight).toFixed(1) : 6}" rx="10" class="sector-bar ${fillClass}"></rect>
-          <text x="${(x + barWidth / 2).toFixed(1)}" y="${scoreAvailable ? (isPositive ? y - 8 : y + Math.max(18, barHeight + 18)) : y - 8}" class="chart-value">${scoreAvailable ? formatNumber(sector.weighted_sentiment) : "n/a"}</text>
+          <text x="${(x + barWidth / 2).toFixed(1)}" y="${scoreAvailable ? (isPositive ? y - 8 : y + Math.max(18, barHeight + 18)) : y - 8}" class="chart-value">${marketSectorScoreText(sector)}</text>
           <text x="${(x + barWidth / 2).toFixed(1)}" y="${labelY}" class="chart-label">${shortLabel}</text>
         </g>
       `;
@@ -5251,7 +5341,7 @@ function renderMarketsSectorChart(sectors) {
     ${grid}
     <line x1="0" y1="${zeroLine}" x2="${width}" y2="${zeroLine}" class="chart-axis"></line>
     ${bars}
-    <text x="8" y="18" class="chart-caption">Sector context; n/a means no usable fresh sector signal</text>
+    <text x="8" y="18" class="chart-caption">Sector tape score; n/a means no usable fresh sector data</text>
   `;
 }
 

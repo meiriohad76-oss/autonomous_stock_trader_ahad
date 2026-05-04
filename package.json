@@ -22,6 +22,7 @@
     "check:backtest": "node scripts/check-backtest.js",
     "check:live-data-failover": "node scripts/check-live-data-failover.js",
     "check:provider-rotation": "node scripts/check-provider-rotation.js",
+    "check:sector-strength": "node scripts/test-sector-strength.js",
     "check:live-agents": "node scripts/check-live-agent-contracts.js",
     "check:end-to-end": "node scripts/check-end-to-end-product.js",
     "check:agency-operational": "node scripts/check-agency-operational.js",

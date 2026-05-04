@@ -1,5 +1,6 @@
 import { clamp, round } from "../utils/helpers.js";
 import { filterFreshEvidence, shouldUseEvidence } from "./freshness-policy.js";
+import { buildSectorStrengthSnapshot } from "./sector-strength.js";
 
 const BULLISH_FLOW_EVENT_TYPES = new Set([
   "insider_buy",
@@ -86,6 +87,15 @@ function latestStatesForWindow(store, entityType, window) {
 export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 24 } = {}) {
   const marketPulse = latestStatesForWindow(store, "market", window).find((state) => state.entity_key === "market") || null;
   const sectorStates = latestStatesForWindow(store, "sector", window);
+  const sectorStrength = buildSectorStrengthSnapshot(store.fundamentals?.leaderboard || [], {
+    sectorStates,
+    asOf: store.health.lastUpdate,
+    window,
+    config: store.config
+  });
+  const sectorSignals = sectorStrength.sectors.some((sector) => sector.score_available)
+    ? sectorStrength.sectors.filter((sector) => sector.score_available)
+    : sectorStates;
   const tickerStates = latestStatesForWindow(store, "ticker", window);
   const fundamentals = store.fundamentals?.leaderboard || [];
   const screener = store.fundamentals?.screener || null;
@@ -97,11 +107,11 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
   const negativeAlertCount = activeAlerts.filter((item) => item.alert_type === "high_confidence_negative").length;
   const reversalAlertCount = activeAlerts.filter((item) => item.alert_type === "polarity_reversal").length;
 
-  const bullishSectorBreadth = sectorStates.length
-    ? sectorStates.filter((item) => item.weighted_sentiment >= 0.15).length / sectorStates.length
+  const bullishSectorBreadth = sectorSignals.length
+    ? sectorSignals.filter((item) => item.weighted_sentiment >= 0.15).length / sectorSignals.length
     : 0;
-  const bearishSectorBreadth = sectorStates.length
-    ? sectorStates.filter((item) => item.weighted_sentiment <= -0.15).length / sectorStates.length
+  const bearishSectorBreadth = sectorSignals.length
+    ? sectorSignals.filter((item) => item.weighted_sentiment <= -0.15).length / sectorSignals.length
     : 0;
   const positiveFundamentalBreadth = fundamentals.length
     ? fundamentals.filter(
@@ -219,14 +229,15 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
     riskFlags.push("leadership is mixed across the board");
   }
 
-  const dominantSectors = sectorStates
+  const dominantSectors = sectorSignals
     .slice()
     .sort((a, b) => Math.abs(b.weighted_sentiment) - Math.abs(a.weighted_sentiment))
     .slice(0, 3)
     .map((item) => ({
       sector: item.entity_key,
       weighted_sentiment: round(Number(item.weighted_sentiment || 0), 3),
-      confidence: round(Number(item.weighted_confidence || 0), 3)
+      confidence: round(Number(item.weighted_confidence || 0), 3),
+      source: item.score_source || "sentiment_state"
     }));
 
   return {
@@ -257,6 +268,7 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
       negative_fundamental_breadth: round(negativeFundamentalBreadth, 3),
       screener_pass_rate: round(screenerPassRate, 3)
     },
+    sector_strength: sectorStrength.summary,
     event_balance: {
       bullish_flow_count: bullishFlowCount,
       bearish_flow_count: bearishFlowCount,

@@ -35,6 +35,14 @@ function asNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function asPercentFraction(value) {
+  const parsed = asNumber(value);
+  if (parsed === null) {
+    return null;
+  }
+  return parsed / 100;
+}
+
 function marketHealth(store, config) {
   if (!store.health.liveSources.fundamental_market_data) {
     store.health.liveSources.fundamental_market_data = {
@@ -234,7 +242,7 @@ function mapLiveReference(ticker, quotePayload, statsPayload, fallbackCompany) {
   const previousClose = asNumber(quotePayload?.previous_close);
   const absoluteChange = asNumber(quotePayload?.change) ?? (currentPrice && previousClose ? currentPrice - previousClose : null);
   const percentChange =
-    asNumber(quotePayload?.percent_change) ??
+    asPercentFraction(quotePayload?.percent_change) ??
     (currentPrice && previousClose ? (currentPrice - previousClose) / Math.max(1, previousClose) : null);
   const marketCap = asNumber(valuations.market_capitalization);
   const leveredFreeCashFlow = asNumber(cashFlow.levered_free_cash_flow_ttm);

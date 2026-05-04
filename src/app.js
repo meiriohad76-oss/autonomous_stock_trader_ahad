@@ -55,6 +55,7 @@ import { createSocialSentimentCollector } from "./domain/social-sentiment.js";
 import { createTradePrintsCollector } from "./domain/trade-prints.js";
 import { createExecutionAgent as createHumanApprovalAgent } from "./domain/execution.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
+import { buildSectorStrengthSnapshot, normalizeReferenceReturn } from "./domain/sector-strength.js";
 
 const MARKET_FLOW_SETTINGS_FIELDS = {
   marketFlowVolumeSpikeThreshold: { env: "MARKET_FLOW_VOLUME_SPIKE_THRESHOLD", min: 1, max: 20, digits: 2 },
@@ -817,6 +818,35 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
     };
   }
 
+  function exposeMarketReference(fundamentalsRow) {
+    const reference = fundamentalsRow?.market_reference || null;
+    if (!reference) {
+      return { market_reference: null };
+    }
+
+    const normalizedReturn = normalizeReferenceReturn(reference, {
+      maxAbsoluteReturn: 0.2
+    });
+
+    return {
+      market_reference: {
+        ticker: reference.ticker || fundamentalsRow.ticker,
+        provider: reference.provider || null,
+        live: Boolean(reference.live),
+        partial_live: Boolean(reference.partial_live),
+        as_of: reference.as_of || null,
+        current_price: reference.current_price ?? null,
+        absolute_change: reference.absolute_change ?? null,
+        raw_percent_change: reference.percent_change ?? null,
+        percent_change: normalizedReturn.value ?? reference.percent_change ?? null,
+        percent_change_basis: normalizedReturn.basis,
+        percent_change_warning: normalizedReturn.warning,
+        market_cap: reference.market_cap ?? null,
+        beta: reference.beta ?? null
+      }
+    };
+  }
+
   for (const state of store.sentimentStates) {
     if (state.window !== windowKey) {
       continue;
@@ -871,6 +901,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         fundamental_data_source: fundamentalsRow?.data_source || null,
         fundamental_direction_label: fundamentalsRow?.direction_label || null,
         ...exposeFundamentalDecisionFields(fundamentalsRow),
+        ...exposeMarketReference(fundamentalsRow),
         sentiment_visible: Boolean(sentimentState)
       };
     })
@@ -893,6 +924,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
             fundamental_data_source: null,
             fundamental_direction_label: null,
             ...exposeFundamentalDecisionFields(null),
+            market_reference: null,
             sentiment_visible: true
           };
         })
@@ -931,8 +963,25 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
   const sentimentVisibleScreening = summarizeScreenStages(allUniverseRows.filter((row) => row.sentiment_visible));
   const filteredSentimentVisibleScreening = summarizeScreenStages(states.filter((row) => row.sentiment_visible));
 
-  const sectors = [...dedupedSectorStates.values()]
-    .sort((a, b) => b.weighted_sentiment - a.weighted_sentiment);
+  const sectorStrength = buildSectorStrengthSnapshot(fullFundamentalRows, {
+    sectorStates: [...dedupedSectorStates.values()],
+    asOf: store.health.lastUpdate,
+    window: windowKey,
+    config
+  });
+  const sectorStrengthByKey = new Map(sectorStrength.sectors.map((sector) => [sector.entity_key, sector]));
+  const sectors = [
+    ...sectorStrength.sectors,
+    ...[...dedupedSectorStates.values()].filter((sector) => !sectorStrengthByKey.has(sector.entity_key))
+  ].sort((a, b) => {
+    const aScoreAvailable = Number(Boolean(a.score_available));
+    const bScoreAvailable = Number(Boolean(b.score_available));
+    return (
+      bScoreAvailable - aScoreAvailable ||
+      Math.abs(Number(b.weighted_sentiment || 0)) - Math.abs(Number(a.weighted_sentiment || 0)) ||
+      Number(b.weighted_confidence || 0) - Number(a.weighted_confidence || 0)
+    );
+  });
 
     return {
       as_of: store.health.lastUpdate,
@@ -967,6 +1016,7 @@ function buildWatchlistSnapshot(store, windowKey, filters = {}) {
         )
       },
       sectors,
+      sector_strength: sectorStrength.summary,
       alerts: buildActiveAlerts(store, 10),
     source_quality: [...store.sourceStats.values()].sort((a, b) => b.rolling_avg_confidence - a.rolling_avg_confidence)
   };
@@ -2004,15 +2054,22 @@ export function createSentimentApp() {
         acc[windowKey] = state || null;
         return acc;
       }, {});
+      const sectorStrength = buildSectorStrengthSnapshot(trackedFundamentalCompanies(store), {
+        sectorStates: Object.values(windows).filter(Boolean),
+        asOf: store.health.lastUpdate,
+        window: config.defaultWindow,
+        config
+      }).sectors.find((item) => item.entity_key === sector) || null;
 
-      if (!Object.values(windows).some(Boolean)) {
+      if (!Object.values(windows).some(Boolean) && !sectorStrength) {
         return null;
       }
 
       return {
         sector,
         as_of: store.health.lastUpdate,
-        windows
+        windows,
+        sector_strength: sectorStrength?.sector_strength || null
       };
     },
     getRecentDocuments(params) {
