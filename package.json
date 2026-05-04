@@ -31,6 +31,7 @@
     "check:agency-cycle": "node scripts/check-agency-cycle.js",
     "check:agents": "node scripts/check-agents-deep.js",
     "check:no-bootstrap-data": "node scripts/check-no-bootstrap-data.js",
+    "check:agent-ux-workflow": "node scripts/check-agent-ux-workflow.js",
     "ux:smoke": "node scripts/ux-smoke.js",
     "sqlite:backup": "node scripts/sqlite-backup.js",
     "sqlite:health": "node scripts/sqlite-health.js",

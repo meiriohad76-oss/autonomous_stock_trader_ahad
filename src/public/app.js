@@ -1905,17 +1905,48 @@ function setupReason(setup) {
   if (!setup) {
     return "No setup details are available.";
   }
+  const thresholds = setup.decision_thresholds || {};
+  const scoreComponents = setup.score_components || {};
+  const scoreText = [
+    scoreComponents.long !== undefined ? `long ${testReportScore(scoreComponents.long, { percent: true })}` : null,
+    scoreComponents.short !== undefined ? `short ${testReportScore(scoreComponents.short, { percent: true })}` : null,
+    scoreComponents.gap !== undefined ? `gap ${testReportScore(scoreComponents.gap, { percent: true })}` : null
+  ].filter(Boolean).join(", ");
+  const thresholdText = [
+    thresholds.long_threshold !== undefined ? `long gate ${testReportScore(thresholds.long_threshold, { percent: true })}` : null,
+    thresholds.short_threshold !== undefined ? `short gate ${testReportScore(thresholds.short_threshold, { percent: true })}` : null,
+    thresholds.direction_gap_minimum !== undefined ? `direction gap ${testReportScore(thresholds.direction_gap_minimum, { percent: true })}` : null
+  ].filter(Boolean).join(", ");
   if (["long", "short"].includes(setup.action)) {
-    return conciseReason(setup.thesis || setup.evidence?.positive, setup.summary || "Rules score cleared the current test threshold.");
+    return conciseReason(
+      [
+        setup.summary,
+        scoreText ? `Scores: ${scoreText}.` : null,
+        thresholdText ? `Required: ${thresholdText}.` : null,
+        ...(setup.thesis || []),
+        ...(setup.evidence?.positive || [])
+      ],
+      "Rules score cleared the current test threshold."
+    );
   }
   const blockers = (setup.decision_blockers || []).map((item) => item.detail || item.key);
-  return conciseReason(blockers, setup.summary || "Rules score did not clear a trade gate.");
+  return conciseReason(
+    [
+      ...blockers,
+      scoreText ? `Scores: ${scoreText}.` : null,
+      thresholdText ? `Required: ${thresholdText}.` : null,
+      setup.summary
+    ],
+    "Rules score did not clear a trade gate."
+  );
 }
 
 function llmReason(candidate) {
   const llm = candidate?.llm_explanation || {};
+  const reviewer = llm.reviewer ? `Reviewer ${prettyLabel(llm.reviewer)}; confidence ${testReportScore(candidate?.llm_confidence ?? llm.confidence, { percent: true })}.` : null;
   return conciseReason(
     [
+      reviewer,
       llm.rationale,
       llm.evidence_alignment,
       ...(llm.concerns || [])
@@ -1926,14 +1957,136 @@ function llmReason(candidate) {
 
 function finalReason(candidate) {
   const failedGates = (candidate?.policy_gates || []).filter((gate) => !gate.pass).map((gate) => gate.detail);
+  const report = candidate?.selection_report || {};
+  const score = candidate?.final_conviction !== undefined
+    ? `Final conviction ${testReportScore(candidate.final_conviction, { percent: true })}; required ${testReportScore(candidate.required_final_conviction, { percent: true })}.`
+    : null;
   return conciseReason(
     [
+      report.executive_summary,
       candidate?.final_reason,
+      score,
       ...(candidate?.reason_codes || []).map(prettyLabel),
       ...failedGates
     ],
     "No final-selection reason is available."
   );
+}
+
+function reportListText(items = [], fallback = "none", limit = 3) {
+  const list = (Array.isArray(items) ? items : [items]).filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+  return list.length ? list.slice(0, limit).join(", ") : fallback;
+}
+
+function testValueText(value) {
+  if (value === null || value === undefined || value === "") {
+    return "n/a";
+  }
+  if (typeof value === "boolean") {
+    return value ? "yes" : "no";
+  }
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) {
+    return Math.abs(parsed) <= 1 ? `${formatNumber(parsed * 100, 1)}%` : formatNumber(parsed, 2);
+  }
+  return prettyLabel(value);
+}
+
+function gateValueText(gate = {}) {
+  const parts = [];
+  if (gate.value !== null && gate.value !== undefined) {
+    parts.push(`value ${testValueText(gate.value)}`);
+  }
+  if (gate.limit !== null && gate.limit !== undefined) {
+    parts.push(`limit ${testValueText(gate.limit)}`);
+  }
+  return parts.length ? ` (${parts.join(", ")})` : "";
+}
+
+function passedGateSummary(gates = [], limit = 4) {
+  const passed = gates
+    .filter((gate) => gate.pass)
+    .map((gate) => `${prettyLabel(gate.key)}: ${gate.detail || "passed"}${gateValueText(gate)}`);
+  return reportListText(passed, "No explicit passed gate list is available.", limit);
+}
+
+function failedGateSummary(gates = [], limit = 4) {
+  const failed = gates
+    .filter((gate) => !gate.pass)
+    .map((gate) => `${prettyLabel(gate.key)}: ${gate.detail || "blocked"}${gateValueText(gate)}`);
+  return reportListText(failed, "No failed policy gate is visible.", limit);
+}
+
+function policyCandidateReason(candidate) {
+  const gates = candidate?.policy_gates || [];
+  const sizeText = candidate?.position_size_pct !== undefined
+    ? `Proposed size ${testReportScore(candidate.position_size_pct, { percent: true })}.`
+    : "No proposed size is visible.";
+  return `${sizeText} Passed gates: ${passedGateSummary(gates)} Final reason: ${finalReason(candidate)}`;
+}
+
+function policyBlockReason(candidate) {
+  const gates = candidate?.policy_gates || [];
+  return `Blocked gates: ${failedGateSummary(gates)} Final reason: ${finalReason(candidate)}`;
+}
+
+function signalReportReason(item, fallback = "Signal evidence") {
+  const quality = item?.evidence_quality || item?.payload?.evidence_quality || {};
+  const source = signalSourceName(item, fallback);
+  const tier = item?.display_tier || quality.display_tier || item?.payload?.display_tier || "tier n/a";
+  const verification = quality.verification_status || quality.observation_level || "verification n/a";
+  const timestamp = signalTimestamp(item) || alertEvidenceTimestamp(item);
+  const url = signalSourceUrl(item);
+  const headline = item?.headline || item?.explanation_short || item?.summary || eventTypeLabel(item?.event_type || item?.alert_type || "signal");
+  const flowNote = isMoneyFlowEvent(item)
+    ? `${moneyFlowBucket(item.event_type)} provenance; ${String(item.event_type || "").includes("market_flow") ? "bar-derived flow is inferred abnormal-volume context, not a confirmed block print." : "direct filing/provider evidence when available."}`
+    : null;
+  return [
+    headline,
+    `Source ${source}; ${prettyLabel(tier)}; ${prettyLabel(verification)}; ${timestamp ? relativeTime(timestamp) : "time n/a"}; ${url ? "source link available" : "no source link"}.`,
+    flowNote
+  ].filter(Boolean).join(" ");
+}
+
+function riskCandidateReason(candidate, risk = {}, monitor = {}) {
+  const hardBlocks = risk.hard_blocks || [];
+  const account = monitor.account || {};
+  const buyingPower = risk.buying_power ?? account.buying_power ?? null;
+  const equity = risk.equity ?? account.equity ?? account.portfolio_value ?? null;
+  const accountText = [
+    buyingPower !== null && buyingPower !== undefined ? `buying power ${formatUsdCompact(buyingPower)}` : null,
+    equity !== null && equity !== undefined ? `equity ${formatUsdCompact(equity)}` : null,
+    `${hardBlocks.length} hard block(s)`
+  ].filter(Boolean).join(", ");
+  return `Risk status ${prettyLabel(risk.status || monitor.risk_status || "not_blocked")} with ${accountText || "account details unavailable"}. Candidate gates: ${passedGateSummary(candidate?.policy_gates || [], 3)}`;
+}
+
+function executionCandidateReason(candidate, broker = {}) {
+  const setup = candidate?.setup_for_execution || candidate?.setup || {};
+  const plan = candidate?.selection_report?.trade_plan || {};
+  const price = plan.current_price ?? setup.current_price ?? null;
+  const stop = plan.stop_loss ?? setup.stop_loss ?? null;
+  const target = plan.take_profit ?? setup.take_profit ?? null;
+  const submitGate = broker.submit_enabled ? "submit gate open" : "submit gate closed";
+  const brokerText = `Broker ${broker.configured ? "configured" : "not configured"}; ${submitGate}; mode ${prettyLabel(broker.trading_mode || broker.mode || "paper")}.`;
+  const planText = [
+    `action ${prettyLabel(candidate?.final_action || setup.action || "none")}`,
+    candidate?.position_size_pct !== undefined ? `size ${testReportScore(candidate.position_size_pct, { percent: true })}` : null,
+    price ? `price ${formatUsdCompact(price)}` : null,
+    stop ? `stop ${formatUsdCompact(stop)}` : null,
+    target ? `target ${formatUsdCompact(target)}` : null
+  ].filter(Boolean).join(", ");
+  return `${brokerText} Preview plan: ${planText || "no executable trade plan"}; no order is sent without explicit approval.`;
+}
+
+function portfolioPositionReason(position) {
+  const reasons = position?.reason_codes?.length ? `Reasons: ${reportListText(position.reason_codes.map(prettyLabel), "none")}.` : "";
+  return `Exposure ${formatNumber((position.exposure_pct || 0) * 100, 1)}%; setup ${prettyLabel(position.setup_action || "none")}; unrealized P/L ${formatUsdCompact(position.unrealized_pl || 0)}. ${reasons}`.trim();
+}
+
+function learningOutcomeReason(position) {
+  const setup = position?.setup || {};
+  return `P/L ${formatUsdCompact(position.pnl || 0)} is attributed to latest setup ${prettyLabel(setup.action || position.setup_action || "none")} with ${testReportScore(setup.conviction ?? position.setup_conviction, { percent: true })} conviction.`;
 }
 
 function agentTestRow({ item, result, score, reason, tone = "neutral" }) {
@@ -2021,9 +2174,10 @@ function buildAgentTestReport(agentKey) {
   const deterministicRejected = setups.filter((setup) => !["long", "short"].includes(setup.action));
   const scoredMarketSectors = marketSectors.filter((sector) => sector.score_available);
   const unscoredMarketSectors = marketSectors.filter((sector) => !sector.score_available);
-  const openAiReviewed = finalCandidates.filter((candidate) => candidate.llm_explanation?.reviewer === "openai");
-  const llmSelected = openAiReviewed.filter((candidate) => ["long", "short"].includes(candidate.llm_action));
-  const llmRejected = openAiReviewed.filter((candidate) => !["long", "short"].includes(candidate.llm_action));
+  const llmReviewed = finalCandidates.filter((candidate) => candidate.llm_explanation);
+  const openAiReviewed = llmReviewed.filter((candidate) => candidate.llm_explanation?.reviewer === "openai");
+  const llmSelected = llmReviewed.filter((candidate) => ["long", "short"].includes(candidate.llm_action));
+  const llmRejected = llmReviewed.filter((candidate) => !["long", "short"].includes(candidate.llm_action));
   const finalSelected = finalCandidates.filter((candidate) => candidate.execution_allowed && ["long", "short"].includes(candidate.final_action));
   const finalRejected = finalCandidates.filter((candidate) => !candidate.execution_allowed);
   const policyPassed = finalCandidates.filter((candidate) => (candidate.policy_gates || []).every((gate) => gate.pass));
@@ -2170,7 +2324,8 @@ function buildAgentTestReport(agentKey) {
       inputs: [
         `${state.liveFeed.length} recent news/feed rows`,
         `${state.alerts.length} active alert rows`,
-        `${moneyFlowSignals.length} money-flow rows`
+        `${moneyFlowSignals.length} money-flow rows`,
+        "Each row should show source, evidence quality, freshness, and whether the source link is usable"
       ],
       selectedTitle: "Selected Signals",
       rejectedTitle: "Context / Suppressed Signals",
@@ -2179,7 +2334,7 @@ function buildAgentTestReport(agentKey) {
           item: item.entity_key || item.ticker || "Market",
           result: item.alert_type || item.event_type || item.label || "signal",
           score: testReportScore(item.confidence ?? item.downstream_weight, { percent: true }),
-          reason: item.headline || item.explanation_short || signalSourceName(item, "Signal evidence")
+          reason: signalReportReason(item, "Signal evidence")
         })
       ),
       rejected: state.liveFeed
@@ -2189,7 +2344,7 @@ function buildAgentTestReport(agentKey) {
             item: item.ticker || "Market",
             result: item.display_tier || "context",
             score: testReportScore(item.confidence, { percent: true }),
-            reason: item.headline || "Low-confidence or context-only signal.",
+            reason: signalReportReason(item, "Context signal"),
             tone: "neutral"
           })
         )
@@ -2210,7 +2365,7 @@ function buildAgentTestReport(agentKey) {
           item: candidate.ticker,
           result: "policy pass",
           score: testReportScore(candidate.final_conviction, { percent: true }),
-          reason: `${(candidate.policy_gates || []).length} policy gate(s) passed.`,
+          reason: policyCandidateReason(candidate),
           tone: "bullish"
         })
       ),
@@ -2219,7 +2374,7 @@ function buildAgentTestReport(agentKey) {
           item: candidate.ticker,
           result: "policy block",
           score: testReportScore(candidate.final_conviction, { percent: true }),
-          reason: finalReason(candidate),
+          reason: policyBlockReason(candidate),
           tone: "bearish"
         })
       )
@@ -2255,12 +2410,13 @@ function buildAgentTestReport(agentKey) {
     },
     llm_selection: {
       title: "LLM Selection Agent User Test Report",
-      targetLabel: `${llmSelected.length}/${target} OpenAI buy/sell rows; ${openAiReviewed.length} reviewed`,
+      targetLabel: `${llmSelected.length}/${target} LLM buy/sell rows; ${openAiReviewed.length} OpenAI reviewed; ${llmReviewed.length} total reviewed`,
       targetMet: llmSelected.length >= target,
       inputs: [
         `${setups.length} deterministic setup rows loaded in dashboard`,
-        `${openAiReviewed.length} visible rows reviewed by OpenAI`,
-        `Model: ${finalSelection.llm_agent?.model || state.config?.llm_selection?.model || "unknown"}`
+        `${openAiReviewed.length} visible rows reviewed by OpenAI; ${llmReviewed.length - openAiReviewed.length} fallback/shadow rows`,
+        `Model: ${finalSelection.llm_agent?.model || state.config?.llm_selection?.model || "unknown"}`,
+        `LLM status: ${prettyLabel(finalSelection.llm_agent?.status || finalSelection.llm_status || "unknown")}`
       ],
       selectedTitle: "LLM Buy/Sell",
       rejectedTitle: "LLM Watch / No Trade",
@@ -2313,8 +2469,8 @@ function buildAgentTestReport(agentKey) {
     },
     risk: {
       title: "Risk Manager User Test Report",
-      targetLabel: `${policyPassed.length}/${target} candidates clear portfolio-level risk gate`,
-      targetMet: policyPassed.length >= target,
+      targetLabel: `${finalSelected.length}/${target} final tickets clear portfolio-level risk gate`,
+      targetMet: finalSelected.length >= target,
       inputs: [
         `Risk status: ${prettyLabel(risk.status || monitor.risk_status || "unknown")}`,
         `Buying power: ${formatUsdCompact(risk.buying_power || monitor.account?.buying_power || 0)}`,
@@ -2322,22 +2478,22 @@ function buildAgentTestReport(agentKey) {
       ],
       selectedTitle: "Risk Gate Clear",
       rejectedTitle: "Risk Blocked / Still Waiting",
-      selected: policyPassed.map((candidate) =>
+      selected: finalSelected.map((candidate) =>
         agentTestRow({
           item: candidate.ticker,
           result: "risk clear",
           score: testReportScore(candidate.final_conviction, { percent: true }),
-          reason: "Portfolio-level risk gate is not reporting a hard block.",
+          reason: riskCandidateReason(candidate, risk, monitor),
           tone: "bullish"
         })
       ),
-      rejected: policyRejected.length
-        ? policyRejected.map((candidate) =>
+      rejected: finalRejected.length
+        ? finalRejected.map((candidate) =>
             agentTestRow({
               item: candidate.ticker,
               result: "blocked",
               score: testReportScore(candidate.final_conviction, { percent: true }),
-              reason: finalReason(candidate),
+              reason: `${riskCandidateReason(candidate, risk, monitor)} Held reason: ${policyBlockReason(candidate)}`,
               tone: "bearish"
             })
           )
@@ -2367,7 +2523,7 @@ function buildAgentTestReport(agentKey) {
           item: candidate.ticker,
           result: candidate.final_action,
           score: testReportScore(candidate.final_conviction, { percent: true }),
-          reason: "Final Selection marked this candidate execution_allowed; user approval is still required.",
+          reason: executionCandidateReason(candidate, broker),
           tone: candidate.final_action === "long" ? "bullish" : "bearish"
         })
       ),
@@ -2376,7 +2532,7 @@ function buildAgentTestReport(agentKey) {
           item: candidate.ticker,
           result: "gated",
           score: testReportScore(candidate.final_conviction, { percent: true }),
-          reason: finalReason(candidate)
+          reason: `${executionCandidateReason(candidate, broker)} Held reason: ${finalReason(candidate)}`
         })
       )
     },
@@ -2391,24 +2547,42 @@ function buildAgentTestReport(agentKey) {
       ],
       selectedTitle: "Open Positions",
       rejectedTitle: "Portfolio Review Blocks",
-      selected: (monitor.positions || []).map((position) =>
-        agentTestRow({
-          item: position.symbol,
-          result: position.monitor_action || "hold",
-          score: formatUsdCompact(position.unrealized_pl || 0),
-          reason: `Exposure ${formatNumber((position.exposure_pct || 0) * 100, 1)}%; setup ${prettyLabel(position.setup_action || "none")}.`,
-          tone: monitorActionClass(position.monitor_action)
-        })
-      ),
-      rejected: [...(monitor.review_positions || []), ...(monitor.close_candidates || [])].map((position) =>
-        agentTestRow({
-          item: position.symbol,
-          result: position.monitor_action || "review",
-          score: formatUsdCompact(position.unrealized_pl || 0),
-          reason: conciseReason(position.reason_codes?.map(prettyLabel), "Position needs review."),
-          tone: "neutral"
-        })
-      )
+      selected: (monitor.positions || []).length
+        ? (monitor.positions || []).map((position) =>
+            agentTestRow({
+              item: position.symbol,
+              result: position.monitor_action || "hold",
+              score: formatUsdCompact(position.unrealized_pl || 0),
+              reason: portfolioPositionReason(position),
+              tone: monitorActionClass(position.monitor_action)
+            })
+          )
+        : [
+            agentTestRow({
+              item: "Portfolio monitor",
+              result: "no open positions",
+              score: "0 positions",
+              reason: `Broker monitor checked positions and open orders. There are ${monitor.positions?.length || 0} positions and ${monitor.open_orders?.length || monitor.open_order_count || 0} open orders, so no holding can be selected for action yet.`
+            })
+          ],
+      rejected: [...(monitor.review_positions || []), ...(monitor.close_candidates || [])].length
+        ? [...(monitor.review_positions || []), ...(monitor.close_candidates || [])].map((position) =>
+            agentTestRow({
+              item: position.symbol,
+              result: position.monitor_action || "review",
+              score: formatUsdCompact(position.unrealized_pl || 0),
+              reason: portfolioPositionReason(position),
+              tone: "neutral"
+            })
+          )
+        : [
+            agentTestRow({
+              item: "Review queue",
+              result: "clear",
+              score: "0 blocks",
+              reason: "No close, reduce, or review candidates are visible because the broker monitor has no active position risk to evaluate."
+            })
+          ]
     },
     learning: {
       title: "Learning Agent User Test Report",
@@ -2421,22 +2595,31 @@ function buildAgentTestReport(agentKey) {
       ],
       selectedTitle: "Learned From",
       rejectedTitle: "Insufficient Outcome Sample",
-      selected: learning.attributedPositions.map((position) =>
-        agentTestRow({
-          item: position.symbol,
-          result: position.pnl >= 0 ? "winner" : "loser",
-          score: formatUsdCompact(position.pnl),
-          reason: `Open paper attribution from latest setup ${prettyLabel(position.setup?.action || position.setup_action || "none")}.`,
-          tone: position.pnl >= 0 ? "bullish" : "bearish"
-        })
-      ),
+      selected: learning.attributedPositions.length
+        ? learning.attributedPositions.map((position) =>
+            agentTestRow({
+              item: position.symbol,
+              result: position.pnl >= 0 ? "winner" : "loser",
+              score: formatUsdCompact(position.pnl),
+              reason: learningOutcomeReason(position),
+              tone: position.pnl >= 0 ? "bullish" : "bearish"
+            })
+          )
+        : [
+            agentTestRow({
+              item: "Learning sample",
+              result: "waiting",
+              score: `${learning.decisions.length + learning.positions.length}/${target}`,
+              reason: "No paper-trade outcome can be attributed yet. Learning will start selecting useful winners/losers after the execution journal or broker positions contain enough completed paper decisions."
+            })
+          ],
       rejected: learning.decisions.length + learning.positions.length < target
         ? [
             agentTestRow({
               item: "Outcome sample",
               result: "not enough data",
               score: `${learning.decisions.length + learning.positions.length}/${target}`,
-              reason: "Learning needs at least 10 paper decisions or positions before user-level review is meaningful."
+              reason: "Learning needs at least 10 paper decisions or positions before user-level review is meaningful; until then it should not tune thresholds or claim performance."
             })
           ]
         : learning.rejected.map((decision) =>
