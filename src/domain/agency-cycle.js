@@ -839,6 +839,7 @@ export function buildAgencyCycleStatus({
     .map((candidate) => candidate.llm_explanation);
   const finalSelectionLlmCount = finalSelectionLlmReviews.length ||
     Object.values(finalSelection?.llm_agent?.counts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const inferredFinalSelectionReviewCount = finalSelectionLlmCount || finalCounts.visible || finalCounts.review + finalCounts.watch + finalCounts.executable;
   const effectiveLlmSelection =
     llmSelection ||
     (finalSelection?.llm_agent
@@ -848,6 +849,12 @@ export function buildAgencyCycleStatus({
             ? finalSelectionLlmReviews
             : Array.from({ length: finalSelectionLlmCount }, () => ({}))
         }
+      : inferredFinalSelectionReviewCount
+        ? {
+            status: finalSelection?.llm_status || "ready",
+            mode: finalSelection?.llm_mode || "final_selection_snapshot",
+            recommendations: Array.from({ length: inferredFinalSelectionReviewCount }, () => ({}))
+          }
       : null);
   const sources = sourceByKey(workflowStatus);
   const broker = executionStatus?.broker || positionMonitor?.broker || {};
