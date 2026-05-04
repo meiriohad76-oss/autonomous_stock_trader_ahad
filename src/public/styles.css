@@ -1509,6 +1509,66 @@ input:focus-visible {
   line-height: 1.35;
 }
 
+.agent-test-review-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.agent-test-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.agent-test-list {
+  display: grid;
+  gap: 10px;
+}
+
+.agent-test-item,
+.agent-test-empty {
+  min-width: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--surface-border);
+}
+
+.agent-test-item {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-test-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.agent-test-item-meta strong {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.agent-test-score {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.agent-test-item p,
+.agent-test-empty {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .agent-process-head {
   display: flex;
   align-items: flex-start;

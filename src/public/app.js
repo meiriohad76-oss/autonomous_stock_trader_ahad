@@ -1807,6 +1807,39 @@ function renderAgentTestRows(rows = [], emptyText = "No rows are available for t
     .join("");
 }
 
+function renderAgentTestCards(rows = [], emptyText = "No rows are available for this side of the test.") {
+  if (!rows.length) {
+    return `<div class="agent-test-empty">${escapeHtml(emptyText)}</div>`;
+  }
+
+  return rows
+    .slice(0, 10)
+    .map(
+      (row) => `
+        <article class="agent-test-item">
+          <div class="agent-test-item-meta">
+            <strong>${escapeHtml(row.item || "n/a")}</strong>
+            <span class="sentiment-badge ${row.tone || "neutral"}">${escapeHtml(prettyLabel(row.result || "review"))}</span>
+            <span class="agent-test-score">${escapeHtml(row.score || "n/a")}</span>
+          </div>
+          <p>${escapeHtml(row.reason || "No explanation is available for this row.")}</p>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderAgentTestSection(title, rows, emptyText) {
+  return `
+    <div class="agent-test-section">
+      <div class="section-kicker">${escapeHtml(title)}</div>
+      <div class="agent-test-list">
+        ${renderAgentTestCards(rows, emptyText)}
+      </div>
+    </div>
+  `;
+}
+
 function buildAgentTestReport(agentKey) {
   const counts = screenerUniverseCounts();
   const secCoverage = secCoverageSummary();
@@ -2247,25 +2280,9 @@ function renderAgentTestReport(agentKey) {
       <div class="agent-test-inputs">
         ${report.inputs.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
       </div>
-      <div class="agent-test-table-grid">
-        <div class="agent-table-shell leaderboard-shell">
-          <div class="section-kicker">${escapeHtml(report.selectedTitle)}</div>
-          <table class="leaderboard-table compact-agent-table">
-            <thead>
-              <tr><th>Stock/Item</th><th>Result</th><th>Score</th><th>Why</th></tr>
-            </thead>
-            <tbody>${renderAgentTestRows(report.selected, "Nothing passed this side of the review yet.")}</tbody>
-          </table>
-        </div>
-        <div class="agent-table-shell leaderboard-shell">
-          <div class="section-kicker">${escapeHtml(report.rejectedTitle)}</div>
-          <table class="leaderboard-table compact-agent-table">
-            <thead>
-              <tr><th>Stock/Item</th><th>Result</th><th>Score</th><th>Why</th></tr>
-            </thead>
-            <tbody>${renderAgentTestRows(report.rejected, "No rejected or held rows are visible for this agent.")}</tbody>
-          </table>
-        </div>
+      <div class="agent-test-review-grid">
+        ${renderAgentTestSection(report.selectedTitle, report.selected, "Nothing passed this side of the review yet.")}
+        ${renderAgentTestSection(report.rejectedTitle, report.rejected, "No rejected or held rows are visible for this agent.")}
       </div>
     </section>
   `;
