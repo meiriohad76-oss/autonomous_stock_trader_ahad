@@ -1423,6 +1423,16 @@ input:focus-visible {
   margin-top: 14px;
 }
 
+.agent-test-report-slot {
+  margin-top: 14px;
+}
+
+.agent-test-report-slot .agent-test-report {
+  border-color: rgba(126, 165, 255, 0.35);
+  background: rgba(78, 114, 255, 0.08);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
+}
+
 .agent-process-panel,
 .agency-run-log {
   display: grid;

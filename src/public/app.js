@@ -137,9 +137,11 @@ const elements = {
   alertsMoneyFlow: document.querySelector("#alerts-money-flow"),
   agencyCommandCenter: document.querySelector("#agency-command-center"),
   universeAgentOverview: document.querySelector("#universe-agent-overview"),
+  universeAgentTestReport: document.querySelector("#universe-agent-test-report"),
   universeAgentProcess: document.querySelector("#universe-agent-process"),
   universeAgentCoverage: document.querySelector("#universe-agent-coverage"),
   fundamentalsAgentSummary: document.querySelector("#fundamentals-agent-summary"),
+  fundamentalsAgentTestReport: document.querySelector("#fundamentals-agent-test-report"),
   fundamentalsAgentProcess: document.querySelector("#fundamentals-agent-process"),
   fundamentalsAgentTable: document.querySelector("#fundamentals-agent-table"),
   universeAgentHandoff: document.querySelector("#universe-agent-handoff"),
@@ -6601,8 +6603,12 @@ function renderUniverseAgentView() {
     `;
   }
 
+  if (elements.universeAgentTestReport) {
+    elements.universeAgentTestReport.innerHTML = renderAgentTestReport("universe");
+  }
+
   if (elements.universeAgentProcess) {
-    elements.universeAgentProcess.innerHTML = `${renderAgentProcessPanel(buildAgentProcess("universe"))}${renderAgentTestReport("universe")}`;
+    elements.universeAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("universe"));
   }
 
   if (elements.universeAgentCoverage) {
@@ -6672,8 +6678,12 @@ function renderUniverseAgentView() {
     `;
   }
 
+  if (elements.fundamentalsAgentTestReport) {
+    elements.fundamentalsAgentTestReport.innerHTML = renderAgentTestReport("fundamentals");
+  }
+
   if (elements.fundamentalsAgentProcess) {
-    elements.fundamentalsAgentProcess.innerHTML = `${renderAgentProcessPanel(buildAgentProcess("fundamentals"))}${renderAgentTestReport("fundamentals")}`;
+    elements.fundamentalsAgentProcess.innerHTML = renderAgentProcessPanel(buildAgentProcess("fundamentals"));
   }
 
   if (elements.fundamentalsAgentTable) {
@@ -7528,9 +7538,11 @@ function attachEvents() {
   [
     elements.agencyCommandCenter,
     elements.universeAgentOverview,
+    elements.universeAgentTestReport,
     elements.universeAgentProcess,
     elements.universeAgentCoverage,
     elements.fundamentalsAgentSummary,
+    elements.fundamentalsAgentTestReport,
     elements.fundamentalsAgentProcess,
     elements.fundamentalsAgentTable,
     elements.universeAgentHandoff,
