@@ -3292,6 +3292,10 @@ input:focus-visible {
   fill: rgba(0, 122, 255, 0.78);
 }
 
+.sector-bar.unavailable {
+  fill: rgba(173, 198, 255, 0.28);
+}
+
 .sector-bar-group {
   cursor: pointer;
 }
