@@ -1736,7 +1736,8 @@ export function createSentimentApp() {
           final_conviction: config.selectionWorkflowTestFinalConviction,
           llm_min_confidence: config.selectionWorkflowTestLlmMinConfidence,
           max_runtime_penalty: config.selectionWorkflowTestMaxRuntimePenalty,
-          max_risk_penalty: config.selectionWorkflowTestMaxRiskPenalty
+          max_risk_penalty: config.selectionWorkflowTestMaxRiskPenalty,
+          allow_llm_demotion_preview: config.selectionWorkflowTestAllowLlmDemotionPreview
         },
         llm_selection: {
           enabled: config.llmSelectionEnabled,

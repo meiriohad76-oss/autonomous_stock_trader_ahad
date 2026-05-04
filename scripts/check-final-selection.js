@@ -392,6 +392,90 @@ if (!externallyReviewed?.execution_allowed || localOnly?.execution_allowed || !l
   throw new Error("Final selector should require an actual OpenAI review before execution when OpenAI selection is enabled.");
 }
 
+const workflowTestPreviewFixture = buildFinalSelectionSnapshot({
+  config: {
+    ...config,
+    selectionWorkflowTestMode: true,
+    selectionWorkflowTestAllowLlmDemotionPreview: true,
+    executionMinConviction: 0.2,
+    executionAllowShorts: false,
+    llmSelectionEnabled: true,
+    llmSelectionProvider: "openai",
+    portfolioMaxNewPositionsPerCycle: 3,
+    portfolioMaxSectorExposurePct: 0.5
+  },
+  tradeSetups: {
+    as_of: new Date().toISOString(),
+    counts: { long: 1 },
+    setups: [
+      {
+        ticker: "TEST",
+        company_name: "Workflow Preview Test",
+        sector: "Technology",
+        action: "long",
+        conviction: 0.32,
+        position_size_pct: 0.01,
+        current_price: 100,
+        summary: "TEST is a low-threshold workflow test candidate.",
+        thesis: ["workflow test fixture"],
+        risk_flags: ["workflow test mode lowered selection thresholds for supervised end-to-end testing"],
+        evidence: { positive: ["fresh workflow fixture signal"], negative: [] },
+        fundamentals: { screen_stage: "eligible", direction_label: "bullish_supportive", composite_fundamental_score: 0.55, final_confidence: 0.9 },
+        score_components: { gap: 0.25, raw_long: 0.36, raw_short: 0, long: 0.32, short: 0 },
+        runtime_reliability: { status: "healthy", adjustment_multiplier: 1, test_mode: true }
+      }
+    ]
+  },
+  llmSelection: {
+    status: "ready",
+    mode: "openai_json_review",
+    provider: "openai",
+    model: "gpt-5.5",
+    recommendations: [
+      {
+        ticker: "TEST",
+        action: "watch",
+        confidence: 0.56,
+        reviewer: "openai",
+        rationale: "OpenAI demoted the low-threshold test candidate to watch.",
+        concerns: ["workflow test candidate"],
+        evidence_alignment: "Evidence is intentionally thin for a path test.",
+        confidence_reason: "Review confidence is watch-level."
+      }
+    ]
+  },
+  portfolioPolicy: {
+    ...portfolioPolicy,
+    portfolioExecutionMinConviction: 0.2,
+    portfolioMaxNewPositionsPerCycle: 3,
+    portfolioMaxSectorExposurePct: 0.5
+  },
+  riskSnapshot: {
+    status: "ok",
+    equity: 100000,
+    buying_power: 90000,
+    gross_exposure_pct: 0.05,
+    hard_blocks: [],
+    positions: []
+  },
+  positionMonitor: {
+    positions: [],
+    position_count: 0,
+    open_order_count: 0
+  },
+  window: "1h",
+  limit: 1
+});
+
+const workflowTestPreview = workflowTestPreviewFixture.candidates.find((candidate) => candidate.ticker === "TEST");
+if (
+  !workflowTestPreview?.execution_allowed ||
+  workflowTestPreview.selection_report?.status !== "workflow_test_preview" ||
+  !workflowTestPreview.reason_codes?.includes("workflow_test_llm_demotion_preview")
+) {
+  throw new Error("Final selector should expose an explicit test-only preview path without changing production LLM-demotion behavior.");
+}
+
 console.log(
   JSON.stringify(
     {

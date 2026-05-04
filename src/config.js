@@ -235,6 +235,8 @@ const selectionWorkflowTestFinalConviction = Number(process.env.SELECTION_WORKFL
 const selectionWorkflowTestLlmMinConfidence = Number(process.env.SELECTION_WORKFLOW_TEST_LLM_MIN_CONFIDENCE || 0.25);
 const selectionWorkflowTestMaxRuntimePenalty = Number(process.env.SELECTION_WORKFLOW_TEST_MAX_RUNTIME_PENALTY || 0.04);
 const selectionWorkflowTestMaxRiskPenalty = Number(process.env.SELECTION_WORKFLOW_TEST_MAX_RISK_PENALTY || 0.03);
+const selectionWorkflowTestAllowLlmDemotionPreview =
+  String(process.env.SELECTION_WORKFLOW_TEST_ALLOW_LLM_DEMOTION_PREVIEW || "false").toLowerCase() === "true";
 
 export const config = {
   piPerformanceMode,
@@ -410,6 +412,7 @@ export const config = {
   selectionWorkflowTestLlmMinConfidence,
   selectionWorkflowTestMaxRuntimePenalty,
   selectionWorkflowTestMaxRiskPenalty,
+  selectionWorkflowTestAllowLlmDemotionPreview,
   executionMinConviction: selectionWorkflowTestMode
     ? selectionWorkflowTestFinalConviction
     : Number(process.env.EXECUTION_MIN_CONVICTION || 0.62),

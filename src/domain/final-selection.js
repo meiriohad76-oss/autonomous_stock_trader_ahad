@@ -147,6 +147,18 @@ function baseDecision(setup, llm, config, portfolioPolicy) {
     if (!executionAllowed) {
       reasonCodes.push("final_score_below_execution_minimum");
     }
+  } else if (
+    agreement === "llm_demoted" &&
+    config.selectionWorkflowTestMode &&
+    config.selectionWorkflowTestAllowLlmDemotionPreview &&
+    isTradable(deterministicAction)
+  ) {
+    finalAction = deterministicAction;
+    executionAllowed = score >= requiredFinalConviction;
+    reasonCodes.push("workflow_test_llm_demotion_preview");
+    if (!executionAllowed) {
+      reasonCodes.push("final_score_below_execution_minimum");
+    }
   } else if (agreement === "llm_demoted" || agreement === "direction_conflict") {
     finalAction = "review";
     reasonCodes.push(agreement);
@@ -200,6 +212,9 @@ function policyGate(key, pass, detail, value = null, limit = null) {
 
 function policyReason(candidate) {
   const blocked = candidate.policy_gates.filter((gate) => !gate.pass);
+  if ((candidate.reason_codes || []).includes("workflow_test_llm_demotion_preview")) {
+    return `${candidate.ticker} is final-selected for workflow testing only: the deterministic selector is tradable, OpenAI demoted it to ${candidate.llm_action}, and the test preview gate is intentionally enabled with broker submission still guarded.`;
+  }
   if (candidate.execution_allowed) {
     return `${candidate.ticker} is final-selected because both selectors align and portfolio policy allows the size.`;
   }
@@ -226,6 +241,9 @@ function uniqueStrings(items, limit = 8) {
 }
 
 function reportStatus(candidate) {
+  if (candidate.execution_allowed && (candidate.reason_codes || []).includes("workflow_test_llm_demotion_preview")) {
+    return "workflow_test_preview";
+  }
   if (candidate.execution_allowed && isTradable(candidate.final_action)) {
     return "approved_for_alpaca_preview";
   }
@@ -259,6 +277,7 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
   const llm = candidate.llm_explanation || {};
   const failedGates = candidate.policy_gates.filter((gate) => !gate.pass);
   const approved = candidate.execution_allowed && isTradable(candidate.final_action);
+  const workflowTestPreview = approved && (candidate.reason_codes || []).includes("workflow_test_llm_demotion_preview");
   const adjustedSetup = candidate.setup_for_execution || {};
   const stopLoss = adjustedSetup.stop_loss ?? setup.stop_loss ?? null;
   const takeProfit = adjustedSetup.take_profit ?? setup.take_profit ?? null;
@@ -270,7 +289,8 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
   const whySelected = uniqueStrings(
     [
       candidate.final_reason,
-      approved ? "Deterministic and LLM selection lanes agree on a tradable action." : null,
+      workflowTestPreview ? "Workflow test mode is allowing a supervised preview even though the LLM lane demoted the trade." : null,
+      approved && !workflowTestPreview ? "Deterministic and LLM selection lanes agree on a tradable action." : null,
       approved ? "Portfolio policy gates passed for this cycle." : null,
       setup.fundamentals?.screen_stage ? `Fundamentals stage: ${setup.fundamentals.screen_stage}.` : null,
       setup.macro_regime?.regime_label ? `Market regime: ${setup.macro_regime.regime_label}.` : null,
@@ -303,10 +323,14 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
     generated_at: new Date().toISOString(),
     status: reportStatus(candidate),
     title: `${candidate.ticker} Selection Report`,
-    headline: approved
+    headline: workflowTestPreview
+      ? `${candidate.ticker} is a workflow-test preview candidate, not a production-approved trade.`
+      : approved
       ? `${candidate.ticker} passed Final Selection and is ready for supervised Alpaca preview.`
       : `${candidate.ticker} did not pass every gate for execution yet.`,
-    executive_summary: approved
+    executive_summary: workflowTestPreview
+      ? `${candidate.ticker} is selected only for end-to-end workflow testing: deterministic action is ${candidate.final_action}, OpenAI demoted it to ${candidate.llm_action}, final conviction is ${round(candidate.final_conviction * 100, 1)}%, and broker submission remains disabled.`
+      : approved
       ? `${candidate.ticker} is selected because the deterministic selector and LLM lane agree on ${candidate.final_action}, final conviction is ${round(candidate.final_conviction * 100, 1)}%, and portfolio policy currently allows the proposed size.`
       : `${candidate.ticker} is visible for review because the workflow produced evidence, but ${candidate.final_reason}`,
     approval_scope: "This report approves only a supervised paper-trade preview. Alpaca submission still requires explicit user approval.",
@@ -328,7 +352,7 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
       agentVote("Signals Agent", (setup.evidence?.positive || []).length ? "passed" : "review", evidencePhrase(setup), uniqueStrings(setup.evidence?.positive, 3).join(" | ") || "No positive signal summary available."),
       agentVote("Deterministic Selection Agent", isTradable(candidate.deterministic_action) ? "passed" : "review", candidate.deterministic_action, `${round(Number(candidate.deterministic_conviction || 0) * 100, 1)}% conviction.`),
       agentVote("LLM Selection Agent", candidate.agreement === "agree" ? "passed" : "review", candidate.llm_action, `${llmReviewer}; ${round(Number(candidate.llm_confidence || 0) * 100, 1)}% confidence.`),
-      agentVote("Final Selection Agent", approved ? "passed" : "review", candidate.final_action, `${round(Number(candidate.final_conviction || 0) * 100, 1)}% final conviction; ${round(Number(candidate.required_final_conviction || 0) * 100, 1)}% required.`),
+      agentVote("Final Selection Agent", workflowTestPreview ? "workflow_test_preview" : approved ? "passed" : "review", candidate.final_action, `${round(Number(candidate.final_conviction || 0) * 100, 1)}% final conviction; ${round(Number(candidate.required_final_conviction || 0) * 100, 1)}% required.`),
       agentVote("Risk Manager", riskSnapshot?.status === "blocked" ? "blocked" : "passed", riskSnapshot?.status || "not_blocked", failedGates.length ? failedGates[0].detail : "No hard risk block is active."),
       agentVote("Execution Agent", approved ? "ready_for_preview" : "gated", approved ? "Alpaca preview can be prepared" : "Not ready for Alpaca preview", "No order is submitted automatically.")
     ],
@@ -430,6 +454,17 @@ function buildInitialCandidates({ tradeSetups, llmSelection, portfolioPolicy, ri
         decision.required_final_conviction
       )
     ];
+    if (decision.reason_codes.includes("workflow_test_llm_demotion_preview")) {
+      policyGates.push(
+        policyGate(
+          "workflow_test_preview",
+          true,
+          "Workflow test mode is allowing a preview despite LLM demotion; this is not production approval and broker submission remains guarded.",
+          true,
+          true
+        )
+      );
+    }
 
     return {
       ticker: setup.ticker,
