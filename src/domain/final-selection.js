@@ -29,6 +29,10 @@ function effectiveExecutionMinConviction(config, portfolioPolicy) {
   return Number(portfolioPolicy?.portfolioExecutionMinConviction ?? config.executionMinConviction ?? 0.62);
 }
 
+function requiresOpenAiReview(config = {}) {
+  return Boolean(config.llmSelectionEnabled && String(config.llmSelectionProvider || "").toLowerCase() === "openai");
+}
+
 function finiteNumber(value, fallback = null) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -161,6 +165,12 @@ function baseDecision(setup, llm, config, portfolioPolicy) {
     reasonCodes.push("short_trading_disabled");
   }
 
+  if (executionAllowed && requiresOpenAiReview(config) && llm?.reviewer !== "openai") {
+    finalAction = "review";
+    executionAllowed = false;
+    reasonCodes.push("llm_external_review_missing");
+  }
+
   return {
     final_action: finalAction,
     execution_allowed: executionAllowed,
@@ -204,6 +214,9 @@ function policyReason(candidate) {
   }
   if (candidate.agreement === "direction_conflict") {
     return `${candidate.ticker} needs review because the two selectors disagree on direction.`;
+  }
+  if ((candidate.reason_codes || []).includes("llm_external_review_missing")) {
+    return `${candidate.ticker} is held for review because it did not receive an external OpenAI LLM review.`;
   }
   return `${candidate.ticker} is not an executable final selection right now.`;
 }

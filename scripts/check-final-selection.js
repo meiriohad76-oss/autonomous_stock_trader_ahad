@@ -307,6 +307,91 @@ if (higherQualityReview.final_conviction - thinEvidenceReview.final_conviction <
   throw new Error("Final selector score dispersion should be visible enough to avoid identical-looking review grades.");
 }
 
+const openAiGateFixture = buildFinalSelectionSnapshot({
+  config: {
+    ...config,
+    llmSelectionEnabled: true,
+    llmSelectionProvider: "openai",
+    executionAllowShorts: true,
+    portfolioMaxNewPositionsPerCycle: 3,
+    portfolioMaxSectorExposurePct: 0.5
+  },
+  tradeSetups: {
+    as_of: new Date().toISOString(),
+    counts: { short: 2 },
+    setups: [
+      {
+        ticker: "OPENAI",
+        company_name: "Externally Reviewed",
+        sector: "Technology",
+        action: "short",
+        conviction: 0.7,
+        position_size_pct: 0.01,
+        current_price: 100,
+        summary: "OPENAI is externally reviewed.",
+        thesis: ["external review fixture"],
+        risk_flags: [],
+        evidence: { positive: [], negative: ["adverse signal"] },
+        fundamentals: { screen_stage: "reject", direction_label: "bearish_headwind", composite_fundamental_score: 0.3, final_confidence: 0.9 },
+        score_components: { gap: 0.5, raw_short: 0.7, raw_long: 0, short: 0.7, long: 0 },
+        runtime_reliability: { status: "healthy", adjustment_multiplier: 1 }
+      },
+      {
+        ticker: "LOCAL",
+        company_name: "Local Shadow Only",
+        sector: "Technology",
+        action: "short",
+        conviction: 0.7,
+        position_size_pct: 0.01,
+        current_price: 100,
+        summary: "LOCAL is only shadow reviewed.",
+        thesis: ["local review fixture"],
+        risk_flags: [],
+        evidence: { positive: [], negative: ["adverse signal"] },
+        fundamentals: { screen_stage: "reject", direction_label: "bearish_headwind", composite_fundamental_score: 0.3, final_confidence: 0.9 },
+        score_components: { gap: 0.5, raw_short: 0.7, raw_long: 0, short: 0.7, long: 0 },
+        runtime_reliability: { status: "healthy", adjustment_multiplier: 1 }
+      }
+    ]
+  },
+  llmSelection: {
+    status: "ready",
+    mode: "openai_json_review",
+    provider: "openai",
+    model: "gpt-5.5",
+    recommendations: [
+      { ticker: "OPENAI", action: "short", confidence: 0.72, reviewer: "openai", concerns: [] },
+      { ticker: "LOCAL", action: "short", confidence: 0.72, reviewer: "local_shadow", concerns: [] }
+    ]
+  },
+  portfolioPolicy: {
+    ...portfolioPolicy,
+    portfolioMaxNewPositionsPerCycle: 3,
+    portfolioMaxSectorExposurePct: 0.5
+  },
+  riskSnapshot: {
+    status: "ok",
+    equity: 100000,
+    buying_power: 90000,
+    gross_exposure_pct: 0.05,
+    hard_blocks: [],
+    positions: []
+  },
+  positionMonitor: {
+    positions: [],
+    position_count: 0,
+    open_order_count: 0
+  },
+  window: "1h",
+  limit: 2
+});
+
+const externallyReviewed = openAiGateFixture.candidates.find((candidate) => candidate.ticker === "OPENAI");
+const localOnly = openAiGateFixture.candidates.find((candidate) => candidate.ticker === "LOCAL");
+if (!externallyReviewed?.execution_allowed || localOnly?.execution_allowed || !localOnly?.reason_codes?.includes("llm_external_review_missing")) {
+  throw new Error("Final selector should require an actual OpenAI review before execution when OpenAI selection is enabled.");
+}
+
 console.log(
   JSON.stringify(
     {

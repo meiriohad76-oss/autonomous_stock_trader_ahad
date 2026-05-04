@@ -230,6 +230,9 @@ async function main() {
   const missingReports = candidates
     .filter((candidate) => !(candidate?.selection_report || candidate?.report || candidate?.decision_report))
     .map((candidate) => candidate?.ticker);
+  const executableWithoutOpenAiReview = candidates
+    .filter((candidate) => candidate?.execution_allowed && candidate?.llm_explanation?.reviewer !== "openai")
+    .map((candidate) => candidate?.ticker);
   const llmAgent = finalSelection?.llm_agent || finalSelection?.llm_selection || {};
   const llmMode = llmAgent.mode || finalSelection?.llm_mode || "unknown";
   const llmStatus = llmAgent.status || finalSelection?.llm_status || "unknown";
@@ -242,6 +245,9 @@ async function main() {
     candidates: candidates.length,
     missing_report: missingReports.slice(0, 30),
     counts: finalSelection?.counts || null
+  });
+  addCheck("final_selection_external_llm_gate", executableWithoutOpenAiReview.length ? "fail" : "pass", {
+    executable_without_openai_review: executableWithoutOpenAiReview.slice(0, 30)
   });
   addCheck("llm_provider_connected", externalLlmReady ? "pass" : "warning", {
     mode: llmMode,
