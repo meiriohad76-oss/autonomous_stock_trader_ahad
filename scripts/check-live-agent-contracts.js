@@ -192,7 +192,7 @@ async function main() {
         sector.sector_strength?.etf_return === null
     )
     .map((sector) => sector.entity_key);
-  addCheck("market_sector_tape_contract", sectorTapeRows.length >= 8 && !fakeZeroRows.length ? "pass" : "warning", {
+  addCheck("market_sector_tape_contract", sectorTapeRows.length >= 10 && scoredSectorTapeRows.length >= 10 && !fakeZeroRows.length ? "pass" : "warning", {
     sector_tape_rows: sectorTapeRows.length,
     scored_sector_tape_rows: scoredSectorTapeRows.length,
     fake_zero_rows: fakeZeroRows.slice(0, 30),

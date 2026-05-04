@@ -317,7 +317,8 @@ function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
 }
 
 export function buildSectorStrengthSnapshot(rows = [], options = {}) {
-  const maxAgeHours = Number(options.maxAgeHours || options.config?.signalFreshnessMaxHours || 72);
+  const configuredMaxAgeHours = Number(options.config?.signalFreshnessMaxHours || 72);
+  const maxAgeHours = Number(options.maxAgeHours || Math.max(120, configuredMaxAgeHours));
   const sectorStates = options.sectorStates || [];
   const sectorStateByKey = new Map(sectorStates.map((state) => [state.entity_key, state]));
   const grouped = new Map();
