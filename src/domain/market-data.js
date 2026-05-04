@@ -10,6 +10,7 @@ import {
   providerCooldownSnapshot,
   trimTrailingSlash
 } from "./market-providers.js";
+import { fetchResearchProviderBars } from "./research-providers.js";
 import { clamp, fingerprint, round } from "../utils/helpers.js";
 
 function deterministicUnit(value) {
@@ -198,7 +199,7 @@ function attachProvider(payload, provider, live) {
   };
 }
 
-async function fetchTwelveDataSeries(config, ticker) {
+async function fetchTwelveDataSeries(config, ticker, quotaManager = null) {
   const params = new URLSearchParams({
     symbol: ticker,
     interval: config.marketDataInterval,
@@ -211,27 +212,30 @@ async function fetchTwelveDataSeries(config, ticker) {
   const request = withTimeout(config.marketDataRequestTimeoutMs);
 
   try {
-    const response = await fetch(`https://api.twelvedata.com/time_series?${params.toString()}`, {
-      signal: request.signal,
-      headers: {
-        "User-Agent": "SentimentAnalyst/1.0 (+market data)"
+    const run = async () => {
+      const response = await fetch(`https://api.twelvedata.com/time_series?${params.toString()}`, {
+        signal: request.signal,
+        headers: {
+          "User-Agent": "SentimentAnalyst/1.0 (+market data)"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Twelve Data request failed with ${response.status}`);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Twelve Data request failed with ${response.status}`);
-    }
+      const payload = await response.json();
+      if (payload.status === "error") {
+        throw new Error(payload.message || "Twelve Data returned an error");
+      }
 
-    const payload = await response.json();
-    if (payload.status === "error") {
-      throw new Error(payload.message || "Twelve Data returned an error");
-    }
+      if (!Array.isArray(payload.values) || !payload.values.length) {
+        throw new Error("Twelve Data returned no price history");
+      }
 
-    if (!Array.isArray(payload.values) || !payload.values.length) {
-      throw new Error("Twelve Data returned no price history");
-    }
-
-    return payload;
+      return payload;
+    };
+    return quotaManager ? quotaManager.run("twelvedata", run) : run();
   } finally {
     request.clear();
   }
@@ -344,7 +348,48 @@ function mapAlpacaSeries(payload, scoredDocs, config) {
   })));
 }
 
-export function createMarketDataService({ config, store }) {
+function mapGenericBarSeries(bars, scoredDocs) {
+  const values = [...bars]
+    .filter((point) => point?.timestamp && Number.isFinite(Number(point.close)))
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .map((point) => ({
+      timestamp: parseSeriesTimestamp(point.timestamp),
+      open: Number(point.open ?? point.close),
+      high: Number(point.high ?? point.close),
+      low: Number(point.low ?? point.close),
+      close: Number(point.close),
+      volume: Number(point.volume || 0)
+    }));
+
+  if (!values.length) {
+    throw new Error("Provider returned no normalized bars");
+  }
+
+  const sentimentHistory = values.map((point) => {
+    const signal = buildSeriesSignal(scoredDocs, new Date(point.timestamp));
+    return {
+      timestamp: point.timestamp,
+      sentiment: round(signal.sentiment, 4),
+      confidence: round(signal.confidence, 4)
+    };
+  });
+
+  const priceHistory = values.map((point) => ({
+    timestamp: point.timestamp,
+    price: round(point.close, 2)
+  }));
+
+  return buildSeriesPayload(priceHistory, sentimentHistory, WINDOWS.find((window) => window.key === "1d")?.label || "1 Day", values.map((point) => ({
+    timestamp: point.timestamp,
+    open: round(point.open, 2),
+    high: round(point.high, 2),
+    low: round(point.low, 2),
+    close: round(point.close, 2),
+    volume: Math.round(point.volume || 0)
+  })));
+}
+
+export function createMarketDataService({ config, store, providerQuota = null }) {
   const cache = new Map();
   const providerCooldowns = new Map();
   let timer = null;
@@ -402,11 +447,19 @@ export function createMarketDataService({ config, store }) {
     const rawPayload =
       provider === "alpaca"
         ? await fetchAlpacaSeries(config, ticker)
-        : await fetchTwelveDataSeries(config, ticker);
+        : provider === "twelvedata"
+          ? await fetchTwelveDataSeries(config, ticker, providerQuota)
+          : await fetchResearchProviderBars(provider, config, ticker, providerQuota, {
+              interval: config.marketDataInterval,
+              points: config.marketDataHistoryPoints,
+              timeoutMs: config.marketDataRequestTimeoutMs
+            });
     const payload =
       provider === "alpaca"
         ? mapAlpacaSeries(rawPayload, scoredDocs, config)
-        : mapTwelveDataSeries(rawPayload, scoredDocs);
+        : provider === "twelvedata"
+          ? mapTwelveDataSeries(rawPayload, scoredDocs)
+          : mapGenericBarSeries(rawPayload, scoredDocs);
     return attachProvider(payload, provider, true);
   }
 

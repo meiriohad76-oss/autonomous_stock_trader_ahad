@@ -21,6 +21,7 @@ import { createMarketFlowMonitor } from "./domain/market-flow.js";
 import { hasConfiguredLiveMarketProvider } from "./domain/market-providers.js";
 import { createPersistence } from "./domain/persistence.js";
 import { createPipeline } from "./domain/pipeline.js";
+import { createProviderQuotaManager } from "./domain/provider-quota.js";
 import { replaySampleEvents } from "./domain/replay.js";
 import { createSecFundamentalsCollector, selectSecFundamentalsRefreshBatch } from "./domain/sec-fundamentals.js";
 import { createSecInstitutionalCollector } from "./domain/sec-institutional.js";
@@ -1257,22 +1258,24 @@ export function createSentimentApp() {
   const persistenceReady = persistence.init();
   store.persistence = persistence;
   const pipeline = createPipeline(store);
-  const fundamentalMarketDataService = createFundamentalMarketDataService({ config, store });
+  const providerQuota = createProviderQuotaManager({ config, store });
+  const fundamentalMarketDataService = createFundamentalMarketDataService({ config, store, providerQuota });
   const fundamentals = createFundamentalsEngine({ store, config, marketReferenceService: fundamentalMarketDataService });
   const liveNewsCollector = createLiveNewsCollector({
     config,
     store,
     pipeline,
+    providerQuota,
     getTrackedFundamentalCompanies: () => trackedFundamentalCompanies(store)
   });
-  const marketDataService = createMarketDataService({ config, store });
+  const marketDataService = createMarketDataService({ config, store, providerQuota });
   const trackedUniverse = { getTrackedFundamentalCompanies: () => trackedFundamentalCompanies(store) };
   const marketFlowMonitor = createMarketFlowMonitor({ config, store, pipeline, marketDataService, ...trackedUniverse });
   const secInsiderCollector = createSecInsiderCollector({ config, store, pipeline, ...trackedUniverse });
   const secInstitutionalCollector = createSecInstitutionalCollector({ config, store, pipeline, ...trackedUniverse });
-  const corporateEventsCollector = createCorporateEventsCollector({ config, store, pipeline, ...trackedUniverse });
+  const corporateEventsCollector = createCorporateEventsCollector({ config, store, pipeline, providerQuota, ...trackedUniverse });
   const socialSentimentCollector = createSocialSentimentCollector({ config, store, pipeline, ...trackedUniverse });
-  const tradePrintsCollector = createTradePrintsCollector({ config, store, pipeline, ...trackedUniverse });
+  const tradePrintsCollector = createTradePrintsCollector({ config, store, pipeline, providerQuota, ...trackedUniverse });
 
   async function loadFundamentalCoverage({ force = false } = {}) {
     const targetUniverse = await loadFundamentalUniverse({ config });

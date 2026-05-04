@@ -32,17 +32,20 @@ function normalizeTradeTimestamp(value) {
   return new Date(numeric * 1000).toISOString();
 }
 
-async function fetchPolygonTrades(ticker, apiKey, timeoutMs) {
+async function fetchPolygonTrades(ticker, apiKey, timeoutMs, quotaManager = null) {
   const url = `${POLYGON_BASE}/${encodeURIComponent(ticker)}?limit=50&sort=timestamp&order=desc&apiKey=${encodeURIComponent(apiKey)}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "SentimentAnalyst/1.0 (+trade-prints)" }
-    });
-    if (!response.ok) throw new Error(`Polygon trades ${response.status}`);
-    const json = await response.json();
+    const run = async () => {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { "User-Agent": "SentimentAnalyst/1.0 (+trade-prints)" }
+      });
+      if (!response.ok) throw new Error(`Polygon trades ${response.status}`);
+      return response.json();
+    };
+    const json = quotaManager ? await quotaManager.run("polygon", run) : await run();
     return (json?.results ?? []).map((t) => ({
       price: t.price,
       size: t.size,
@@ -74,11 +77,11 @@ async function fetchIexTrades(ticker, apiKey, timeoutMs) {
   }
 }
 
-async function fetchTrades(ticker, config) {
+async function fetchTrades(ticker, config, quotaManager = null) {
   if (config.tradePrintsProvider === "iex") {
     return fetchIexTrades(ticker, config.tradePrintsApiKey, config.tradePrintsRequestTimeoutMs);
   }
-  return fetchPolygonTrades(ticker, config.tradePrintsApiKey, config.tradePrintsRequestTimeoutMs);
+  return fetchPolygonTrades(ticker, config.tradePrintsApiKey, config.tradePrintsRequestTimeoutMs, quotaManager);
 }
 
 function classifyTrades(trades, basePrice, minNotionalUsd) {
@@ -144,7 +147,7 @@ function buildRawDocument(entry, action, buyNotional, sellNotional, blockCount, 
 }
 
 export function createTradePrintsCollector(app) {
-  const { config, pipeline, store } = app;
+  const { config, pipeline, store, providerQuota = null } = app;
   const healthKey = `${config.tradePrintsProvider}_trade_prints`;
   let timer = null;
   let running = false;
@@ -194,7 +197,18 @@ export function createTradePrintsCollector(app) {
     let errors = 0;
 
     try {
-      const universe = getTrackedUniverseEntries(app, { excludeFunds: true });
+      const fullUniverse = getTrackedUniverseEntries(app, { excludeFunds: true });
+      const latestFinalSelection = store.finalSelectionHistory?.[0]?.candidates || [];
+      const finalistTickers = new Set(
+        latestFinalSelection
+          .filter((candidate) => candidate.execution_allowed || ["long", "short", "review"].includes(candidate.final_action))
+          .map((candidate) => candidate.ticker)
+      );
+      const scopedUniverse =
+        config.tradePrintsScope === "finalists" && finalistTickers.size
+          ? fullUniverse.filter((entry) => finalistTickers.has(entry.ticker))
+          : fullUniverse;
+      const universe = scopedUniverse.length ? scopedUniverse : fullUniverse;
       const maxTickers = Math.max(0, Math.floor(Number(config.tradePrintsMaxTickersPerPoll || 0)));
       const rotated = maxTickers && maxTickers < universe.length
         ? rotateUniverseEntries(universe, cursor, maxTickers)
@@ -213,7 +227,7 @@ export function createTradePrintsCollector(app) {
 
         let trades;
         try {
-          trades = await fetchTrades(entry.ticker, config);
+          trades = await fetchTrades(entry.ticker, config, providerQuota);
         } catch {
           errors += 1;
           continue;

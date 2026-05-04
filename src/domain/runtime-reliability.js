@@ -4,6 +4,7 @@ import {
   hasAlpacaMarketDataAccess,
   marketProviderMissingConfigReason
 } from "./market-providers.js";
+import { hasAlphaVantageAccess, hasFinnhubAccess, hasFmpAccess } from "./research-providers.js";
 import { differenceInHours, round } from "../utils/helpers.js";
 
 const HOUR_MS = 3_600_000;
@@ -318,7 +319,13 @@ function dataAutoStart(config, enabled, explicitAutoStart = true) {
 }
 
 function hasEarningsAccess(config) {
-  return config.earningsProvider !== "twelvedata" || Boolean(config.earningsApiKey || config.twelveDataApiKey);
+  return (
+    config.earningsProvider === "yahoo" ||
+    (config.earningsProvider === "twelvedata" && Boolean(config.earningsApiKey || config.twelveDataApiKey)) ||
+    (config.earningsProvider === "finnhub" && hasFinnhubAccess(config)) ||
+    (config.earningsProvider === "fmp" && hasFmpAccess(config)) ||
+    (config.earningsProvider === "alphavantage" && hasAlphaVantageAccess(config))
+  );
 }
 
 function hasTradePrintsAccess(config) {

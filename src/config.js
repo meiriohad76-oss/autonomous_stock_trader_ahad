@@ -114,6 +114,9 @@ function firstCredential(...names) {
 
 const autonomousDataEnabled = envBoolean("AGENCY_AUTONOMOUS_DATA_ENABLED", "true", "true");
 const twelveDataApiKey = envCredential("TWELVE_DATA_API_KEY");
+const finnhubApiKey = envCredential("FINNHUB_API_KEY");
+const fmpApiKey = firstCredential("FMP_API_KEY", "FINANCIAL_MODELING_PREP_API_KEY");
+const alphaVantageApiKey = firstCredential("ALPHA_VANTAGE_API_KEY", "ALPHAVANTAGE_API_KEY");
 const marketauxApiKey = envCredential("MARKETAUX_API_KEY");
 const stocktwitsApiKey = envCredential("STOCKTWITS_API_KEY");
 const polygonApiKey = envCredential("POLYGON_API_KEY");
@@ -137,8 +140,11 @@ const llmSelectionModel =
   process.env.LLM_SELECTION_MODEL || (llmSelectionProvider === "openai" ? "gpt-5.4-mini" : "policy-aware-shadow-reviewer");
 const llmSelectionApiUrl =
   process.env.LLM_SELECTION_API_URL || (llmSelectionProvider === "openai" ? "https://api.openai.com/v1/responses" : "");
-const earningsApiKey = firstCredential("EARNINGS_API_KEY", "TWELVE_DATA_API_KEY");
+const earningsApiKey = firstCredential("EARNINGS_API_KEY", "FINNHUB_API_KEY", "FMP_API_KEY", "TWELVE_DATA_API_KEY", "ALPHA_VANTAGE_API_KEY");
 const hasTwelveDataKey = Boolean(twelveDataApiKey);
+const hasFinnhubKey = Boolean(finnhubApiKey);
+const hasFmpKey = Boolean(fmpApiKey);
+const hasAlphaVantageKey = Boolean(alphaVantageApiKey);
 const hasStocktwitsKey = Boolean(stocktwitsApiKey);
 const hasPolygonKey = Boolean(polygonApiKey);
 const hasIexKey = Boolean(iexApiKey);
@@ -150,6 +156,12 @@ const alpacaMarketDataEnabled =
 const marketauxEnabled =
   String(process.env.MARKETAUX_ENABLED || (marketauxApiKey ? "true" : "false")).toLowerCase() !==
   "false";
+const finnhubEnabled =
+  String(process.env.FINNHUB_ENABLED || (hasFinnhubKey ? "true" : "false")).toLowerCase() !== "false";
+const fmpEnabled =
+  String(process.env.FMP_ENABLED || (hasFmpKey ? "true" : "false")).toLowerCase() !== "false";
+const alphaVantageEnabled =
+  String(process.env.ALPHA_VANTAGE_ENABLED || (hasAlphaVantageKey ? "true" : "false")).toLowerCase() !== "false";
 const stocktwitsEnabled =
   String(process.env.STOCKTWITS_ENABLED || (hasStocktwitsKey ? "true" : "false")).toLowerCase() !== "false";
 const tradePrintsEnabled =
@@ -158,21 +170,54 @@ const tradePrintsEnabled =
       (hasGenericTradePrintsKey || hasPolygonKey || hasIexKey ? "true" : "false")
   ).toLowerCase() !== "false";
 
-function marketProvider(envName, { allowAlpaca = true } = {}) {
+function marketProvider(envName, { allowAlpaca = true, includeFmp = false } = {}) {
   const requested = process.env[envName];
   if (autonomousDataEnabled && allowAlpaca && alpacaMarketDataEnabled && hasAlpacaMarketDataKey && (!requested || requested === "synthetic")) {
     return "alpaca";
   }
+  if (autonomousDataEnabled && finnhubEnabled && hasFinnhubKey && (!requested || requested === "synthetic")) {
+    return "finnhub";
+  }
+  if (autonomousDataEnabled && includeFmp && fmpEnabled && hasFmpKey && (!requested || requested === "synthetic")) {
+    return "fmp";
+  }
   if (autonomousDataEnabled && hasTwelveDataKey && (!requested || requested === "synthetic")) {
     return "twelvedata";
   }
-  return requested || (allowAlpaca && alpacaMarketDataEnabled && hasAlpacaMarketDataKey ? "alpaca" : hasTwelveDataKey ? "twelvedata" : "synthetic");
+  if (autonomousDataEnabled && alphaVantageEnabled && hasAlphaVantageKey && (!requested || requested === "synthetic")) {
+    return "alphavantage";
+  }
+  return requested || (
+    allowAlpaca && alpacaMarketDataEnabled && hasAlpacaMarketDataKey
+      ? "alpaca"
+      : finnhubEnabled && hasFinnhubKey
+        ? "finnhub"
+        : includeFmp && fmpEnabled && hasFmpKey
+          ? "fmp"
+          : hasTwelveDataKey
+            ? "twelvedata"
+            : alphaVantageEnabled && hasAlphaVantageKey
+              ? "alphavantage"
+              : "synthetic"
+  );
 }
 
 const selectedMarketDataProvider = marketProvider("MARKET_DATA_PROVIDER");
-const selectedFundamentalMarketDataProvider = marketProvider("FUNDAMENTAL_MARKET_DATA_PROVIDER");
+const selectedFundamentalMarketDataProvider = marketProvider("FUNDAMENTAL_MARKET_DATA_PROVIDER", { includeFmp: true });
 const selectedMarketDataIsTwelve = selectedMarketDataProvider === "twelvedata";
 const selectedFundamentalMarketDataIsTwelve = selectedFundamentalMarketDataProvider === "twelvedata";
+const selectedEarningsProvider = String(
+  process.env.EARNINGS_PROVIDER ||
+    (hasFinnhubKey && finnhubEnabled
+      ? "finnhub"
+      : hasFmpKey && fmpEnabled
+        ? "fmp"
+        : hasTwelveDataKey
+          ? "twelvedata"
+          : hasAlphaVantageKey && alphaVantageEnabled
+            ? "alphavantage"
+            : "yahoo")
+).trim().toLowerCase();
 const selectedTradePrintsProvider =
   String(process.env.TRADE_PRINTS_PROVIDER || "").trim().toLowerCase() ||
   (hasPolygonKey || hasGenericTradePrintsKey ? "polygon" : hasIexKey ? "iex" : "polygon");
@@ -232,6 +277,7 @@ export const config = {
   liveNewsLookbackHours: Number(process.env.LIVE_NEWS_LOOKBACK_HOURS || 24),
   liveNewsUniverseMode: process.env.LIVE_NEWS_UNIVERSE_MODE || "full",
   liveNewsRssFallbackMaxTickers: envNumber("LIVE_NEWS_RSS_FALLBACK_MAX_TICKERS", 20, 10),
+  liveNewsApiFallbackMaxTickers: envNumber("LIVE_NEWS_API_FALLBACK_MAX_TICKERS", 8, 4),
   liveNewsRequestTimeoutMs: Number(process.env.LIVE_NEWS_REQUEST_TIMEOUT_MS || 12000),
   liveNewsRequestRetries: envNumber("LIVE_NEWS_REQUEST_RETRIES", 1, 0),
   marketauxEnabled,
@@ -243,6 +289,40 @@ export const config = {
   marketauxLimitPerRequest: envNumber("MARKETAUX_LIMIT_PER_REQUEST", 3, 3),
   marketauxRequestTimeoutMs: Number(process.env.MARKETAUX_REQUEST_TIMEOUT_MS || 12000),
   marketauxRequestRetries: envNumber("MARKETAUX_REQUEST_RETRIES", 1, 0),
+  providerQuotaStrict: String(process.env.PROVIDER_QUOTA_STRICT || "true").toLowerCase() !== "false",
+  providerRequestTimeoutMs: Number(process.env.PROVIDER_REQUEST_TIMEOUT_MS || 12000),
+  finnhubEnabled,
+  finnhubApiKey,
+  finnhubBaseUrl: process.env.FINNHUB_BASE_URL || "https://finnhub.io/api/v1",
+  finnhubMaxRequestsPerMinute: Number(process.env.FINNHUB_MAX_REQUESTS_PER_MINUTE || 45),
+  finnhubReserveRequestsPerMinute: Number(process.env.FINNHUB_RESERVE_REQUESTS_PER_MINUTE || 2),
+  finnhubMaxRequestsPerDay: Number(process.env.FINNHUB_MAX_REQUESTS_PER_DAY || 0),
+  finnhubReserveRequestsPerDay: Number(process.env.FINNHUB_RESERVE_REQUESTS_PER_DAY || 0),
+  fmpEnabled,
+  fmpApiKey,
+  fmpBaseUrl: process.env.FMP_BASE_URL || "https://financialmodelingprep.com/stable",
+  fmpMaxRequestsPerMinute: Number(process.env.FMP_MAX_REQUESTS_PER_MINUTE || 0),
+  fmpReserveRequestsPerMinute: Number(process.env.FMP_RESERVE_REQUESTS_PER_MINUTE || 0),
+  fmpMaxRequestsPerDay: Number(process.env.FMP_MAX_REQUESTS_PER_DAY || 200),
+  fmpReserveRequestsPerDay: Number(process.env.FMP_RESERVE_REQUESTS_PER_DAY || 25),
+  alphaVantageEnabled,
+  alphaVantageApiKey,
+  alphaVantageMaxRequestsPerMinute: Number(process.env.ALPHA_VANTAGE_MAX_REQUESTS_PER_MINUTE || 5),
+  alphaVantageReserveRequestsPerMinute: Number(process.env.ALPHA_VANTAGE_RESERVE_REQUESTS_PER_MINUTE || 1),
+  alphaVantageMaxRequestsPerDay: Number(process.env.ALPHA_VANTAGE_MAX_REQUESTS_PER_DAY || 20),
+  alphaVantageReserveRequestsPerDay: Number(process.env.ALPHA_VANTAGE_RESERVE_REQUESTS_PER_DAY || 2),
+  marketauxMaxRequestsPerMinute: Number(process.env.MARKETAUX_MAX_REQUESTS_PER_MINUTE || 0),
+  marketauxReserveRequestsPerMinute: Number(process.env.MARKETAUX_RESERVE_REQUESTS_PER_MINUTE || 0),
+  marketauxMaxRequestsPerDay: Number(process.env.MARKETAUX_MAX_REQUESTS_PER_DAY || 80),
+  marketauxReserveRequestsPerDay: Number(process.env.MARKETAUX_RESERVE_REQUESTS_PER_DAY || 10),
+  twelveDataMaxRequestsPerMinute: Number(process.env.TWELVE_DATA_MAX_REQUESTS_PER_MINUTE || 7),
+  twelveDataReserveRequestsPerMinute: Number(process.env.TWELVE_DATA_RESERVE_REQUESTS_PER_MINUTE || 1),
+  twelveDataMaxRequestsPerDay: Number(process.env.TWELVE_DATA_MAX_REQUESTS_PER_DAY || 700),
+  twelveDataReserveRequestsPerDay: Number(process.env.TWELVE_DATA_RESERVE_REQUESTS_PER_DAY || 50),
+  polygonMaxRequestsPerMinute: Number(process.env.POLYGON_MAX_REQUESTS_PER_MINUTE || 4),
+  polygonReserveRequestsPerMinute: Number(process.env.POLYGON_RESERVE_REQUESTS_PER_MINUTE || 1),
+  polygonMaxRequestsPerDay: Number(process.env.POLYGON_MAX_REQUESTS_PER_DAY || 0),
+  polygonReserveRequestsPerDay: Number(process.env.POLYGON_RESERVE_REQUESTS_PER_DAY || 0),
   autonomousDataEnabled,
   marketDataProvider: selectedMarketDataProvider,
   marketDataInterval: process.env.MARKET_DATA_INTERVAL || "15min",
@@ -387,7 +467,7 @@ export const config = {
   secUserAgent:
     process.env.SEC_USER_AGENT || "SentimentAnalyst/1.0 contact=local@example.com",
   earningsEnabled: String(process.env.EARNINGS_ENABLED || "true").toLowerCase() !== "false",
-  earningsProvider: process.env.EARNINGS_PROVIDER || "yahoo",
+  earningsProvider: selectedEarningsProvider,
   earningsApiKey,
   earningsLookAheadDays: Number(process.env.EARNINGS_LOOK_AHEAD_DAYS || 14),
   earningsPollMs: Number(process.env.EARNINGS_POLL_MS || 14400000),
@@ -399,6 +479,7 @@ export const config = {
   stocktwitsMaxTickersPerPoll: envNumber("STOCKTWITS_MAX_TICKERS_PER_POLL", 20, 8),
   stocktwitsRequestTimeoutMs: Number(process.env.STOCKTWITS_REQUEST_TIMEOUT_MS || 10000),
   tradePrintsEnabled,
+  tradePrintsScope: process.env.TRADE_PRINTS_SCOPE || "finalists",
   tradePrintsProvider: selectedTradePrintsProvider,
   polygonApiKey,
   iexApiKey,

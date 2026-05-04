@@ -1,3 +1,10 @@
+import {
+  hasAlphaVantageAccess,
+  hasFinnhubAccess,
+  hasFmpAccess,
+  researchProviderMissingConfigReason
+} from "./research-providers.js";
+
 export function hasTwelveDataAccess(config) {
   return Boolean(config?.twelveDataApiKey);
 }
@@ -17,11 +24,21 @@ export function isLiveMarketProviderConfigured(config, provider = config?.market
   if (provider === "alpaca") {
     return hasAlpacaMarketDataAccess(config);
   }
+  if (provider === "finnhub") {
+    return hasFinnhubAccess(config);
+  }
+  if (provider === "fmp") {
+    return hasFmpAccess(config);
+  }
+  if (provider === "alphavantage") {
+    return hasAlphaVantageAccess(config);
+  }
   return provider === "synthetic";
 }
 
 export function liveMarketProviderChain(config, preferred = config?.marketDataProvider, options = {}) {
   const includeSynthetic = options.includeSynthetic !== false;
+  const includeFmp = Boolean(options.includeFmp);
   const providers = [];
   const add = (provider) => {
     if (!provider || providers.includes(provider)) {
@@ -45,9 +62,18 @@ export function liveMarketProviderChain(config, preferred = config?.marketDataPr
 
   add(preferred);
   add("alpaca");
+  add("finnhub");
+  if (includeFmp) {
+    add("fmp");
+  }
   add("twelvedata");
+  add("alphavantage");
   add("synthetic");
   return providers;
+}
+
+export function fundamentalReferenceProviderChain(config, preferred = config?.fundamentalMarketDataProvider, options = {}) {
+  return liveMarketProviderChain(config, preferred, { ...options, includeFmp: true });
 }
 
 export function hasConfiguredLiveMarketProvider(config, preferred = config?.marketDataProvider) {
@@ -56,10 +82,13 @@ export function hasConfiguredLiveMarketProvider(config, preferred = config?.mark
 
 export function marketProviderMissingConfigReason(provider, purpose = "live market data") {
   if (provider !== "synthetic" && !provider) {
-    return `${purpose} needs MARKET_DATA_PROVIDER=alpaca or twelvedata plus matching credentials.`;
+    return `${purpose} needs MARKET_DATA_PROVIDER=alpaca, finnhub, fmp, twelvedata, alphavantage, or synthetic plus matching credentials.`;
   }
   if (provider === "alpaca") {
     return `${purpose} needs Alpaca market data credentials. Set ALPACA_API_KEY/ALPACA_SECRET_KEY or ALPACA_API_KEY_ID/ALPACA_API_SECRET_KEY.`;
+  }
+  if (["finnhub", "fmp", "alphavantage"].includes(provider)) {
+    return researchProviderMissingConfigReason(provider, purpose);
   }
   if (provider === "twelvedata") {
     return `${purpose} needs TWELVE_DATA_API_KEY.`;
@@ -79,6 +108,12 @@ export function liveMarketDataStatus(config, provider = config?.marketDataProvid
     feed:
       provider === "alpaca"
         ? config?.alpacaMarketDataFeed || "iex"
+        : provider === "finnhub"
+          ? "stock_candle"
+          : provider === "fmp"
+            ? "stable"
+            : provider === "alphavantage"
+              ? config?.marketDataInterval || "15min"
         : provider === "twelvedata"
           ? config?.marketDataInterval || null
           : null,

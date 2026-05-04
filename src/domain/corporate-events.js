@@ -1,4 +1,10 @@
 import { getTrackedUniverseEntries, rotateUniverseEntries } from "./tracked-universe.js";
+import {
+  fetchProviderEarningsDates,
+  hasAlphaVantageAccess,
+  hasFinnhubAccess,
+  hasFmpAccess
+} from "./research-providers.js";
 
 const YAHOO_BASE = "https://query2.finance.yahoo.com/v10/finance/quoteSummary";
 const TWELVE_DATA_BASE = "https://api.twelvedata.com/earnings";
@@ -120,7 +126,7 @@ async function getYahooAuth(timeoutMs) {
   }
 }
 
-async function fetchTwelveDataEarnings(ticker, config) {
+async function fetchTwelveDataEarnings(ticker, config, quotaManager = null) {
   const apiKey = config.earningsApiKey || config.twelveDataApiKey;
   if (!apiKey) {
     throw new Error("Twelve Data earnings requires TWELVE_DATA_API_KEY or EARNINGS_API_KEY");
@@ -129,37 +135,65 @@ async function fetchTwelveDataEarnings(ticker, config) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.earningsRequestTimeoutMs);
   try {
-    const response = await fetch(buildTwelveDataEarningsUrl(ticker, apiKey), {
-      signal: controller.signal,
-      headers: { "User-Agent": "SentimentAnalyst/1.0 (+earnings-calendar)" }
-    });
-    if (!response.ok) throw new Error(`Twelve Data earnings ${response.status}`);
-    const json = await response.json();
-    if (json?.status === "error") throw new Error(json.message || "Twelve Data earnings returned an error");
-    return (json?.earnings ?? []).map((item) => parseEarningsDateMs(item?.date)).filter(Boolean);
+    const run = async () => {
+      const response = await fetch(buildTwelveDataEarningsUrl(ticker, apiKey), {
+        signal: controller.signal,
+        headers: { "User-Agent": "SentimentAnalyst/1.0 (+earnings-calendar)" }
+      });
+      if (!response.ok) throw new Error(`Twelve Data earnings ${response.status}`);
+      const json = await response.json();
+      if (json?.status === "error") throw new Error(json.message || "Twelve Data earnings returned an error");
+      return (json?.earnings ?? []).map((item) => parseEarningsDateMs(item?.date)).filter(Boolean);
+    };
+    return quotaManager ? quotaManager.run("twelvedata", run) : run();
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function fetchCalendarEvents(entry, config) {
-  if (config.earningsProvider === "twelvedata") {
+function earningsProviderChain(config) {
+  const providers = [];
+  const add = (provider) => {
+    if (provider && !providers.includes(provider)) {
+      providers.push(provider);
+    }
+  };
+  add(config.earningsProvider || "yahoo");
+  if (hasFinnhubAccess(config)) add("finnhub");
+  if (hasFmpAccess(config)) add("fmp");
+  if (config.twelveDataApiKey || config.earningsApiKey) add("twelvedata");
+  if (hasAlphaVantageAccess(config)) add("alphavantage");
+  add("yahoo");
+  return providers;
+}
+
+async function fetchCalendarEvents(entry, config, quotaManager = null) {
+  let lastError = null;
+
+  for (const provider of earningsProviderChain(config)) {
     try {
-      return {
-        dates: await fetchTwelveDataEarnings(entry.ticker, config),
-        provider: "twelvedata"
-      };
-    } catch {
+      if (provider === "twelvedata") {
+        return {
+          dates: await fetchTwelveDataEarnings(entry.ticker, config, quotaManager),
+          provider: "twelvedata"
+        };
+      }
+      if (["finnhub", "fmp", "alphavantage"].includes(provider)) {
+        return {
+          dates: await fetchProviderEarningsDates(provider, config, entry, quotaManager),
+          provider
+        };
+      }
       return {
         dates: await fetchYahooCalendarEvents(entry.ticker, config.earningsRequestTimeoutMs),
         provider: "yahoo"
       };
+    } catch (error) {
+      lastError = error;
     }
   }
-  return {
-    dates: await fetchYahooCalendarEvents(entry.ticker, config.earningsRequestTimeoutMs),
-    provider: "yahoo"
-  };
+
+  throw lastError || new Error("No earnings provider returned data");
 }
 
 function buildUpcomingRawDocument(entry, earningsDateMs, provider) {
@@ -215,7 +249,7 @@ function buildReleaseRawDocument(entry, earningsDateMs, provider) {
 }
 
 export function createCorporateEventsCollector(app) {
-  const { config, pipeline, store } = app;
+  const { config, pipeline, store, providerQuota = null } = app;
   let timer = null;
   let running = false;
   let inFlight = false;
@@ -278,7 +312,7 @@ export function createCorporateEventsCollector(app) {
       const results = await Promise.all(
         batch.map(async (entry) => {
           try {
-            const { dates, provider } = await fetchCalendarEvents(entry, config);
+            const { dates, provider } = await fetchCalendarEvents(entry, config, providerQuota);
             return { entry, dates, provider, error: null };
           } catch (err) {
             return { entry, dates: [], provider: null, error: err.message };

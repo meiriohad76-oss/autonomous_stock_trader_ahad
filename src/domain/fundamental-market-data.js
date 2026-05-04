@@ -1,13 +1,14 @@
 import { clamp, fingerprint, round } from "../utils/helpers.js";
 import {
   alpacaHeaders,
+  fundamentalReferenceProviderChain,
   isLiveMarketProviderConfigured,
-  liveMarketProviderChain,
   liveMarketDataStatus,
   marketProviderCooldownMs,
   providerCooldownSnapshot,
   trimTrailingSlash
 } from "./market-providers.js";
+import { fetchResearchProviderReference } from "./research-providers.js";
 
 function deterministicUnit(value) {
   const hex = fingerprint(value).slice(0, 8);
@@ -120,7 +121,7 @@ function buildSyntheticReference(company) {
   };
 }
 
-async function fetchQuote(config, ticker) {
+async function fetchQuote(config, ticker, quotaManager = null) {
   const params = new URLSearchParams({
     symbol: ticker,
     apikey: config.twelveDataApiKey
@@ -128,29 +129,32 @@ async function fetchQuote(config, ticker) {
   const request = withTimeout(config.fundamentalMarketDataRequestTimeoutMs);
 
   try {
-    const response = await fetch(`https://api.twelvedata.com/quote?${params.toString()}`, {
-      signal: request.signal,
-      headers: {
-        "User-Agent": "SentimentAnalyst/1.0 (+fundamental reference)"
+    const run = async () => {
+      const response = await fetch(`https://api.twelvedata.com/quote?${params.toString()}`, {
+        signal: request.signal,
+        headers: {
+          "User-Agent": "SentimentAnalyst/1.0 (+fundamental reference)"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Quote request failed with ${response.status}`);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Quote request failed with ${response.status}`);
-    }
+      const payload = await response.json();
+      if (payload.status === "error") {
+        throw new Error(payload.message || "Quote endpoint returned an error");
+      }
 
-    const payload = await response.json();
-    if (payload.status === "error") {
-      throw new Error(payload.message || "Quote endpoint returned an error");
-    }
-
-    return payload;
+      return payload;
+    };
+    return quotaManager ? quotaManager.run("twelvedata", run) : run();
   } finally {
     request.clear();
   }
 }
 
-async function fetchStatistics(config, ticker) {
+async function fetchStatistics(config, ticker, quotaManager = null) {
   const params = new URLSearchParams({
     symbol: ticker,
     apikey: config.twelveDataApiKey
@@ -158,23 +162,26 @@ async function fetchStatistics(config, ticker) {
   const request = withTimeout(config.fundamentalMarketDataRequestTimeoutMs);
 
   try {
-    const response = await fetch(`https://api.twelvedata.com/statistics?${params.toString()}`, {
-      signal: request.signal,
-      headers: {
-        "User-Agent": "SentimentAnalyst/1.0 (+fundamental reference)"
+    const run = async () => {
+      const response = await fetch(`https://api.twelvedata.com/statistics?${params.toString()}`, {
+        signal: request.signal,
+        headers: {
+          "User-Agent": "SentimentAnalyst/1.0 (+fundamental reference)"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Statistics request failed with ${response.status}`);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Statistics request failed with ${response.status}`);
-    }
+      const payload = await response.json();
+      if (payload.status === "error") {
+        throw new Error(payload.message || "Statistics endpoint returned an error");
+      }
 
-    const payload = await response.json();
-    if (payload.status === "error") {
-      throw new Error(payload.message || "Statistics endpoint returned an error");
-    }
-
-    return payload;
+      return payload;
+    };
+    return quotaManager ? quotaManager.run("twelvedata", run) : run();
   } finally {
     request.clear();
   }
@@ -300,7 +307,7 @@ function mapAlpacaReference(ticker, barsPayload, fallbackCompany) {
   };
 }
 
-export function createFundamentalMarketDataService({ config, store }) {
+export function createFundamentalMarketDataService({ config, store, providerQuota = null }) {
   const cache = new Map();
   const providerCooldowns = new Map();
   let timer = null;
@@ -310,7 +317,7 @@ export function createFundamentalMarketDataService({ config, store }) {
   let refreshCursor = 0;
 
   function cacheKey(company) {
-    const chain = liveMarketProviderChain(config, config.fundamentalMarketDataProvider).join(">");
+    const chain = fundamentalReferenceProviderChain(config, config.fundamentalMarketDataProvider).join(">");
     return `${chain}:${company.ticker}`;
   }
 
@@ -346,11 +353,18 @@ export function createFundamentalMarketDataService({ config, store }) {
       };
     }
 
-    const quotePayload = await fetchQuote(config, company.ticker);
+    if (["finnhub", "fmp", "alphavantage"].includes(provider)) {
+      return {
+        payload: await fetchResearchProviderReference(provider, config, company, providerQuota),
+        partialError: null
+      };
+    }
+
+    const quotePayload = await fetchQuote(config, company.ticker, providerQuota);
     let statsPayload = null;
     let partialError = null;
     try {
-      statsPayload = await fetchStatistics(config, company.ticker);
+      statsPayload = await fetchStatistics(config, company.ticker, providerQuota);
     } catch (error) {
       partialError = error.message;
     }
@@ -364,7 +378,7 @@ export function createFundamentalMarketDataService({ config, store }) {
     const health = updateHealthSnapshot(store, config, cache.size, {
       providerCooldowns: providerCooldownSnapshot(providerCooldowns)
     });
-    const providerChain = liveMarketProviderChain(config, config.fundamentalMarketDataProvider);
+    const providerChain = fundamentalReferenceProviderChain(config, config.fundamentalMarketDataProvider);
     const liveProviders = providerChain.filter((provider) => provider !== "synthetic");
     const key = cacheKey(company);
     const cached = cache.get(key);

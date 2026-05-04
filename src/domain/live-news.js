@@ -1,5 +1,6 @@
 import { dedupeKey, normalizeWhitespace } from "../utils/helpers.js";
 import { fetchJsonWithRetry, fetchTextWithRetry } from "../utils/http.js";
+import { fetchProviderCompanyNews, hasFinnhubAccess, hasFmpAccess } from "./research-providers.js";
 import { getTrackedUniverseEntries, rotateUniverseEntries } from "./tracked-universe.js";
 
 function decodeHtmlEntities(value) {
@@ -63,7 +64,7 @@ function buildRawDocument(entry, item, provider) {
   const isMarketauxEntity = provider.key === "marketaux" && item.marketauxEntity?.symbol;
   return {
     source_name: provider.sourceName,
-    source_type: "rss",
+    source_type: provider.sourceType || "rss",
     source_priority: provider.sourcePriority,
     canonical_url: item.link,
     url: item.link,
@@ -77,6 +78,7 @@ function buildRawDocument(entry, item, provider) {
       ticker_hint_match_scope: isMarketauxEntity ? "provider_entity" : "headline",
       sector_hint: entry.sector,
       collector: provider.collector,
+      provider: provider.key,
       upstream_source: item.source || provider.label,
       query: provider.query || createTickerQuery(entry),
       source_url: item.link,
@@ -111,6 +113,33 @@ function feedProviders(entry) {
       query: entry.ticker
     }
   ];
+}
+
+function apiNewsProviders(config) {
+  return [
+    hasFinnhubAccess(config)
+      ? {
+          key: "finnhub",
+          label: "Finnhub",
+          sourceName: "finnhub_news",
+          sourceType: "api",
+          sourcePriority: 0.82,
+          collector: "finnhub_company_news",
+          query: "company-news"
+        }
+      : null,
+    hasFmpAccess(config)
+      ? {
+          key: "fmp",
+          label: "FMP",
+          sourceName: "fmp_news",
+          sourceType: "api",
+          sourcePriority: 0.78,
+          collector: "fmp_stock_news",
+          query: "stock-news"
+        }
+      : null
+  ].filter(Boolean);
 }
 
 function chunkArray(items, size) {
@@ -203,7 +232,7 @@ export function mapMarketauxArticles(payload, entries, maxItemsPerTicker = 3) {
 }
 
 export function createLiveNewsCollector(app) {
-  const { config, pipeline, store } = app;
+  const { config, pipeline, store, providerQuota = null } = app;
   let timer = null;
   let running = false;
   let inFlight = false;
@@ -328,15 +357,16 @@ export function createLiveNewsCollector(app) {
     try {
       for (const chunk of chunksToPoll) {
         try {
-          const payload = await fetchJsonWithRetry(buildMarketauxUrl(config, chunk), {
-            timeoutMs: config.marketauxRequestTimeoutMs,
-            retries: config.marketauxRequestRetries,
-            label: `Marketaux news ${chunk.map((entry) => entry.ticker).join(",")}`,
-            headers: {
-              "User-Agent": "SentimentAnalyst/1.0 (+marketaux news)",
-              Accept: "application/json"
-            }
-          });
+          const marketauxRequest = () => fetchJsonWithRetry(buildMarketauxUrl(config, chunk), {
+              timeoutMs: config.marketauxRequestTimeoutMs,
+              retries: config.marketauxRequestRetries,
+              label: `Marketaux news ${chunk.map((entry) => entry.ticker).join(",")}`,
+              headers: {
+                "User-Agent": "SentimentAnalyst/1.0 (+marketaux news)",
+                Accept: "application/json"
+              }
+            });
+          const payload = providerQuota ? await providerQuota.run("marketaux", marketauxRequest) : await marketauxRequest();
           fetchedArticles += Array.isArray(payload?.data) ? payload.data.length : 0;
           results.push(...mapMarketauxArticles(payload, chunk, config.marketauxMaxItemsPerTicker));
         } catch (error) {
@@ -345,15 +375,16 @@ export function createLiveNewsCollector(app) {
             for (const entry of chunk) {
               singleSymbolRetries += 1;
               try {
-                const payload = await fetchJsonWithRetry(buildMarketauxUrl(config, [entry]), {
-                  timeoutMs: config.marketauxRequestTimeoutMs,
-                  retries: config.marketauxRequestRetries,
-                  label: `Marketaux news ${entry.ticker}`,
-                  headers: {
-                    "User-Agent": "SentimentAnalyst/1.0 (+marketaux news)",
-                    Accept: "application/json"
-                  }
-                });
+                const marketauxRequest = () => fetchJsonWithRetry(buildMarketauxUrl(config, [entry]), {
+                    timeoutMs: config.marketauxRequestTimeoutMs,
+                    retries: config.marketauxRequestRetries,
+                    label: `Marketaux news ${entry.ticker}`,
+                    headers: {
+                      "User-Agent": "SentimentAnalyst/1.0 (+marketaux news)",
+                      Accept: "application/json"
+                    }
+                  });
+                const payload = providerQuota ? await providerQuota.run("marketaux", marketauxRequest) : await marketauxRequest();
                 fetchedArticles += Array.isArray(payload?.data) ? payload.data.length : 0;
                 const mapped = mapMarketauxArticles(payload, [entry], config.marketauxMaxItemsPerTicker);
                 if (mapped.length) {
@@ -425,6 +456,31 @@ export function createLiveNewsCollector(app) {
     };
   }
 
+  async function fetchApiNewsFeed(entry) {
+    const attempts = [];
+    for (const provider of apiNewsProviders(config)) {
+      try {
+        const items = await fetchProviderCompanyNews(provider.key, config, entry, providerQuota, {
+          limit: config.liveNewsMaxItemsPerTicker
+        });
+        if (items.length) {
+          return { entry, provider, items, attempts, error: null };
+        }
+        attempts.push(`${provider.key}: no items`);
+      } catch (error) {
+        attempts.push(`${provider.key}: ${error.message}`);
+      }
+    }
+
+    return {
+      entry,
+      provider: null,
+      items: [],
+      attempts,
+      error: attempts.join("; ") || "No API news provider returned items"
+    };
+  }
+
   async function pollOnce() {
     if (!config.liveNewsEnabled || inFlight) {
       return { ingested: 0, skipped: 0 };
@@ -456,13 +512,20 @@ export function createLiveNewsCollector(app) {
         rssCandidates = rotatedRss.selected;
         rssCursor = rotatedRss.nextCursor;
       }
-      const rssFallbackEntries = rssCandidates
+      const apiFallbackEntries = rssCandidates
         .filter((entry) => !marketauxTickers.has(entry.ticker))
+        .slice(0, Math.max(0, Number(config.liveNewsApiFallbackMaxTickers || config.liveNewsRssFallbackMaxTickers || rssCandidates.length)));
+      const apiFeeds = apiNewsProviders(config).length
+        ? await Promise.all(apiFallbackEntries.map((entry) => fetchApiNewsFeed(entry)))
+        : [];
+      const apiNewsTickers = new Set(apiFeeds.filter((result) => result.provider).map((result) => result.entry.ticker));
+      const rssFallbackEntries = rssCandidates
+        .filter((entry) => !marketauxTickers.has(entry.ticker) && !apiNewsTickers.has(entry.ticker))
         .slice(0, Math.max(0, Number(config.liveNewsRssFallbackMaxTickers || rssCandidates.length)));
-      health.requested_symbols = marketauxRequestedEntries.length || rssFallbackEntries.length;
+      health.requested_symbols = marketauxRequestedEntries.length || apiFallbackEntries.length || rssFallbackEntries.length;
       health.rss_fallback_symbols = rssFallbackEntries.length;
       const rssFeeds = await Promise.all(rssFallbackEntries.map((entry) => fetchTickerFeed(entry)));
-      const fetchedFeeds = [...marketauxFeeds, ...rssFeeds];
+      const fetchedFeeds = [...marketauxFeeds, ...apiFeeds, ...rssFeeds];
 
       const errors = fetchedFeeds.filter((result) => result.error);
 
