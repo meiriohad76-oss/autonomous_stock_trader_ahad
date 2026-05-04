@@ -833,6 +833,18 @@ export function buildAgencyCycleStatus({
   const setupCounts = countTradeSetups(tradeSetups);
   const tradableCount = setupCounts.long + setupCounts.short;
   const finalCounts = countFinalSelection(finalSelection);
+  const finalSelectionCandidates = Array.isArray(finalSelection?.candidates) ? finalSelection.candidates : [];
+  const finalSelectionLlmReviews = finalSelectionCandidates
+    .filter((candidate) => candidate?.llm_explanation)
+    .map((candidate) => candidate.llm_explanation);
+  const effectiveLlmSelection =
+    llmSelection ||
+    (finalSelection?.llm_agent
+      ? {
+          ...finalSelection.llm_agent,
+          recommendations: finalSelectionLlmReviews
+        }
+      : null);
   const sources = sourceByKey(workflowStatus);
   const broker = executionStatus?.broker || positionMonitor?.broker || {};
   const riskBlocked = riskSnapshot?.status === "blocked" || Boolean(riskSnapshot?.hard_blocks?.length);
@@ -896,7 +908,7 @@ export function buildAgencyCycleStatus({
     : setupCounts.watch
       ? Math.max(85, upstreamSelectionProgress)
       : upstreamSelectionProgress;
-  const llmProgressPct = llmSelection?.recommendations?.length ? 100 : Math.max(0, selectionProgressPct - 20);
+  const llmProgressPct = effectiveLlmSelection?.recommendations?.length ? 100 : Math.max(0, selectionProgressPct - 20);
   const finalSelectionProgressPct = finalCounts.executable
     ? 100
     : finalCounts.review || finalCounts.watch
@@ -927,7 +939,7 @@ export function buildAgencyCycleStatus({
   const upstreamBaselineReady =
     universeBaselineReady && fundamentalsBaselineReady && marketBaselineReady && signalsBaselineReady && policyBaselineReady;
   const deterministicBaselineReady = Boolean(selectorRan);
-  const llmBaselineReady = Boolean(llmSelection) && deterministicBaselineReady;
+  const llmBaselineReady = Boolean(effectiveLlmSelection) && deterministicBaselineReady;
   const finalBaselineReady = Boolean(finalSelection) && deterministicBaselineReady && llmBaselineReady;
   const riskBaselineReady = Boolean(riskSnapshot);
   const executionBaselineReady = Boolean(broker.configured || broker.ready_for_order_submission);
@@ -1414,14 +1426,14 @@ export function buildAgencyCycleStatus({
             progress_label: selectorRan ? "selector ran; no buy/sell setup clears threshold" : `inputs ${upstreamSelectionProgress}% ready`,
             remaining: ["stronger aligned fundamentals, market, and signal inputs"]
           }),
-    llm_selection: llmSelection?.recommendations?.length
-      ? workerStatus(["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status) ? "review" : "complete", `${llmSelection.recommendations.length} LLM-lane review(s); mode ${automationLabel(llmSelection.mode)}.`, {
-          data_state: ["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status) ? "review" : "ready",
+    llm_selection: effectiveLlmSelection?.recommendations?.length
+      ? workerStatus(["waiting_for_provider", "enabled_without_provider"].includes(effectiveLlmSelection.status) ? "review" : "complete", `${effectiveLlmSelection.recommendations.length} LLM-lane review(s); mode ${automationLabel(effectiveLlmSelection.mode)}.`, {
+          data_state: ["waiting_for_provider", "enabled_without_provider"].includes(effectiveLlmSelection.status) ? "review" : "ready",
           progress_pct: 100,
-          progress_current: llmSelection.recommendations.length,
-          progress_target: llmSelection.recommendations.length,
-          progress_label: `${llmSelection.recommendations.length} reviews complete`,
-          remaining: ["external LLM provider"]?.filter(() => ["waiting_for_provider", "enabled_without_provider"].includes(llmSelection.status))
+          progress_current: effectiveLlmSelection.recommendations.length,
+          progress_target: effectiveLlmSelection.recommendations.length,
+          progress_label: `${effectiveLlmSelection.recommendations.length} reviews complete`,
+          remaining: ["external LLM provider"]?.filter(() => ["waiting_for_provider", "enabled_without_provider"].includes(effectiveLlmSelection.status))
         })
       : workerStatus("waiting", "LLM selection has not reviewed current candidates yet.", {
           data_state: selectorRan ? "review" : "loading",
@@ -1537,7 +1549,7 @@ export function buildAgencyCycleStatus({
       signals: `${freshDecisionEvidence} fresh`,
       policy: portfolioPolicy?.status || "policy",
       deterministic_selection: `${setupCounts.long}/${setupCounts.short} buy/sell`,
-      llm_selection: llmSelection?.mode || "shadow",
+      llm_selection: effectiveLlmSelection?.mode || "shadow",
       final_selection: `${finalCounts.finalBuy}/${finalCounts.finalSell} final`,
       risk: riskSnapshot?.status || positionMonitor?.risk_status || "unknown",
       execution: broker.ready_for_order_submission ? "paper ready" : broker.configured ? "gated" : "preview only",
