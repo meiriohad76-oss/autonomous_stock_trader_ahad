@@ -1474,7 +1474,7 @@ export function createSentimentApp() {
     store.health.liveSources.sector_etf_proxies = health;
 
     try {
-      const referenceMap = await fundamentalMarketDataService.getReferenceBatch(proxies);
+      const referenceMap = await fundamentalMarketDataService.getReferenceBatch(proxies, { force: true });
       store.sectorEtfReferences = new Map(
         [...referenceMap.entries()].filter(([, reference]) => reference?.live === true && reference?.provider !== "synthetic")
       );

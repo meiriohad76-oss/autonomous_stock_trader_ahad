@@ -382,7 +382,7 @@ export function createFundamentalMarketDataService({ config, store, providerQuot
     };
   }
 
-  async function getReference(company) {
+  async function getReference(company, options = {}) {
     const health = updateHealthSnapshot(store, config, cache.size, {
       providerCooldowns: providerCooldownSnapshot(providerCooldowns)
     });
@@ -392,7 +392,7 @@ export function createFundamentalMarketDataService({ config, store, providerQuot
     const cached = cache.get(key);
     const now = Date.now();
 
-    if (cached && now - cached.fetchedAt <= config.fundamentalMarketDataCacheMs) {
+    if (!options.force && cached && now - cached.fetchedAt <= config.fundamentalMarketDataCacheMs) {
       return cached.payload;
     }
 
@@ -457,9 +457,9 @@ export function createFundamentalMarketDataService({ config, store, providerQuot
     }
   }
 
-  async function getReferenceBatch(companies) {
+  async function getReferenceBatch(companies, options = {}) {
     const entries = await Promise.all(
-      companies.map(async (company) => [company.ticker, await getReference(company)])
+      companies.map(async (company) => [company.ticker, await getReference(company, options)])
     );
     const map = new Map(entries);
     updateHealthSnapshot(store, config, cache.size, {
@@ -508,8 +508,8 @@ export function createFundamentalMarketDataService({ config, store, providerQuot
   }
 
   return {
-    async getReferenceBatch(companies) {
-      return getReferenceBatch(companies);
+    async getReferenceBatch(companies, options = {}) {
+      return getReferenceBatch(companies, options);
     },
     async start(options = {}) {
       running = true;
