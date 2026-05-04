@@ -108,6 +108,43 @@ if (!submitBlocked) {
   throw new Error("Execution submit should be blocked while BROKER_SUBMIT_ENABLED=false.");
 }
 
+const originalFetch = globalThis.fetch;
+let accountFetches = 0;
+try {
+  globalThis.fetch = async (url) => {
+    if (!String(url).includes("/v2/account")) {
+      throw new Error(`Unexpected broker cache test URL ${url}`);
+    }
+    accountFetches += 1;
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({ equity: "100000", buying_power: "75000" });
+      }
+    };
+  };
+
+  const cachedBroker = createAlpacaBroker({
+    config: {
+      ...config,
+      alpacaApiKeyId: "paper-key",
+      alpacaApiSecretKey: "paper-secret",
+      brokerRequestTimeoutMs: 1000,
+      brokerReadCacheMs: 5000
+    }
+  });
+  const [firstAccount, secondAccount] = await Promise.all([
+    cachedBroker.getAccount(),
+    cachedBroker.getAccount()
+  ]);
+  if (accountFetches !== 1 || firstAccount.equity !== secondAccount.equity) {
+    throw new Error("Broker GET cache should share in-flight account reads.");
+  }
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
 console.log(
   JSON.stringify(
     {
@@ -120,7 +157,8 @@ console.log(
       bracket_order: intent.order.order_class === "bracket",
       risk_allowed: preview.risk.allowed,
       watch_blocked_reason: watchIntent.blocked_reason,
-      submit_blocked: submitBlocked
+      submit_blocked: submitBlocked,
+      broker_read_cache_shared_fetches: accountFetches
     },
     null,
     2

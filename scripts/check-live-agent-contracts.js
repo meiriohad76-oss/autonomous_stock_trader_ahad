@@ -1,11 +1,23 @@
 const baseUrl = (process.env.AGENT_AUDIT_BASE_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const strict = process.argv.includes("--strict");
+const timeoutArg = process.argv.find((arg) => arg.startsWith("--timeout-ms="));
+const timeoutIndex = process.argv.indexOf("--timeout-ms");
+const rawEndpointTimeoutMs =
+  timeoutArg?.split("=")[1] ||
+  (timeoutIndex >= 0 ? process.argv[timeoutIndex + 1] : null) ||
+  process.env.AGENT_AUDIT_TIMEOUT_MS ||
+  90_000;
+const parsedEndpointTimeoutMs = Number(rawEndpointTimeoutMs);
+const endpointTimeoutMs = Number.isFinite(parsedEndpointTimeoutMs) && parsedEndpointTimeoutMs > 0
+  ? parsedEndpointTimeoutMs
+  : 90_000;
 const now = new Date();
 const forbiddenRuntimeMarker = /(sample|fixture|bootstrap|replayed_sample|synthetic_outcome)/i;
 
 const report = {
   status: "unknown",
   base_url: baseUrl,
+  endpoint_timeout_ms: endpointTimeoutMs,
   as_of: now.toISOString(),
   checks: [],
   failures: [],
@@ -60,7 +72,7 @@ function ageHours(value) {
 async function getJson(path) {
   const response = await fetch(`${baseUrl}${path}`, {
     headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(30_000)
+    signal: AbortSignal.timeout(endpointTimeoutMs)
   });
   if (!response.ok) {
     throw new Error(`${path} failed with HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
@@ -255,6 +267,7 @@ async function main() {
   const summary = {
     status: report.status,
     base_url: baseUrl,
+    endpoint_timeout_ms: endpointTimeoutMs,
     checks: report.checks.length,
     failures: report.failures.length,
     warnings: report.warnings.length,

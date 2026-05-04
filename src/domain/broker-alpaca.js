@@ -53,6 +53,50 @@ export function buildAlpacaBrokerStatus(config) {
 }
 
 export function createAlpacaBroker({ config }) {
+  const readCache = new Map();
+
+  function cacheKeyFor(method, url) {
+    const ttlMs = Number(config.brokerReadCacheMs || 0);
+    if (method !== "GET" || !Number.isFinite(ttlMs) || ttlMs <= 0) {
+      return null;
+    }
+    return `${normalizedMode(config)}:${url.pathname}?${url.searchParams.toString()}`;
+  }
+
+  function getCachedRead(cacheKey) {
+    if (!cacheKey) {
+      return null;
+    }
+    const entry = readCache.get(cacheKey);
+    if (!entry) {
+      return null;
+    }
+    const ttlMs = Number(config.brokerReadCacheMs || 0);
+    const expired = !entry.pending && Date.now() - entry.createdAt > ttlMs;
+    if (expired) {
+      readCache.delete(cacheKey);
+      return null;
+    }
+    return entry.promise;
+  }
+
+  function rememberRead(cacheKey, promise) {
+    if (!cacheKey) {
+      return promise;
+    }
+    const entry = { createdAt: Date.now(), pending: true, promise };
+    readCache.set(cacheKey, entry);
+    promise
+      .then(() => {
+        entry.pending = false;
+        entry.createdAt = Date.now();
+      })
+      .catch(() => {
+        readCache.delete(cacheKey);
+      });
+    return promise;
+  }
+
   async function request(pathname, { method = "GET", query = null, body = null } = {}) {
     if (!hasCredentials(config)) {
       throw new Error("Alpaca credentials are missing. Set ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY.");
@@ -67,10 +111,16 @@ export function createAlpacaBroker({ config }) {
       });
     }
 
+    const cacheKey = cacheKeyFor(method, url);
+    const cached = getCachedRead(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.brokerRequestTimeoutMs);
 
-    try {
+    const requestPromise = (async () => {
       const response = await fetch(url, {
         method,
         headers: {
@@ -92,7 +142,15 @@ export function createAlpacaBroker({ config }) {
         throw error;
       }
 
+      if (method !== "GET") {
+        readCache.clear();
+      }
+
       return payload;
+    })();
+
+    try {
+      return await rememberRead(cacheKey, requestPromise);
     } finally {
       clearTimeout(timeout);
     }

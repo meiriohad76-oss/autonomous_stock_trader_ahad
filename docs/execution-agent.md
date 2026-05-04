@@ -60,6 +60,8 @@ The adapter uses Alpaca's documented key headers:
 - `APCA-API-KEY-ID`
 - `APCA-API-SECRET-KEY`
 
+Dashboard broker reads share in-flight Alpaca GET requests and briefly cache successful reads for `BROKER_READ_CACHE_MS`. This keeps Command Center, Risk, and Portfolio snapshots from issuing duplicate account/positions/orders calls during the same refresh. Order submission is never cached, and any non-GET broker call clears the read cache.
+
 The optional MCP adapter uses Alpaca's official MCP server. It exposes the same project broker contract to the Execution, Risk, and Position Monitor agents:
 
 - account tool: `get_account_info`
@@ -98,6 +100,7 @@ BROKER_ADAPTER=rest
 BROKER_TRADING_MODE=paper
 BROKER_SUBMIT_ENABLED=false
 BROKER_REQUEST_TIMEOUT_MS=12000
+BROKER_READ_CACHE_MS=5000
 ALPACA_API_KEY_ID=
 ALPACA_API_SECRET_KEY=
 ALPACA_PAPER_BASE_URL=https://paper-api.alpaca.markets

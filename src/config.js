@@ -386,6 +386,7 @@ export const config = {
     ? false
     : String(process.env.BROKER_SUBMIT_ENABLED || "false").toLowerCase() === "true",
   brokerRequestTimeoutMs: Number(process.env.BROKER_REQUEST_TIMEOUT_MS || 12000),
+  brokerReadCacheMs: Number(process.env.BROKER_READ_CACHE_MS || 5000),
   alpacaApiKeyId,
   alpacaApiSecretKey,
   alpacaPaperBaseUrl: process.env.ALPACA_PAPER_BASE_URL || "https://paper-api.alpaca.markets",

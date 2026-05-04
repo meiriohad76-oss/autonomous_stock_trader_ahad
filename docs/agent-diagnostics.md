@@ -60,6 +60,19 @@ Fail CI or a deployment script when any agent reports `fail`:
 npm run check:agents -- --fail-on-agent-fail
 ```
 
+Audit the live dashboard/API contract:
+
+```bash
+npm run check:live-agents
+```
+
+The live audit uses a Pi-friendly per-endpoint timeout of 90 seconds by default. Override it when testing a cold restart or a faster local machine:
+
+```bash
+AGENT_AUDIT_TIMEOUT_MS=120000 npm run check:live-agents
+npm run check:live-agents -- --timeout-ms=45000
+```
+
 ## Agent Keys
 
 `universe`, `fundamentals`, `market`, `signals`, `policy`, `deterministic_selection`, `llm_selection`, `final_selection`, `risk`, `execution`, `portfolio`, `learning`
