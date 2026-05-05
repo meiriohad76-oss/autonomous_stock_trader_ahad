@@ -1280,7 +1280,7 @@ function buildLearningAnalysis() {
   const setupByTicker = new Map(setups.map((setup) => [setup.ticker, setup]));
   const counts = screenerUniverseCounts();
   const secCoverage = secCoverageSummary();
-  const sectors = deriveVisibleSectorSummaries(universeRows());
+  const sectors = marketSectorSummaries(universeRows());
   const activeRows = activeMarketSignalRows(universeRows());
   const moneyFlowSignals = collectMoneyFlowSignals();
   const signalTime = latestSignalTime();
@@ -1446,8 +1446,8 @@ function buildLearningAnalysis() {
     );
   }
 
-  const bullishSectors = sectors.filter((sector) => sector.sentiment_regime === "bullish").length;
-  const bearishSectors = sectors.filter((sector) => sector.sentiment_regime === "bearish").length;
+  const bullishSectors = sectors.filter((sector) => (sector.sector_strength?.label || sector.sentiment_regime) === "bullish").length;
+  const bearishSectors = sectors.filter((sector) => (sector.sector_strength?.label || sector.sentiment_regime) === "bearish").length;
   const sampleCount = decisions.length + positions.length;
   ensureSuggestion(
     "Universe Agent",
