@@ -284,6 +284,18 @@ input:focus-visible {
   grid-column: span 12;
 }
 
+[data-view-panel="markets"] .workspace-panel:nth-child(1) {
+  grid-column: span 12;
+}
+
+[data-view-panel="markets"] .workspace-panel:nth-child(2) {
+  grid-column: span 7;
+}
+
+[data-view-panel="markets"] .workspace-panel:nth-child(3) {
+  grid-column: span 5;
+}
+
 .trading-workspace-grid .trading-flow-panel {
   grid-column: span 12;
 }
@@ -2022,6 +2034,203 @@ input:focus-visible {
 
 .workspace-card-grid.compact-grid {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.market-briefing {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(126, 165, 255, 0.24);
+  background: rgba(126, 165, 255, 0.07);
+}
+
+.market-briefing-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.market-briefing-head h3 {
+  margin: 4px 0 6px;
+  font-size: 1.35rem;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+}
+
+.market-briefing-head p,
+.market-explain-grid p,
+.market-sector-card p,
+.market-empty-state span,
+.agent-diagnostics-details small,
+.market-chart-details small {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.market-action-strip {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.35fr) repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.market-action-card {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.market-action-card.primary {
+  border-color: rgba(19, 255, 67, 0.28);
+  background: rgba(19, 255, 67, 0.08);
+}
+
+.market-action-card span,
+.market-explain-grid span,
+.market-sector-head span {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.market-action-card strong {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.market-action-card small {
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.market-explain-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.market-explain-grid > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.market-explain-grid strong {
+  display: block;
+  margin: 5px 0;
+  font-size: 1rem;
+}
+
+.market-primary-actions {
+  justify-content: flex-start;
+}
+
+.agent-diagnostics-details,
+.market-chart-details {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--surface-border);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.agent-diagnostics-details summary,
+.market-chart-details summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.agent-diagnostics-details summary span,
+.market-chart-details summary span {
+  font-weight: 850;
+}
+
+.agent-diagnostics-details > .agent-process-panel,
+.agent-diagnostics-details > .agent-test-report {
+  margin: 0 14px 14px;
+}
+
+.market-chart-details .chart-panel-shell {
+  margin: 0 14px 14px;
+}
+
+.market-sector-card {
+  display: grid;
+  gap: 8px;
+  min-height: 150px;
+}
+
+.market-sector-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.market-sector-head b {
+  flex: 0 0 auto;
+  max-width: 120px;
+  padding: 5px 8px;
+  border-radius: 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.market-sector-card.bullish .market-sector-head b {
+  color: var(--green);
+  background: rgba(19, 255, 67, 0.12);
+}
+
+.market-sector-card.bearish .market-sector-head b {
+  color: var(--red);
+  background: rgba(255, 84, 75, 0.12);
+}
+
+.market-sector-card strong {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.market-sector-card p {
+  min-height: 40px;
+  font-size: 12px;
+}
+
+.market-empty-state {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(173, 198, 255, 0.22);
+  background: rgba(173, 198, 255, 0.06);
+}
+
+.market-empty-state strong {
+  color: var(--text);
 }
 
 .mini-card,
@@ -4364,6 +4573,11 @@ input:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .market-action-strip,
+  .market-explain-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workflow-live-data-grid {
     grid-template-columns: 1fr;
   }
@@ -4658,6 +4872,18 @@ input:focus-visible {
 
   .workflow-step-grid,
   .workflow-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .market-briefing-head,
+  .agent-diagnostics-details summary,
+  .market-chart-details summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .market-action-strip,
+  .market-explain-grid {
     grid-template-columns: 1fr;
   }
 

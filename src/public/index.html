@@ -414,8 +414,8 @@
           <article class="panel workspace-panel">
             <div class="panel-toolbar">
               <div>
-                <h2>Sector Strength</h2>
-                <p>Market &amp; Sector Agent: identifies bullish and bearish sector trends that can help or hurt each stock.</p>
+                <h2>Market Agent Bottom Line</h2>
+                <p>First shows whether the market is helping, which sectors have tailwind or pressure, and whether any stocks have fresh timing signals.</p>
               </div>
               <div class="chip-row" id="markets-filter-tabs">
                 <button class="time-chip active" data-market-filter="all" type="button">All</button>
@@ -425,18 +425,24 @@
             </div>
             <div id="markets-breadth" class="workspace-card-grid"></div>
             <div id="market-agent-process" class="agent-process-slot"></div>
-            <div class="chart-panel-shell">
-              <svg id="markets-sector-chart" class="workspace-chart" viewBox="0 0 760 220" preserveAspectRatio="none"></svg>
-            </div>
             <div id="markets-sector-grid" class="workspace-card-grid"></div>
             <div id="markets-sector-focus" class="workspace-detail"></div>
+            <details class="market-chart-details">
+              <summary>
+                <span>Sector Score Chart</span>
+                <small>Open for the visual distribution behind the cards.</small>
+              </summary>
+              <div class="chart-panel-shell">
+                <svg id="markets-sector-chart" class="workspace-chart" viewBox="0 0 760 220" preserveAspectRatio="none"></svg>
+              </div>
+            </details>
           </article>
 
           <article class="panel workspace-panel">
             <div class="panel-toolbar">
               <div>
-                <h2>Market Comparison</h2>
-                <p>Ranks visible names by market trend alignment, sentiment strength, confidence, momentum, and story velocity.</p>
+                <h2>Stock Timing Signals</h2>
+                <p>Only stocks with fresh market evidence appear here. If it is empty, Market Agent is sector context only.</p>
               </div>
             </div>
             <div id="markets-comparison-strip" class="workspace-card-grid compact-grid"></div>
