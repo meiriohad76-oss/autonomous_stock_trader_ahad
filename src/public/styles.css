@@ -2163,12 +2163,21 @@ input:focus-visible {
   background: rgba(19, 255, 67, 0.07);
 }
 
+.market-explain-card.warning {
+  border-color: rgba(255, 193, 7, 0.35);
+  background: rgba(255, 193, 7, 0.08);
+}
+
 .market-explain-card.bearish strong {
   color: var(--red);
 }
 
 .market-explain-card.bullish strong {
   color: var(--green);
+}
+
+.market-explain-card.warning strong {
+  color: #ffd166;
 }
 
 .market-primary-actions {
@@ -2182,6 +2191,7 @@ input:focus-visible {
   border-radius: var(--radius-md);
   border: 1px solid var(--surface-border);
   background: rgba(255, 255, 255, 0.025);
+  overflow: hidden;
 }
 
 .agent-diagnostics-details summary,
@@ -2213,6 +2223,12 @@ input:focus-visible {
 .agent-diagnostics-details > .agent-process-panel,
 .agent-diagnostics-details > .agent-test-report {
   margin: 0 14px 14px;
+}
+
+.agent-diagnostics-details .agent-table-shell,
+.agent-diagnostics-details .leaderboard-shell {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .market-chart-details .chart-panel-shell {
@@ -3528,6 +3544,11 @@ input:focus-visible {
   text-anchor: middle;
 }
 
+.chart-label.horizontal {
+  text-anchor: start;
+  font-size: 11px;
+}
+
 .chart-caption {
   fill: var(--text-muted);
   font-size: 12px;
@@ -3540,6 +3561,11 @@ input:focus-visible {
   font-size: 11px;
   font-weight: 800;
   text-anchor: middle;
+}
+
+.chart-value.horizontal {
+  text-anchor: end;
+  fill: var(--text-soft);
 }
 
 .sector-bar.bar-bullish {
@@ -4098,6 +4124,29 @@ input:focus-visible {
 .workspace-alert.high_confidence_positive,
 .workspace-alert.polarity_reversal {
   border-left-color: var(--green);
+}
+
+.market-detail-note {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+  border-top: 1px solid var(--surface-border);
+  border-right: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.market-detail-note.neutral {
+  border-left-color: rgba(173, 198, 255, 0.75);
+}
+
+.market-detail-note strong {
+  display: block;
+  margin: 0 0 5px;
+}
+
+.market-detail-note small {
+  color: var(--text-soft);
+  line-height: 1.4;
 }
 
 .feed-card.bullish {

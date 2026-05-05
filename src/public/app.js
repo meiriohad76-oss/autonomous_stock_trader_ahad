@@ -920,6 +920,14 @@ function marketDataReliabilityLabel() {
   return "source unknown";
 }
 
+function hasRuntimeIssue(source) {
+  if (!source) {
+    return false;
+  }
+  const issue = source.last_error || source.missing_config_reason || source.disabled_reason || source.message || source.summary;
+  return Boolean(issue);
+}
+
 function compactRuntimeIssue(value, fallback = "No provider issue reported.") {
   const text = String(value || fallback)
     .replace(/<[^>]*>/g, " ")
@@ -949,6 +957,16 @@ function marketReturnText(value, missing = "unavailable") {
 
 function marketSectorSourceText(sector) {
   if (!sector?.score_available) {
+    if (sector?.sector_strength) {
+      const strength = sector.sector_strength;
+      const proxy = strength.etf_proxy || "ETF";
+      const liveStocks = `${strength.top_constituent_count || 0}/${strength.minimum_constituent_count || 5}`;
+      const etfText = strength.etf_status === "available" ? `${proxy} ${marketReturnText(strength.etf_return)}` : `${proxy} proxy not loaded`;
+      if (strength.breadth_reason) {
+        return `${strength.breadth_reason}; ${etfText}.`;
+      }
+      return `not trusted yet: ${liveStocks} live stocks; ${etfText}.`;
+    }
     if (sector?.sector_strength?.breadth_reason) {
       return sector.sector_strength.breadth_reason;
     }
@@ -960,12 +978,38 @@ function marketSectorSourceText(sector) {
       : "low-signal context only";
   }
   if (sector?.sector_strength) {
-    const top = sector.sector_strength.top_constituent_return;
-    const etf = sector.sector_strength.etf_return;
-    const proxy = sector.sector_strength.etf_proxy || "ETF";
-    return `top stocks ${marketReturnText(top)}; ${proxy} ${marketReturnText(etf)}`;
+    const strength = sector.sector_strength;
+    const top = strength.top_constituent_return;
+    const etf = strength.etf_return;
+    const proxy = strength.etf_proxy || "ETF";
+    const liveStocks = `${strength.top_constituent_count || 0}/${strength.tracked_constituent_count || sector.tracked_names || 0}`;
+    const etfText = strength.etf_status === "available" ? `${proxy} ${marketReturnText(etf)}` : `${proxy} not loaded`;
+    if (strength.etf_breadth_pass && !strength.stock_breadth_pass) {
+      return `${etfText}; stock sample thin (${liveStocks} live).`;
+    }
+    if (!strength.etf_breadth_pass && strength.stock_breadth_pass) {
+      return `stock breadth ${liveStocks} live ${marketReturnText(top)}; ${etfText}.`;
+    }
+    return `${etfText}; top stocks ${liveStocks} live ${marketReturnText(top)}.`;
   }
   return sector?.source_label || "sector context";
+}
+
+function marketSectorQualityText(sector) {
+  const strength = sector?.sector_strength || {};
+  if (!sector?.score_available) {
+    return strength.breadth_gate_pass === false ? "not trusted" : "waiting for data";
+  }
+  if (strength.etf_breadth_pass && !strength.stock_breadth_pass) {
+    return "ETF anchored; stock sample thin";
+  }
+  if (!strength.etf_breadth_pass && strength.stock_breadth_pass) {
+    return "stock breadth only";
+  }
+  if (strength.etf_breadth_pass && strength.stock_breadth_pass) {
+    return "ETF + stock breadth";
+  }
+  return prettyLabel(strength.data_quality || "usable");
 }
 
 function sectorRegime(sector) {
@@ -1037,6 +1081,9 @@ function marketDataTrustLabel() {
   if (label === "source unknown") {
     return "Unknown";
   }
+  if (hasRuntimeIssue(source)) {
+    return "Usable with warning";
+  }
   return "Usable";
 }
 
@@ -1044,6 +1091,9 @@ function marketDataTrustClass() {
   const label = marketDataTrustLabel();
   if (label === "Usable") {
     return "bullish";
+  }
+  if (label === "Usable with warning") {
+    return "warning";
   }
   if (label === "Lower trust" || label === "Needs review") {
     return "bearish";
@@ -1060,6 +1110,9 @@ function marketDataTrustMeaning() {
   if (["degraded", "error", "stale"].includes(source?.status)) {
     return "Provider errors reduce timing confidence.";
   }
+  if (hasRuntimeIssue(source)) {
+    return "Prices are usable, but a provider warning or failover was reported.";
+  }
   return `${label} is usable for market context.`;
 }
 
@@ -1072,11 +1125,12 @@ function marketDataIssueText() {
   if (marketDataTrustLabel() === "Usable" && !issue) {
     return "Issue: none reported.";
   }
-  return `Issue: ${compactRuntimeIssue(issue, "primary price provider is unavailable, so fallback context is being used.")}`;
+  const prefix = marketDataTrustLabel() === "Usable with warning" ? "Warning" : "Issue";
+  return `${prefix}: ${compactRuntimeIssue(issue, "primary price provider is unavailable, so fallback context is being used.")}`;
 }
 
 function marketSectorFormulaText() {
-  return "Score = sector ETF when available + top 10 tracked stocks + fresh sentiment/flow. Without ETF, at least 5 live stocks and 25% coverage are required. Tailwind >= +0.12; pressure <= -0.12.";
+  return "Score uses the sector ETF when loaded, top tracked stocks, and fresh sentiment/flow. If the ETF is missing, the stock-only score needs at least 5 live stocks and 25% coverage. Tailwind >= +0.12; pressure <= -0.12.";
 }
 
 function marketSectorSummaries(rows = filteredLeaderboard()) {
@@ -4232,17 +4286,27 @@ function applyMarketFilter(rows) {
   return rows.filter((row) => row.sentiment_regime === state.marketFilter);
 }
 
-function activeMarketSignalRows(rows) {
-  return rows.filter(
-    (row) =>
-      row.sentiment_visible &&
+function hasFreshTimingEvidence(row) {
+  const eventTypes = row?.top_event_types || [];
+  const reasons = row?.top_reasons || [];
+  const lowSignalOnly =
+    eventTypes.length > 0 &&
+    eventTypes.every((eventType) => eventType === "monitor_item") &&
+    reasons.includes("no_strong_rule_match");
+  return Boolean(
+    row?.sentiment_visible &&
+      !lowSignalOnly &&
       (
         Number(row.doc_count || 0) > 0 ||
         Number(row.unique_story_count || 0) > 0 ||
-        Number(row.weighted_confidence || 0) > 0 ||
-        Math.abs(Number(row.momentum_delta || 0)) > 0
+        Number(row.story_velocity || 0) > 0 ||
+        Math.abs(Number(row.momentum_delta || 0)) > 0.0001
       )
   );
+}
+
+function activeMarketSignalRows(rows) {
+  return rows.filter((row) => hasFreshTimingEvidence(row));
 }
 
 function applyAlertFilter(alerts) {
@@ -5402,6 +5466,7 @@ function renderMarketsView() {
     ? sectors.find((sector) => sector.entity_key === state.selectedSector) || null
     : null;
   const macro = state.macroRegime || {};
+  const priceTrust = marketDataTrustLabel();
   const leadingSectors = sectors
     .filter((sector) => sector.score_available && sectorRegime(sector) === "bullish")
     .slice(0, 3);
@@ -5414,7 +5479,7 @@ function renderMarketsView() {
     : `0/${rows.length} visible stocks have fresh timing evidence. Use Market Agent as sector context only until news, flow, or momentum refreshes.`;
   const nextStep = activeRows.length
     ? "Step 1: review the Stock Timing Signals panel below. Step 2: open Selection Agent."
-    : marketDataTrustLabel() === "Lower trust" || marketDataTrustLabel() === "Needs review"
+    : priceTrust === "Lower trust" || priceTrust === "Needs review" || priceTrust === "Usable with warning"
       ? "Refresh pricing, then poll flow/news."
       : "Poll flow/news for stock timing, or continue with sector context.";
 
@@ -5456,7 +5521,7 @@ function renderMarketsView() {
         <div class="market-action-card">
           <span>Stock Signals</span>
           <strong>${activeRows.length ? `${activeRowCountLabel} fresh` : "none fresh"}</strong>
-          <small>${activeRows.length ? "Only these rows have current news, flow, sentiment, or momentum timing." : "The stock timing table is intentionally empty."}</small>
+          <small>${activeRows.length ? "Fresh means current document/story, flow, alert, or momentum evidence in this window." : "The stock timing table is intentionally empty until fresh stock evidence arrives."}</small>
         </div>
       </div>
       <div class="market-explain-grid">
@@ -5477,7 +5542,7 @@ function renderMarketsView() {
         </div>
         <div class="market-explain-card ${marketDataTrustClass()}">
           <span>Price Data</span>
-          <strong>${escapeHtml(marketDataTrustLabel())}</strong>
+          <strong>${escapeHtml(priceTrust)}</strong>
           <p>${escapeHtml(marketDataTrustMeaning())}</p>
           <small>${escapeHtml(marketDataIssueText())}</small>
         </div>
@@ -5521,7 +5586,7 @@ function renderMarketsView() {
               </div>
               <strong>${marketSectorScoreText(sector)}</strong>
               <p>${escapeHtml(marketSectorSourceText(sector))}</p>
-              <small>${sector.tracked_names} names - ${marketSectorConfidenceText(sector)}</small>
+              <small>${sector.tracked_names} names - ${marketSectorConfidenceText(sector)} - ${escapeHtml(marketSectorQualityText(sector))}</small>
               <div class="mini-bar-track"><div class="mini-bar-fill ${sector.score_available ? sentimentClass(sectorRegime(sector)) : "neutral"}" style="width:${sector.score_available ? Math.max(10, Math.round(Math.abs(sector.weighted_sentiment) * 100)) : 0}%"></div></div>
             </button>
           `
@@ -5546,7 +5611,7 @@ function renderMarketsView() {
             <div>
               <div class="section-kicker">Sector Focus</div>
               <h3>${activeSector.entity_key}</h3>
-              <p>${activeSector.score_available ? prettyLabel(sectorRegime(activeSector)) : "No usable fresh"} sector tape score across ${sectorMembers.length} visible names. Top-stock tape is ${activeTopReturn}; ${activeEtfProxy} proxy is ${activeEtfReturn}; usable sentiment/flow is included only when fresh.</p>
+              <p>${activeSector.score_available ? prettyLabel(sectorRegime(activeSector)) : "No usable fresh"} sector tape score across ${sectorMembers.length} visible names. ${marketSectorQualityText(activeSector)}. Top-stock tape is ${activeTopReturn}; ${activeEtfProxy} proxy is ${activeEtfReturn}; usable sentiment/flow is included only when fresh.</p>
             </div>
             <button type="button" class="panel-action" data-clear-sector>Clear</button>
           </div>
@@ -5556,7 +5621,7 @@ function renderMarketsView() {
             <div class="workspace-stat-card"><span>Top 10 Tape</span><strong>${activeTopReturn}</strong><small>${activeStrength.top_constituent_count || 0}/${activeStrength.tracked_constituent_count || activeSector.tracked_names || 0} constituents</small></div>
             <div class="workspace-stat-card"><span>ETF Proxy</span><strong>${activeStrength.etf_proxy || "not loaded"}</strong><small>${activeEtfReturn}</small></div>
             <div class="workspace-stat-card"><span>Breadth Gate</span><strong>${activeStrength.breadth_gate_pass ? "pass" : "not trusted"}</strong><small>${activeStrength.breadth_reason || `${activeStrength.top_constituent_count || 0} live stocks; ETF ${activeStrength.etf_status || "unknown"}`}</small></div>
-            <div class="workspace-stat-card"><span>Data Quality</span><strong>${prettyLabel(activeStrength.data_quality || "unknown")}</strong><small>${activeStrength.rejected_count || 0} held out</small></div>
+            <div class="workspace-stat-card"><span>Data Quality</span><strong>${escapeHtml(marketSectorQualityText(activeSector))}</strong><small>${activeStrength.rejected_count || 0} held out</small></div>
             <div class="workspace-stat-card"><span>Recent Feed Items</span><strong>${sectorFeed.length}</strong></div>
           </div>
           <ul class="workspace-list inline-list">
@@ -5636,20 +5701,35 @@ function renderMarketsView() {
           `
         )
         .join("")
-    : `<tr class="empty-row"><td colspan="4">No fresh stock timing rows. Use sector context above, then refresh pricing / poll flow if you need current stock timing evidence.</td></tr>`;
+    : `<tr class="empty-row"><td colspan="4">No fresh stock timing rows. This table fills only after current stock-level news, flow, alerts, or momentum evidence arrives; fundamentals-only stocks remain outside this timing panel.</td></tr>`;
+
+  const detailTicker = state.tickerDetail?.ticker || null;
+  const detailFreshRow = detailTicker ? activeRows.find((row) => row.entity_key === detailTicker) : null;
+  const detailVisibleRow = detailTicker ? rows.find((row) => row.entity_key === detailTicker) : null;
+  const detailSnapshot = state.tickerDetail?.market_snapshot || {};
+  const detailRiskFlags = state.tickerDetail?.risk_flags || [];
+  const detailStatus = detailFreshRow
+    ? "This selected stock is currently in Fresh Stock Timing."
+    : detailVisibleRow
+      ? "This selected stock is visible in the Market Agent, but it does not have fresh timing evidence right now."
+      : "This is the last selected stock from another screen. Click a sector member or a fresh timing row to replace it.";
 
   elements.marketsDetail.innerHTML = state.tickerDetail
     ? `
+        <div class="workspace-alert market-detail-note ${detailFreshRow ? "high_confidence_positive" : "neutral"}">
+          <strong>Selected Stock Detail</strong>
+          <small>${escapeHtml(detailStatus)}</small>
+        </div>
         <div class="workspace-detail-grid">
           <div class="workspace-stat-card"><span>Ticker</span><strong>${state.tickerDetail.ticker}</strong></div>
           <div class="workspace-stat-card"><span>Company</span><strong>${state.tickerDetail.company_name || tickerCompany(state.tickerDetail.ticker)}</strong></div>
           <div class="workspace-stat-card"><span>Sector</span><strong>${state.tickerDetail.sector || tickerSector(state.tickerDetail.ticker)}</strong></div>
-          <div class="workspace-stat-card"><span>Price</span><strong>${formatNumber(state.tickerDetail.market_snapshot.current_price)}</strong></div>
+          <div class="workspace-stat-card"><span>Price</span><strong>${formatNumber(detailSnapshot.current_price)}</strong><small>${detailSnapshot.current_price === null || detailSnapshot.current_price === undefined ? "No current price in the selected ticker snapshot." : "Current selected ticker snapshot."}</small></div>
           <div class="workspace-stat-card"><span>Sentiment Regime</span><strong>${state.tickerDetail.regime}</strong></div>
-          <div class="workspace-stat-card"><span>Risk Flags</span><strong>${state.tickerDetail.risk_flags.length || 0}</strong></div>
+          <div class="workspace-stat-card"><span>Risk Flags</span><strong>${detailRiskFlags.length || 0}</strong></div>
         </div>
         <ul class="workspace-list">
-          ${state.tickerDetail.recent_documents
+          ${(state.tickerDetail.recent_documents || [])
             .slice(0, 5)
             .map(
               (item, index) =>
@@ -5745,43 +5825,57 @@ function renderMarketsSectorChart(sectors) {
     return;
   }
 
-  const visibleSectors = sectors.slice(0, 8);
+  const sectorShortNames = {
+    "Communication Services": "Comm Services",
+    "Consumer Discretionary": "Cons Discr.",
+    "Consumer Staples": "Staples",
+    "Health Care": "Health Care",
+    "Information Technology": "Info Tech",
+    "Real Estate": "Real Estate"
+  };
+  const visibleSectors = sectors;
   const width = 760;
-  const height = 220;
-  const chartBottom = 176;
-  const barWidth = Math.min(92, Math.max(52, Math.floor(width / Math.max(1, visibleSectors.length * 1.35))));
-  const gap = (width - visibleSectors.length * barWidth) / Math.max(1, visibleSectors.length + 1);
-  const zeroLine = 102;
-  const grid = [36, 69, 102, 135, 168]
-    .map((y) => `<line x1="0" y1="${y}" x2="${width}" y2="${y}" class="chart-grid"></line>`)
+  const rowHeight = 29;
+  const top = 40;
+  const leftLabelWidth = 168;
+  const rightValueWidth = 90;
+  const barAreaWidth = width - leftLabelWidth - rightValueWidth - 28;
+  const zeroX = leftLabelWidth + barAreaWidth / 2;
+  const height = top + visibleSectors.length * rowHeight + 24;
+  const grid = [-0.5, 0, 0.5]
+    .map((value) => {
+      const x = zeroX + value * (barAreaWidth / 2);
+      return `<line x1="${x.toFixed(1)}" y1="28" x2="${x.toFixed(1)}" y2="${height - 10}" class="${value === 0 ? "chart-axis" : "chart-grid"}"></line>`;
+    })
     .join("");
 
   const bars = visibleSectors
     .map((sector, index) => {
-      const x = gap + index * (barWidth + gap);
+      const y = top + index * rowHeight;
       const scoreAvailable = Boolean(sector.score_available);
       const amplitude = scoreAvailable ? Math.max(-1, Math.min(1, sector.weighted_sentiment || 0)) : 0;
-      const barHeight = Math.abs(amplitude) * 74;
-      const isPositive = amplitude >= 0;
-      const y = scoreAvailable ? (isPositive ? zeroLine - barHeight : zeroLine) : zeroLine - 3;
+      const barLength = Math.abs(amplitude) * (barAreaWidth / 2);
+      const x = amplitude >= 0 ? zeroX : zeroX - barLength;
       const fillClass = scoreAvailable ? `bar-${sentimentClass(sectorRegime(sector))}` : "bar-neutral unavailable";
-      const labelY = chartBottom + 18;
-      const shortLabel = sector.entity_key.length > 16 ? `${sector.entity_key.slice(0, 15)}...` : sector.entity_key;
+      const label = sectorShortNames[sector.entity_key] || sector.entity_key;
+      const barWidth = scoreAvailable ? Math.max(7, barLength) : 7;
+      const valueLabel = `${marketSectorScoreText(sector)} - ${sectorActionLabel(sector)}`;
       return `
         <g class="sector-bar-group ${state.selectedSector === sector.entity_key ? "is-selected" : ""}" data-sector="${sector.entity_key}">
-          <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth}" height="${scoreAvailable ? Math.max(10, barHeight).toFixed(1) : 6}" rx="10" class="sector-bar ${fillClass}"></rect>
-          <text x="${(x + barWidth / 2).toFixed(1)}" y="${scoreAvailable ? (isPositive ? y - 8 : y + Math.max(18, barHeight + 18)) : y - 8}" class="chart-value">${marketSectorScoreText(sector)}</text>
-          <text x="${(x + barWidth / 2).toFixed(1)}" y="${labelY}" class="chart-label">${shortLabel}</text>
+          <text x="8" y="${(y + 17).toFixed(1)}" class="chart-label horizontal">${escapeHtml(label)}</text>
+          <rect x="${x.toFixed(1)}" y="${(y + 5).toFixed(1)}" width="${barWidth.toFixed(1)}" height="14" rx="7" class="sector-bar ${fillClass}"></rect>
+          <text x="${width - 10}" y="${(y + 17).toFixed(1)}" class="chart-value horizontal">${escapeHtml(valueLabel)}</text>
         </g>
       `;
     })
     .join("");
 
+  elements.marketsSectorChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  elements.marketsSectorChart.style.height = `${Math.max(260, height)}px`;
   elements.marketsSectorChart.innerHTML = `
     ${grid}
-    <line x1="0" y1="${zeroLine}" x2="${width}" y2="${zeroLine}" class="chart-axis"></line>
     ${bars}
-    <text x="8" y="18" class="chart-caption">Sector tape score; "not fresh" means no usable current sector data</text>
+    <text x="8" y="18" class="chart-caption">Sector tape score: left is pressure, right is tailwind. All sectors are shown.</text>
   `;
 }
 
