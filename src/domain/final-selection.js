@@ -104,6 +104,35 @@ function setupQualityAdjustment(setup, action, deterministicConviction) {
   };
 }
 
+function setupEvidenceBreadth(setup = {}) {
+  const breadth = setup.evidence_breadth || null;
+  if (breadth) {
+    return {
+      pass: breadth.breadth_gate_pass !== false,
+      reason: breadth.reason || null,
+      detail: breadth
+    };
+  }
+
+  const recentDocuments = Array.isArray(setup.recent_documents) ? setup.recent_documents : [];
+  const usableDocuments = recentDocuments.filter((item) => ["alert", "watch"].includes(item.display_tier || item.evidence_quality?.display_tier || null));
+  const sourceCount = new Set(usableDocuments.map((item) => String(item.source_name || "").trim().toLowerCase()).filter(Boolean)).size;
+  const pass = usableDocuments.length >= 2 && sourceCount >= 2;
+  return {
+    pass,
+    reason: pass
+      ? null
+      : `insufficient signal breadth: ${usableDocuments.length}/2 fresh alert/watch documents and ${sourceCount}/2 independent sources`,
+    detail: {
+      inferred_from_recent_documents: true,
+      usable_signal_items: usableDocuments.length,
+      source_count: sourceCount,
+      minimum_items: 2,
+      minimum_sources: 2
+    }
+  };
+}
+
 function baseDecision(setup, llm, config, portfolioPolicy) {
   const deterministicAction = setup.action;
   const llmAction = llm?.action || "watch";
@@ -171,6 +200,13 @@ function baseDecision(setup, llm, config, portfolioPolicy) {
     finalAction = "no_trade";
   }
 
+  const evidenceBreadth = setupEvidenceBreadth(setup);
+  if (isTradable(finalAction) && !evidenceBreadth.pass) {
+    finalAction = "review";
+    executionAllowed = false;
+    reasonCodes.push("insufficient_signal_breadth");
+  }
+
   if (deterministicAction === "short" && !config.executionAllowShorts) {
     finalAction = executionAllowed ? "review" : finalAction;
     executionAllowed = false;
@@ -202,6 +238,7 @@ function baseDecision(setup, llm, config, portfolioPolicy) {
       raw_risk_flag_penalty: round(rawRiskFlagPenalty, 4),
       workflow_test_mode: Boolean(config.selectionWorkflowTestMode)
     },
+    evidence_breadth: evidenceBreadth.detail,
     reason_codes: reasonCodes
   };
 }
@@ -229,6 +266,9 @@ function policyReason(candidate) {
   }
   if (candidate.agreement === "direction_conflict") {
     return `${candidate.ticker} needs review because the two selectors disagree on direction.`;
+  }
+  if ((candidate.reason_codes || []).includes("insufficient_signal_breadth")) {
+    return `${candidate.ticker} is held for review because the signal evidence breadth is too thin for a trusted buy/sell selection.`;
   }
   if ((candidate.reason_codes || []).includes("llm_external_review_missing")) {
     return `${candidate.ticker} is held for review because it did not receive an external OpenAI LLM review.`;
@@ -285,6 +325,7 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
   const equity = Number(riskSnapshot?.equity || positionMonitor?.account?.equity || config.executionDefaultEquityUsd || 0);
   const estimatedNotional = equity && candidate.position_size_pct ? round(equity * Number(candidate.position_size_pct || 0), 2) : null;
   const llmReviewer = llm?.reviewer || (llm?.action ? "external_or_shadow_reviewer" : "unavailable");
+  const signalBreadth = candidate.evidence_breadth || setup.evidence_breadth || {};
 
   const whySelected = uniqueStrings(
     [
@@ -309,6 +350,7 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
       ...(deterministic.negative_evidence || []),
       ...(llm.concerns || []),
       llm.risk_assessment,
+      signalBreadth.breadth_gate_pass === false ? signalBreadth.reason || "Signal evidence breadth is below the trusted minimum." : null,
       ...(llm.missing_data || []).map((item) => `Missing/weak data: ${item}`),
       ...failedGates.map((gate) => gate.detail),
       candidate.final_conviction_gap ? `Final conviction is short by ${round(candidate.final_conviction_gap * 100, 1)} percentage points.` : null
@@ -349,7 +391,14 @@ function buildSelectionReport(candidate, { portfolioPolicy, riskSnapshot, positi
         setup.macro_regime?.regime_label || "unknown",
         setup.macro_regime?.bias_label || setup.macro_regime?.summary || "No market-regime label available."
       ),
-      agentVote("Signals Agent", (setup.evidence?.positive || []).length ? "passed" : "review", evidencePhrase(setup), uniqueStrings(setup.evidence?.positive, 3).join(" | ") || "No positive signal summary available."),
+      agentVote(
+        "Signals Agent",
+        signalBreadth.breadth_gate_pass === false ? "review" : (setup.evidence?.positive || []).length ? "passed" : "review",
+        evidencePhrase(setup),
+        signalBreadth.breadth_gate_pass === false
+          ? signalBreadth.reason || "Signal evidence breadth is below the trusted minimum."
+          : uniqueStrings(setup.evidence?.positive, 3).join(" | ") || "No positive signal summary available."
+      ),
       agentVote("Deterministic Selection Agent", isTradable(candidate.deterministic_action) ? "passed" : "review", candidate.deterministic_action, `${round(Number(candidate.deterministic_conviction || 0) * 100, 1)}% conviction.`),
       agentVote("LLM Selection Agent", candidate.agreement === "agree" ? "passed" : "review", candidate.llm_action, `${llmReviewer}; ${round(Number(candidate.llm_confidence || 0) * 100, 1)}% confidence.`),
       agentVote("Final Selection Agent", workflowTestPreview ? "workflow_test_preview" : approved ? "passed" : "review", candidate.final_action, `${round(Number(candidate.final_conviction || 0) * 100, 1)}% final conviction; ${round(Number(candidate.required_final_conviction || 0) * 100, 1)}% required.`),
@@ -408,6 +457,7 @@ function buildDeterministicExplanation(setup) {
     negative_evidence: setup.evidence?.negative || [],
     risk_flags: setup.risk_flags || [],
     score_components: setup.score_components || null,
+    evidence_breadth: setup.evidence_breadth || null,
     decision_thresholds: setup.decision_thresholds || null,
     decision_blockers: setup.decision_blockers || []
   };
@@ -432,6 +482,7 @@ function buildInitialCandidates({ tradeSetups, llmSelection, portfolioPolicy, ri
   return (tradeSetups?.setups || []).map((setup) => {
     const llm = llmByTicker.get(setup.ticker) || null;
     const decision = baseDecision(setup, llm, config, portfolioPolicy);
+    const evidenceBreadth = setupEvidenceBreadth(setup);
     const sizePct = round(
       clamp(
         Number(setup.position_size_pct || 0),
@@ -452,6 +503,15 @@ function buildInitialCandidates({ tradeSetups, llmSelection, portfolioPolicy, ri
           : "Final conviction minimum applies only to final buy/sell candidates.",
         decision.final_conviction,
         decision.required_final_conviction
+      ),
+      policyGate(
+        "signal_breadth",
+        evidenceBreadth.pass,
+        evidenceBreadth.pass
+          ? "Signal evidence breadth is sufficient for final selection."
+          : evidenceBreadth.reason || "Signal evidence breadth is too thin for final selection.",
+        evidenceBreadth.detail?.usable_signal_items ?? null,
+        evidenceBreadth.detail?.minimum_items ?? 2
       )
     ];
     if (decision.reason_codes.includes("workflow_test_llm_demotion_preview")) {
@@ -483,6 +543,7 @@ function buildInitialCandidates({ tradeSetups, llmSelection, portfolioPolicy, ri
       agreement: decision.agreement,
       reason_codes: [...decision.reason_codes],
       policy_gates: policyGates,
+      evidence_breadth: decision.evidence_breadth,
       position_size_pct: sizePct,
       deterministic_explanation: buildDeterministicExplanation(setup),
       llm_explanation: llm,

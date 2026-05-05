@@ -132,6 +132,15 @@ export function buildExecutionIntent(setup, account, config, { now = new Date() 
     });
   }
 
+  if (setup.evidence_breadth?.breadth_gate_pass === false) {
+    return block("signal_breadth_below_execution_minimum", {
+      ticker,
+      action,
+      evidence_breadth: setup.evidence_breadth,
+      setup
+    });
+  }
+
   if (!currentPrice || currentPrice <= 0) {
     return block("missing_current_price", { ticker, action, setup });
   }

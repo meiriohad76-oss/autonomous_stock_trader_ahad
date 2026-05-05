@@ -69,6 +69,24 @@ if (watchIntent.allowed || watchIntent.blocked_reason !== "setup_action_is_not_t
   throw new Error("Execution intent should block watch-only setups.");
 }
 
+const thinEvidenceIntent = buildExecutionIntent(
+  {
+    ...longSetup,
+    ticker: "THIN",
+    evidence_breadth: {
+      breadth_gate_pass: false,
+      reason: "insufficient signal breadth: 1/2 fresh alert/watch documents and 1/2 independent sources",
+      usable_signal_items: 1,
+      source_count: 1
+    }
+  },
+  account,
+  config
+);
+if (thinEvidenceIntent.allowed || thinEvidenceIntent.blocked_reason !== "signal_breadth_below_execution_minimum") {
+  throw new Error("Execution intent should block tradable setups whose signal breadth gate failed.");
+}
+
 const broker = createAlpacaBroker({ config });
 const agent = createExecutionAgent({
   config,
@@ -157,6 +175,7 @@ console.log(
       bracket_order: intent.order.order_class === "bracket",
       risk_allowed: preview.risk.allowed,
       watch_blocked_reason: watchIntent.blocked_reason,
+      thin_evidence_blocked_reason: thinEvidenceIntent.blocked_reason,
       submit_blocked: submitBlocked,
       broker_read_cache_shared_fetches: accountFetches
     },

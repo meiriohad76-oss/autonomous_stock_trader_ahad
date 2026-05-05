@@ -184,6 +184,16 @@ async function main() {
   const sectorTapeRows = sectorRows.filter((sector) => sector.score_source === "sector_tape" || sector.sector_strength);
   const scoredSectorTapeRows = sectorTapeRows.filter((sector) => sector.score_available && sector.sector_strength?.score !== null);
   const etfAvailableRows = sectorTapeRows.filter((sector) => sector.sector_strength?.etf_status === "available");
+  const breadthGateFailures = scoredSectorTapeRows
+    .filter((sector) => sector.sector_strength?.breadth_gate_pass === false)
+    .map((sector) => ({
+      sector: sector.entity_key,
+      score: sector.sector_strength?.score,
+      top_constituent_count: sector.sector_strength?.top_constituent_count,
+      coverage_ratio: sector.sector_strength?.coverage_ratio,
+      etf_status: sector.sector_strength?.etf_status,
+      breadth_reason: sector.sector_strength?.breadth_reason
+    }));
   const fakeZeroRows = sectorTapeRows
     .filter(
       (sector) =>
@@ -193,12 +203,17 @@ async function main() {
         sector.sector_strength?.etf_return === null
     )
     .map((sector) => sector.entity_key);
-  addCheck("market_sector_tape_contract", sectorTapeRows.length >= 10 && scoredSectorTapeRows.length >= 10 && !fakeZeroRows.length ? "pass" : "warning", {
+  addCheck("market_sector_tape_contract", sectorTapeRows.length >= 10 && !fakeZeroRows.length && !breadthGateFailures.length ? "pass" : "warning", {
     sector_tape_rows: sectorTapeRows.length,
     scored_sector_tape_rows: scoredSectorTapeRows.length,
     etf_available_rows: etfAvailableRows.length,
     fake_zero_rows: fakeZeroRows.slice(0, 30),
+    breadth_gate_failures: breadthGateFailures.slice(0, 30),
     sector_strength_summary: watchlist?.sector_strength || null
+  });
+  addCheck("market_sector_breadth_gate", breadthGateFailures.length ? "fail" : "pass", {
+    failures: breadthGateFailures.slice(0, 30),
+    rule: "A sector may not be scored when it lacks an ETF proxy and has fewer than 5 live constituents or less than 25% coverage."
   });
   addCheck("market_sector_etf_proxy_data", etfAvailableRows.length >= Math.min(8, sectorTapeRows.length) ? "pass" : "warning", {
     etf_available_rows: etfAvailableRows.length,
@@ -242,14 +257,36 @@ async function main() {
 
   const macro = await read("/api/macro-regime?window=1h");
   addCheck("market_macro_contract", macro?.regime_label || macro?.bias_label || macro?.market_context ? "pass" : "warning", macro || {});
+  addCheck(
+    "market_macro_breadth_gate",
+    macro && macro.regime_label !== "balanced" && macro.breadth?.breadth_gate_pass === false ? "fail" : "pass",
+    {
+      regime_label: macro?.regime_label,
+      breadth_gate_pass: macro?.breadth?.breadth_gate_pass,
+      breadth_reason: macro?.breadth?.breadth_reason,
+      breadth: macro?.breadth || null
+    }
+  );
 
   const setups = await read("/api/trade-setups?window=1h&limit=50&minConviction=0");
   const setupRows = asList(setups, ["setups", "items", "data"]);
   const badSetups = setupRows.filter((row) => !row?.ticker || !row?.action || row.conviction === undefined).map((row) => row?.ticker);
+  const tradableThinSetups = setupRows
+    .filter((row) => ["long", "short"].includes(row?.action) && row?.evidence_breadth?.breadth_gate_pass !== true)
+    .map((row) => ({
+      ticker: row.ticker,
+      action: row.action,
+      evidence_breadth: row.evidence_breadth || null,
+      decision_blockers: row.decision_blockers || []
+    }));
   addCheck("deterministic_setup_contract", badSetups.length ? "fail" : "pass", {
     setups: setupRows.length,
     bad: badSetups.slice(0, 30),
     counts: setups?.counts || null
+  });
+  addCheck("deterministic_signal_breadth_gate", tradableThinSetups.length ? "fail" : "pass", {
+    thin_tradable_setups: tradableThinSetups.slice(0, 30),
+    rule: "Deterministic long/short setups require at least 2 fresh alert/watch documents from 2 independent sources."
   });
 
   const finalSelection = await read("/api/final-selection?window=1h&limit=50&minConviction=0");
@@ -259,6 +296,9 @@ async function main() {
     .map((candidate) => candidate?.ticker);
   const executableWithoutOpenAiReview = candidates
     .filter((candidate) => candidate?.execution_allowed && candidate?.llm_explanation?.reviewer !== "openai")
+    .map((candidate) => candidate?.ticker);
+  const executableWithoutSignalBreadth = candidates
+    .filter((candidate) => candidate?.execution_allowed && candidate?.evidence_breadth?.breadth_gate_pass === false)
     .map((candidate) => candidate?.ticker);
   const llmAgent = finalSelection?.llm_agent || finalSelection?.llm_selection || {};
   const llmMode = llmAgent.mode || finalSelection?.llm_mode || "unknown";
@@ -275,6 +315,9 @@ async function main() {
   });
   addCheck("final_selection_external_llm_gate", executableWithoutOpenAiReview.length ? "fail" : "pass", {
     executable_without_openai_review: executableWithoutOpenAiReview.slice(0, 30)
+  });
+  addCheck("final_selection_signal_breadth_gate", executableWithoutSignalBreadth.length ? "fail" : "pass", {
+    executable_without_signal_breadth: executableWithoutSignalBreadth.slice(0, 30)
   });
   addCheck("llm_provider_connected", externalLlmReady ? "pass" : "warning", {
     mode: llmMode,

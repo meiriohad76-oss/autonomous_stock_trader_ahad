@@ -16,6 +16,8 @@ export const SECTOR_ETF_PROXIES = Object.freeze({
 
 const MAX_PLAUSIBLE_DAILY_RETURN = 0.2;
 const FULL_STRENGTH_DAILY_RETURN = 0.05;
+const MIN_STOCK_ONLY_CONSTITUENTS = 5;
+const MIN_STOCK_ONLY_COVERAGE_RATIO = 0.25;
 
 function asNumber(value) {
   const parsed = Number(value);
@@ -170,6 +172,19 @@ function componentScore(returnValue) {
   return returnValue === null ? null : clamp(returnValue / FULL_STRENGTH_DAILY_RETURN, -1, 1);
 }
 
+function breadthReason({ etfScore, topConstituents, coverageRatio, minConstituents, minCoverageRatio }) {
+  if (etfScore !== null) {
+    return null;
+  }
+  if (topConstituents.length < minConstituents) {
+    return `insufficient breadth: ${topConstituents.length}/${minConstituents} live constituents and ETF unavailable`;
+  }
+  if (coverageRatio < minCoverageRatio) {
+    return `insufficient breadth: ${round(coverageRatio * 100, 0)}% coverage below ${round(minCoverageRatio * 100, 0)}% minimum and ETF unavailable`;
+  }
+  return null;
+}
+
 function etfReferenceRow(proxyTicker, sector, options = {}) {
   const references = options.etfReferences || null;
   const reference = references instanceof Map ? references.get(proxyTicker) : references?.[proxyTicker];
@@ -189,6 +204,8 @@ function etfReferenceRow(proxyTicker, sector, options = {}) {
 function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
   const proxyTicker = SECTOR_ETF_PROXIES[sector] || null;
   const maxAgeHours = Number(options.maxAgeHours || 72);
+  const minConstituents = Math.max(1, Number(options.minSectorConstituentCount || MIN_STOCK_ONLY_CONSTITUENTS));
+  const minCoverageRatio = clamp(Number(options.minSectorCoverageRatio || MIN_STOCK_ONLY_COVERAGE_RATIO), 0, 1);
   const rejected = [];
   const usable = [];
   let normalizedWarningCount = 0;
@@ -249,6 +266,16 @@ function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
   const providerCount = new Set(usable.map((item) => item.provider).filter(Boolean)).size;
   const coverageRatio = rows.length ? usable.length / rows.length : 0;
   const outlierCount = rejected.filter((item) => item.reason === "return_outlier").length;
+  const stockBreadthPass = topConstituents.length >= minConstituents && coverageRatio >= minCoverageRatio;
+  const etfBreadthPass = etfScore !== null;
+  const breadthGatePass = etfBreadthPass || stockBreadthPass;
+  const blockedBreadthReason = breadthReason({
+    etfScore,
+    topConstituents,
+    coverageRatio,
+    minConstituents,
+    minCoverageRatio
+  });
   const confidence =
     finalScore === null
       ? 0
@@ -263,7 +290,7 @@ function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
           0,
           0.98
         );
-  const scoreAvailable = finalScore !== null && confidence >= 0.25;
+  const scoreAvailable = finalScore !== null && confidence >= 0.25 && breadthGatePass;
   const label = scoreAvailable ? sectorStateLabel(finalScore) : "neutral";
   const componentLabels = components.map((item) => item.label);
 
@@ -299,6 +326,12 @@ function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
       tracked_constituent_count: rows.length,
       coverage_ratio: round(coverageRatio, 3),
       provider_count: providerCount,
+      minimum_constituent_count: minConstituents,
+      minimum_coverage_ratio: round(minCoverageRatio, 3),
+      stock_breadth_pass: stockBreadthPass,
+      etf_breadth_pass: etfBreadthPass,
+      breadth_gate_pass: breadthGatePass,
+      breadth_reason: blockedBreadthReason,
       normalized_warning_count: normalizedWarningCount,
       rejected_count: rejected.length,
       outlier_count: outlierCount,
@@ -322,15 +355,19 @@ function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
         reason: reasonLabel(item.reason)
       })),
       data_quality:
-        scoreAvailable && topConstituents.length >= 5 && coverageRatio >= 0.35
+        scoreAvailable && topConstituents.length >= minConstituents && coverageRatio >= 0.35
           ? "usable"
           : scoreAvailable
             ? "thin_but_usable"
-            : "unavailable",
+            : finalScore !== null && !breadthGatePass
+              ? "insufficient_breadth"
+              : "unavailable",
       summary: scoreAvailable
         ? `${sector} is ${label}: top-stock tape ${round((topConstituentReturn || 0) * 100, 2)}%, ETF ${
             etfReturn === null ? "unavailable" : `${round(etfReturn * 100, 2)}%`
           }, confidence ${round(confidence * 100, 0)}%.`
+        : finalScore !== null && !breadthGatePass
+          ? `${sector} is not trusted: ${blockedBreadthReason}. Raw score ${round(finalScore, 3)} is held back.`
         : `${sector} has no usable fresh sector tape; ${rejected.length} rows were unavailable, stale, fallback, or outlier-filtered.`
     }
   };

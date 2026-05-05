@@ -42,6 +42,8 @@ const RUNTIME_CRITICALITY_MULTIPLIERS = {
 
 const DIRECTION_GAP_MINIMUM = 0.08;
 const WATCH_SCORE_THRESHOLD = 0.38;
+const MIN_TRADABLE_SIGNAL_ITEMS = 2;
+const MIN_TRADABLE_SIGNAL_SOURCES = 2;
 
 function workflowTestMode(config = {}) {
   return Boolean(config?.selectionWorkflowTestMode);
@@ -151,6 +153,39 @@ function isDirectMoneyFlowEvidence(item) {
     sourceName === "iex_trades" ||
     sourceName === "sec_edgar"
   );
+}
+
+function decisionEvidenceDocuments(docs = []) {
+  return docs.filter((item) => {
+    const tier = item.display_tier || item.evidence_quality?.display_tier || null;
+    const weight = Number(item.downstream_weight ?? item.evidence_quality?.downstream_weight ?? 0);
+    return ["alert", "watch"].includes(tier) && weight >= 0.45;
+  });
+}
+
+function evidenceSourceKey(item = {}) {
+  return String(item.source_name || item.evidence_quality?.source_name || item.source_metadata?.collector || "").trim().toLowerCase();
+}
+
+function buildSignalBreadth({ docs = [], directFlowCount = 0, config = {} } = {}) {
+  const decisionDocs = decisionEvidenceDocuments(docs);
+  const sourceCount = new Set(decisionDocs.map(evidenceSourceKey).filter(Boolean)).size;
+  const minimum_items = Math.max(1, Number(config.selectionMinSignalEvidenceItems || MIN_TRADABLE_SIGNAL_ITEMS));
+  const minimum_sources = Math.max(1, Number(config.selectionMinSignalEvidenceSources || MIN_TRADABLE_SIGNAL_SOURCES));
+  const pass = decisionDocs.length >= minimum_items && sourceCount >= minimum_sources;
+  const reason = pass
+    ? null
+    : `insufficient signal breadth: ${decisionDocs.length}/${minimum_items} fresh alert/watch documents and ${sourceCount}/${minimum_sources} independent sources`;
+
+  return {
+    breadth_gate_pass: pass,
+    reason,
+    usable_signal_items: decisionDocs.length,
+    source_count: sourceCount,
+    direct_flow_items: directFlowCount,
+    minimum_items,
+    minimum_sources
+  };
 }
 
 function pricePlan(action, currentPrice, conviction, beta = 1) {
@@ -443,6 +478,7 @@ function computeSetup({
   const inferredFlowCount = moneyFlowItems.filter((item) => item.evidence_quality?.observation_level === "bar_derived_inferred").length;
   const directFlowCount = moneyFlowItems.filter(isDirectMoneyFlowEvidence).length;
   const rssHeadlineCount = docs.filter((item) => item.evidence_quality?.observation_level === "rss_headline_only").length;
+  const signalBreadth = buildSignalBreadth({ docs, directFlowCount, config });
 
   let longScore = 0;
   let shortScore = 0;
@@ -627,6 +663,12 @@ function computeSetup({
     action = "watch";
   }
 
+  const signalBreadthBlocksTrade = (action === "long" || action === "short") && !signalBreadth.breadth_gate_pass;
+  if (signalBreadthBlocksTrade) {
+    riskFlags.unshift(signalBreadth.reason);
+    action = bestScore >= watchThreshold ? "watch" : "no_trade";
+  }
+
   const conviction = action === "watch" ? clamp(bestScore * 0.88, 0, 0.74) : clamp(bestScore, 0, 0.95);
   const hasFundamentalSupport = screenStage === "eligible" && directionLabel !== "bearish_headwind";
   const tradePlan = pricePlan(action, currentPrice, conviction, beta);
@@ -643,6 +685,16 @@ function computeSetup({
     directionGap: directionGapMinimum,
     watchThreshold
   });
+  if (signalBreadthBlocksTrade) {
+    decisionBlockers.unshift({
+      key: "insufficient_signal_breadth",
+      detail: "A buy/sell setup needs enough fresh ticker-level evidence breadth before it can become tradable.",
+      value: signalBreadth.usable_signal_items,
+      threshold: signalBreadth.minimum_items,
+      source_count: signalBreadth.source_count,
+      source_threshold: signalBreadth.minimum_sources
+    });
+  }
 
   return {
     ticker,
@@ -686,6 +738,7 @@ function computeSetup({
       short_missing_to_threshold: round(Math.max(0, shortThreshold - shortScore), 3)
     },
     decision_blockers: decisionBlockers,
+    evidence_breadth: signalBreadth,
     runtime_reliability: testModeActive
       ? {
           ...runtimeAdjustment,

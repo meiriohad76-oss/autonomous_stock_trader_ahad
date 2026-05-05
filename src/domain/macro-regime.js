@@ -21,6 +21,11 @@ const BEARISH_FLOW_EVENT_TYPES = new Set([
   "smart_money_stacking_negative"
 ]);
 
+const MIN_MACRO_SECTOR_SIGNALS = 3;
+const MIN_MACRO_TICKER_SIGNALS = 10;
+const MIN_MACRO_RECENT_EVENTS = 5;
+const MIN_MACRO_EVENT_SOURCES = 2;
+
 function latestAlertTimestamp(alert) {
   return alert.created_at || alert.detected_at || null;
 }
@@ -67,6 +72,10 @@ function uniqueList(items, limit = 5) {
   return [...new Set(items.filter(Boolean))].slice(0, limit);
 }
 
+function sourceKey(row = {}) {
+  return String(row.normalized?.source_name || row.score?.source_name || "").trim().toLowerCase();
+}
+
 function latestStatesForWindow(store, entityType, window) {
   const byKey = new Map();
   for (const state of store.sentimentStates) {
@@ -101,6 +110,7 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
   const fundamentals = store.fundamentals?.leaderboard || [];
   const screener = store.fundamentals?.screener || null;
   const recentRows = buildRecentScores(store, recentHours);
+  const recentSourceCount = new Set(recentRows.map(sourceKey).filter(Boolean)).size;
   const bullishFlowCount = recentRows.filter((row) => BULLISH_FLOW_EVENT_TYPES.has(row.score.event_type)).length;
   const bearishFlowCount = recentRows.filter((row) => BEARISH_FLOW_EVENT_TYPES.has(row.score.event_type)).length;
   const activeAlerts = filterFreshEvidence(store.alertHistory, store.config);
@@ -142,6 +152,18 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
   const momentumDelta = Number(marketPulse?.momentum_delta || 0);
   const marketConfidence = Number(marketPulse?.weighted_confidence || 0);
   const flowBalance = bullishFlowCount - bearishFlowCount;
+  const minimumSectorSignals = Math.max(1, Number(store.config?.macroMinSectorSignals || MIN_MACRO_SECTOR_SIGNALS));
+  const minimumTickerSignals = Math.max(1, Number(store.config?.macroMinTickerSignals || MIN_MACRO_TICKER_SIGNALS));
+  const minimumRecentEvents = Math.max(1, Number(store.config?.macroMinRecentEvents || MIN_MACRO_RECENT_EVENTS));
+  const minimumRecentSources = Math.max(1, Number(store.config?.macroMinRecentSources || MIN_MACRO_EVENT_SOURCES));
+  const marketPulseTrusted = Boolean(marketPulse && marketConfidence >= 0.25);
+  const sectorBreadthTrusted = sectorSignals.length >= minimumSectorSignals;
+  const tickerBreadthTrusted = tickerStates.length >= minimumTickerSignals;
+  const eventBreadthTrusted = recentRows.length >= minimumRecentEvents && recentSourceCount >= minimumRecentSources;
+  const macroBreadthPass = marketPulseTrusted && (sectorBreadthTrusted || tickerBreadthTrusted || eventBreadthTrusted);
+  const macroBreadthReason = macroBreadthPass
+    ? null
+    : `insufficient macro breadth: market pulse ${marketPulseTrusted ? "present" : "missing/low confidence"}, sectors ${sectorSignals.length}/${minimumSectorSignals}, tickers ${tickerStates.length}/${minimumTickerSignals}, recent events ${recentRows.length}/${minimumRecentEvents} from ${recentSourceCount}/${minimumRecentSources} sources`;
 
   let longScore = 0;
   let shortScore = 0;
@@ -230,6 +252,17 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
     riskFlags.push("leadership is mixed across the board");
   }
 
+  if (regimeLabel !== "balanced" && !macroBreadthPass) {
+    riskFlags.push(macroBreadthReason);
+    regimeLabel = "balanced";
+    biasLabel = "balanced";
+    riskPosture = "neutral";
+    exposureMultiplier = 0.9;
+    maxGrossExposure = 0.85;
+    longThreshold = 0.56;
+    shortThreshold = 0.56;
+  }
+
   const dominantSectors = sectorSignals
     .slice()
     .sort((a, b) => Math.abs(b.weighted_sentiment) - Math.abs(a.weighted_sentiment))
@@ -261,6 +294,17 @@ export function buildMacroRegimeSnapshot(store, { window = "1h", recentHours = 2
       gap: scoreGap
     },
     breadth: {
+      breadth_gate_pass: macroBreadthPass,
+      breadth_reason: macroBreadthReason,
+      market_pulse_trusted: marketPulseTrusted,
+      sector_signal_count: sectorSignals.length,
+      ticker_signal_count: tickerStates.length,
+      recent_event_count: recentRows.length,
+      recent_source_count: recentSourceCount,
+      minimum_sector_signals: minimumSectorSignals,
+      minimum_ticker_signals: minimumTickerSignals,
+      minimum_recent_events: minimumRecentEvents,
+      minimum_recent_sources: minimumRecentSources,
       bullish_sector_breadth: round(bullishSectorBreadth, 3),
       bearish_sector_breadth: round(bearishSectorBreadth, 3),
       bullish_ticker_breadth: round(bullishTickerBreadth, 3),

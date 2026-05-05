@@ -18,6 +18,7 @@ Non-negotiable rules:
 7. Penalize candidates with earnings-window risk, source reliability issues, weak fundamentals, crowded/stretched valuation, negative money flow, poor evidence quality, RSS-only news, inferred-only flow, or small directional score gap.
 8. Long/short recommendations require aligned evidence across enough lanes: deterministic score, fundamentals, market regime, signals/money flow, and risk policy. If those lanes do not align, choose watch or no_trade.
 9. Short recommendations are especially conservative and must respect whether short trading is allowed by the supplied policy/config context.
+10. Never treat a buy/sell candidate as actionable when evidence_breadth.breadth_gate_pass is false; demote it to watch or no_trade and explain the missing breadth.
 
 Decision protocol for each candidate:
 1. Confirm the deterministic action and conviction.
@@ -121,6 +122,10 @@ function qualitativeAction(setup, config) {
     return { action: "watch", confidence: round(Math.min(confidence, 0.61), 3) };
   }
 
+  if (setup.evidence_breadth?.breadth_gate_pass === false) {
+    return { action: "watch", confidence: round(Math.min(confidence, 0.6), 3) };
+  }
+
   if (scoreGap < 0.08 || confidence < Number(config.llmSelectionMinConfidence || 0.58)) {
     return { action: "watch", confidence: round(confidence, 3) };
   }
@@ -160,6 +165,9 @@ function summarizeConcerns(setup, llmAction) {
   }
   if (!setup.recent_documents?.length) {
     concerns.push("limited recent ticker-level evidence");
+  }
+  if (setup.evidence_breadth?.breadth_gate_pass === false) {
+    concerns.push(setup.evidence_breadth.reason || "signal evidence breadth is below the trusted minimum");
   }
   if (runtimeStatusNeedsConcern(setup.runtime_reliability?.status)) {
     concerns.push(`runtime status is ${setup.runtime_reliability.status}`);
@@ -244,6 +252,7 @@ function compactSetup(setup) {
     sentiment: setup.sentiment,
     evidence: setup.evidence,
     evidence_quality: setup.evidence_quality,
+    evidence_breadth: setup.evidence_breadth,
     runtime_reliability: setup.runtime_reliability,
     position_size_pct: setup.position_size_pct,
     timeframe: setup.timeframe,
@@ -330,6 +339,7 @@ function buildPromptPack({ setups, portfolioPolicy, config }) {
       macro_regime: "Market/sector backdrop.",
       evidence: "Positive and negative evidence summaries from Signals Agent.",
       evidence_quality: "Freshness/source/corroboration quality context.",
+      evidence_breadth: "Minimum signal-item/source breadth required before a deterministic buy/sell can be trusted.",
       runtime_reliability: "Source health and reliability multiplier.",
       recent_documents: "Recent evidence headlines and source metadata supplied to the system."
     },

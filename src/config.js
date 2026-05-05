@@ -237,6 +237,12 @@ const selectionWorkflowTestMaxRuntimePenalty = Number(process.env.SELECTION_WORK
 const selectionWorkflowTestMaxRiskPenalty = Number(process.env.SELECTION_WORKFLOW_TEST_MAX_RISK_PENALTY || 0.03);
 const selectionWorkflowTestAllowLlmDemotionPreview =
   String(process.env.SELECTION_WORKFLOW_TEST_ALLOW_LLM_DEMOTION_PREVIEW || "false").toLowerCase() === "true";
+const selectionMinSignalEvidenceItems = Number(process.env.SELECTION_MIN_SIGNAL_EVIDENCE_ITEMS || 2);
+const selectionMinSignalEvidenceSources = Number(process.env.SELECTION_MIN_SIGNAL_EVIDENCE_SOURCES || 2);
+const macroMinSectorSignals = Number(process.env.MACRO_MIN_SECTOR_SIGNALS || 3);
+const macroMinTickerSignals = Number(process.env.MACRO_MIN_TICKER_SIGNALS || 10);
+const macroMinRecentEvents = Number(process.env.MACRO_MIN_RECENT_EVENTS || 5);
+const macroMinRecentSources = Number(process.env.MACRO_MIN_RECENT_SOURCES || 2);
 
 export const config = {
   piPerformanceMode,
@@ -413,6 +419,12 @@ export const config = {
   selectionWorkflowTestMaxRuntimePenalty,
   selectionWorkflowTestMaxRiskPenalty,
   selectionWorkflowTestAllowLlmDemotionPreview,
+  selectionMinSignalEvidenceItems,
+  selectionMinSignalEvidenceSources,
+  macroMinSectorSignals,
+  macroMinTickerSignals,
+  macroMinRecentEvents,
+  macroMinRecentSources,
   executionMinConviction: selectionWorkflowTestMode
     ? selectionWorkflowTestFinalConviction
     : Number(process.env.EXECUTION_MIN_CONVICTION || 0.62),

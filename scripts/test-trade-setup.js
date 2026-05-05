@@ -29,7 +29,7 @@ function sentimentState(ticker, sentiment, confidence = 0.9, momentumDelta = 0.3
   };
 }
 
-function scoredDocument(ticker, eventType = "institutional_buying", sentiment = 0.72) {
+function scoredDocument(ticker, eventType = "institutional_buying", sentiment = 0.72, sourceName = "sec_13f", sourceType = "institutional") {
   const docId = `${ticker}-${eventType}`;
   return {
     score: {
@@ -49,8 +49,8 @@ function scoredDocument(ticker, eventType = "institutional_buying", sentiment = 
       doc_id: docId,
       primary_ticker: ticker,
       headline: `${ticker} institutional buying signal`,
-      source_name: "sec_13f",
-      source_type: "institutional",
+      source_name: sourceName,
+      source_type: sourceType,
       published_at: now,
       canonical_url: `https://example.com/${ticker}`,
       source_metadata: { transaction_value_usd: 5_000_000 }
@@ -76,7 +76,10 @@ function fundamental(ticker, overrides = {}) {
 }
 
 function makeStore({ tickers = ["AAPL"], fundamentals = null, runtimeConfig = config, earningsCalendar = new Map() } = {}) {
-  const documents = tickers.map((ticker) => scoredDocument(ticker));
+  const documents = tickers.flatMap((ticker) => [
+    scoredDocument(ticker, "institutional_buying", 0.72, "sec_13f", "institutional"),
+    scoredDocument(ticker, "block_trade_buying", 0.68, "polygon_trades", "api")
+  ]);
   return {
     config: runtimeConfig,
     health: { lastUpdate: now },
@@ -87,6 +90,24 @@ function makeStore({ tickers = ["AAPL"], fundamentals = null, runtimeConfig = co
     fundamentals: { leaderboard: fundamentals || tickers.map((ticker) => fundamental(ticker)) },
     earningsCalendar
   };
+}
+
+{
+  const thinDocuments = [scoredDocument("THIN", "institutional_buying", 0.72, "sec_13f", "institutional")];
+  const result = snapshot({
+    config,
+    health: { lastUpdate: now },
+    sentimentStates: [sentimentState("THIN", 0.72)],
+    documentScores: thinDocuments.map((item) => item.score),
+    normalizedDocuments: thinDocuments.map((item) => item.normalized),
+    alertHistory: [{ alert_type: "high_confidence_positive", entity_key: "THIN", created_at: now, headline: "Thin alert", confidence: 0.9 }],
+    fundamentals: { leaderboard: [fundamental("THIN")] },
+    earningsCalendar: new Map()
+  });
+  const setup = result.setups.find((item) => item.ticker === "THIN");
+  assert.equal(setup.action, "watch", "One fresh source must not become a tradable setup.");
+  assert.equal(setup.evidence_breadth.breadth_gate_pass, false, "Thin signal breadth should be explicit.");
+  assert.ok(setup.decision_blockers.some((item) => item.key === "insufficient_signal_breadth"));
 }
 
 function snapshot(store, options = {}) {

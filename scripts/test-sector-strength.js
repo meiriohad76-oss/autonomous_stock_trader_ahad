@@ -47,7 +47,13 @@ function row(ticker, sector, percentChange, marketCap, extra = {}) {
       market_reference: { current_price: null, absolute_change: null }
     }),
     row("LLY", "Health Care", -0.004, 800_000_000_000),
-    row("UNH", "Health Care", -0.006, 500_000_000_000)
+    row("UNH", "Health Care", -0.006, 500_000_000_000),
+    row("CSGP", "Real Estate", 0.04, 14_000_000_000),
+    row("JPM", "Financials", 0.011, 600_000_000_000),
+    row("BAC", "Financials", 0.012, 300_000_000_000),
+    row("WFC", "Financials", 0.013, 220_000_000_000),
+    row("GS", "Financials", 0.014, 180_000_000_000),
+    row("MS", "Financials", 0.015, 160_000_000_000)
   ];
   const etfReferences = new Map([
     [
@@ -79,6 +85,8 @@ function row(ticker, sector, percentChange, marketCap, extra = {}) {
   });
   const tech = snapshot.sectors.find((item) => item.entity_key === "Information Technology");
   const health = snapshot.sectors.find((item) => item.entity_key === "Health Care");
+  const realEstate = snapshot.sectors.find((item) => item.entity_key === "Real Estate");
+  const financials = snapshot.sectors.find((item) => item.entity_key === "Financials");
 
   assert.equal(tech.score_available, true, "Technology sector should have a usable top-stock tape score.");
   assert.equal(tech.sentiment_regime, "bullish", "Positive top-stock tape should classify as bullish.");
@@ -96,6 +104,14 @@ function row(ticker, sector, percentChange, marketCap, extra = {}) {
   assert.equal(health.sector_strength.normalized_warning_count, 1, "Provider percent-unit rows should be normalized.");
   assert.equal(health.sector_strength.outlier_count, 1, "Extreme impossible provider returns should be rejected as outliers.");
   assert.ok(health.sector_strength.top_constituent_return < 0, "Health Care tape should keep the valid negative rows.");
+  assert.equal(realEstate.score_available, false, "A sector must not be promoted from one stock when ETF confirmation is unavailable.");
+  assert.equal(realEstate.sentiment_regime, "neutral", "Insufficient-breadth sectors should stay neutral.");
+  assert.equal(realEstate.sector_strength.score, null, "Insufficient-breadth raw scores should be held back from trusted scoring.");
+  assert.equal(realEstate.sector_strength.data_quality, "insufficient_breadth");
+  assert.equal(realEstate.sector_strength.breadth_gate_pass, false);
+  assert.match(realEstate.sector_strength.breadth_reason, /1\/5 live constituents/);
+  assert.equal(financials.score_available, true, "Five live stock datapoints should satisfy the stock-only breadth gate when ETF is unavailable.");
+  assert.equal(financials.sector_strength.breadth_gate_pass, true);
 }
 
 console.log("sector-strength tests passed");

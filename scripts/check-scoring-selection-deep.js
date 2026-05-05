@@ -535,6 +535,14 @@ async function testMarketAgent() {
     ],
     docs: [scoredDocument("AAPL", "institutional_buying", 0.8)]
   }));
+  const thinMacroBreadth = buildMacroRegimeSnapshot(macroFixture({
+    marketSentiment: 0.48,
+    sectorSentiments: { Technology: 0.55 },
+    tickerSentiments: { AAPL: 0.56 },
+    fundamentals: positiveFundamentals.slice(0, 1),
+    passRate: 1,
+    alerts: [{ alert_type: "high_confidence_positive", created_at: now }]
+  }));
 
   assert.equal(riskOn.regime_label, "risk_on");
   assert.equal(riskOn.long_threshold, 0.5);
@@ -542,6 +550,8 @@ async function testMarketAgent() {
   assert.equal(riskOff.short_threshold, 0.5);
   assert.equal(highDispersion.regime_label, "high_dispersion", JSON.stringify(highDispersion.score_components));
   assert.equal(highDispersion.long_threshold, 0.6);
+  assert.equal(thinMacroBreadth.regime_label, "balanced", "Macro regime must not promote risk-on from one sector/ticker datapoint.");
+  assert.equal(thinMacroBreadth.breadth.breadth_gate_pass, false, "Thin macro breadth should be explicit.");
   record("Market Agent", "regime_thresholds", {
     risk_on: riskOn.score_components,
     risk_off: riskOff.score_components,
@@ -655,6 +665,8 @@ async function testSignalsAndDeterministicSelection() {
   assert.ok(stale.conviction < win.conviction, "Fresh flow evidence should score above stale-only evidence.");
   assert.ok(lowQuality.evidence_quality.weak_quality_items > 0, "Low-quality signal evidence should be visible to the selector.");
   assert.ok(inferredOnly.evidence_quality.inferred_flow_items > 0, "Inferred-only money flow should be counted separately.");
+  assert.notEqual(inferredOnly.action, "long", "A single inferred-flow datapoint must not become a tradable long setup.");
+  assert.equal(inferredOnly.evidence_breadth.breadth_gate_pass, false, "Thin signal breadth should be explicit on inferred-only setups.");
   assert.ok(
     inferredOnly.risk_flags.some((item) => /inferred from bars only/i.test(item)),
     "Inferred-only money flow should add a source reliability risk flag."
@@ -798,6 +810,22 @@ async function testLlmSelectionAgent(tradeSetups) {
 }
 
 async function testFinalSelectionPolicyRiskExecutionPortfolio(tradeSetups) {
+  const demotedTradableSetup = {
+    ...tradeSetups.setups.find((item) => item.ticker === "WIN"),
+    ticker: "DEMOTE",
+    company_name: "DEMOTE Corp",
+    action: "long",
+    conviction: 0.7,
+    position_size_pct: 0.02,
+    summary: "DEMOTE is a tradable fixture that the LLM lane will demote.",
+    evidence_breadth: {
+      breadth_gate_pass: true,
+      usable_signal_items: 2,
+      source_count: 2,
+      minimum_items: 2,
+      minimum_sources: 2
+    }
+  };
   const watchOnlySetup = {
     ...tradeSetups.setups.find((item) => item.ticker === "WIN"),
     ticker: "WATCHY",
@@ -812,7 +840,7 @@ async function testFinalSelectionPolicyRiskExecutionPortfolio(tradeSetups) {
   };
   const finalTradeSetups = {
     ...tradeSetups,
-    setups: [...tradeSetups.setups, watchOnlySetup]
+    setups: [...tradeSetups.setups, demotedTradableSetup, watchOnlySetup]
   };
   const llmSelection = {
     status: "ready",
@@ -822,7 +850,7 @@ async function testFinalSelectionPolicyRiskExecutionPortfolio(tradeSetups) {
     counts: { long: 3, watch: 1 },
     recommendations: [
       { ticker: "WIN", action: "long", confidence: 0.78, reviewer: "fixture", evidence_alignment: "aligned", confidence_reason: "strong lanes", supporting_factors: ["aligned"], concerns: [] },
-      { ticker: "STALE", action: "watch", confidence: 0.58, reviewer: "fixture", evidence_alignment: "demoted stale", confidence_reason: "stale evidence", supporting_factors: [], concerns: ["stale evidence"] },
+      { ticker: "DEMOTE", action: "watch", confidence: 0.58, reviewer: "fixture", evidence_alignment: "demoted fixture", confidence_reason: "review concern", supporting_factors: [], concerns: ["review concern"] },
       { ticker: "LOWQ", action: "long", confidence: 0.66, reviewer: "fixture", evidence_alignment: "qualified support", confidence_reason: "lower quality", supporting_factors: [], concerns: ["low quality"] },
       { ticker: "WATCHY", action: "long", confidence: 0.7, reviewer: "fixture", evidence_alignment: "promotion attempt", confidence_reason: "fixture", supporting_factors: [], concerns: [] }
     ]
@@ -847,12 +875,12 @@ async function testFinalSelectionPolicyRiskExecutionPortfolio(tradeSetups) {
     limit: 12
   });
   const win = finalSelection.candidates.find((item) => item.ticker === "WIN");
-  const stale = finalSelection.candidates.find((item) => item.ticker === "STALE");
+  const demote = finalSelection.candidates.find((item) => item.ticker === "DEMOTE");
   const watchy = finalSelection.candidates.find((item) => item.ticker === "WATCHY");
 
   assert.ok(win.execution_allowed, "Aligned deterministic + LLM candidate should pass final selection.");
   assert.equal(win.setup_for_execution.position_size_pct <= portfolioPolicy.portfolioMaxPositionPct, true, "Final selection should cap position size.");
-  assert.equal(stale.final_action, "review", "LLM-demoted candidates should be review, not execution.");
+  assert.equal(demote.final_action, "review", "LLM-demoted candidates should be review, not execution.");
   assert.equal(watchy.final_action, "watch", "LLM-only promotions should stay watch.");
   assert.ok(win.selection_report?.agent_votes?.length >= 8, "Final candidate should expose an expandable selection report.");
   assert.ok(win.final_score_components?.setup_quality_adjustment, "Final candidate should expose score components.");
@@ -863,7 +891,19 @@ async function testFinalSelectionPolicyRiskExecutionPortfolio(tradeSetups) {
       ...tradeSetups,
       setups: tradeSetups.setups
         .filter((setup) => ["WIN", "LOWQ"].includes(setup.ticker))
-        .map((setup) => ({ ...setup, action: "long", conviction: 0.78, position_size_pct: 0.04 }))
+        .map((setup) => ({
+          ...setup,
+          action: "long",
+          conviction: 0.78,
+          position_size_pct: 0.04,
+          evidence_breadth: {
+            breadth_gate_pass: true,
+            usable_signal_items: 2,
+            source_count: 2,
+            minimum_items: 2,
+            minimum_sources: 2
+          }
+        }))
     },
     llmSelection: {
       ...llmSelection,

@@ -949,6 +949,12 @@ function marketReturnText(value, missing = "unavailable") {
 
 function marketSectorSourceText(sector) {
   if (!sector?.score_available) {
+    if (sector?.sector_strength?.breadth_reason) {
+      return sector.sector_strength.breadth_reason;
+    }
+    if (sector?.sector_strength?.summary) {
+      return sector.sector_strength.summary;
+    }
     return sector?.source_label === "no fresh sector state"
       ? "no fresh sector state"
       : "low-signal context only";
@@ -968,6 +974,9 @@ function sectorRegime(sector) {
 
 function sectorActionLabel(sector) {
   if (!sector?.score_available) {
+    if (sector?.sector_strength?.breadth_gate_pass === false) {
+      return "Not trusted";
+    }
     return "Waiting";
   }
   const regime = sectorRegime(sector);
@@ -997,6 +1006,9 @@ function marketRegimeUserLabel(regime) {
 }
 
 function marketRegimeUserMeaning(macro = {}) {
+  if (macro.breadth?.breadth_gate_pass === false) {
+    return `Macro score is not trusted yet: ${macro.breadth.breadth_reason || "not enough broad market datapoints"}.`;
+  }
   const regime = macro.regime_label || "unknown";
   if (regime === "risk_on") {
     return "Supportive backdrop for strong long candidates.";
@@ -1064,7 +1076,7 @@ function marketDataIssueText() {
 }
 
 function marketSectorFormulaText() {
-  return "Score = sector ETF when available + top 10 tracked stocks + fresh sentiment/flow. Tailwind >= +0.12; pressure <= -0.12.";
+  return "Score = sector ETF when available + top 10 tracked stocks + fresh sentiment/flow. Without ETF, at least 5 live stocks and 25% coverage are required. Tailwind >= +0.12; pressure <= -0.12.";
 }
 
 function marketSectorSummaries(rows = filteredLeaderboard()) {
@@ -2027,6 +2039,7 @@ function setupReason(setup) {
   }
   const thresholds = setup.decision_thresholds || {};
   const scoreComponents = setup.score_components || {};
+  const breadth = setup.evidence_breadth || {};
   const scoreText = [
     scoreComponents.long !== undefined ? `long ${testReportScore(scoreComponents.long, { percent: true })}` : null,
     scoreComponents.short !== undefined ? `short ${testReportScore(scoreComponents.short, { percent: true })}` : null,
@@ -2037,10 +2050,16 @@ function setupReason(setup) {
     thresholds.short_threshold !== undefined ? `short gate ${testReportScore(thresholds.short_threshold, { percent: true })}` : null,
     thresholds.direction_gap_minimum !== undefined ? `direction gap ${testReportScore(thresholds.direction_gap_minimum, { percent: true })}` : null
   ].filter(Boolean).join(", ");
+  const breadthText = breadth.breadth_gate_pass === false
+    ? breadth.reason || "Signal breadth is below the trusted minimum."
+    : breadth.usable_signal_items !== undefined
+      ? `Signal breadth passed: ${breadth.usable_signal_items || 0} item(s), ${breadth.source_count || 0} source(s).`
+      : null;
   if (["long", "short"].includes(setup.action)) {
     return conciseReason(
       [
         setup.summary,
+        breadthText,
         scoreText ? `Scores: ${scoreText}.` : null,
         thresholdText ? `Required: ${thresholdText}.` : null,
         ...(setup.thesis || []),
@@ -2053,6 +2072,7 @@ function setupReason(setup) {
   return conciseReason(
     [
       ...blockers,
+      breadthText,
       scoreText ? `Scores: ${scoreText}.` : null,
       thresholdText ? `Required: ${thresholdText}.` : null,
       setup.summary
@@ -3757,6 +3777,7 @@ function buildSignalFromDocument(doc, ticker = null) {
 function buildSignalFromTradeSetup(setup) {
   const runtime = setup.runtime_reliability || {};
   const score = setup.score_components || {};
+  const breadth = setup.evidence_breadth || {};
   const runtimeMultiplier = Number(runtime.adjustment_multiplier || 1);
   const rawLong = Number(score.raw_long ?? score.long ?? 0);
   const rawShort = Number(score.raw_short ?? score.short ?? 0);
@@ -3767,6 +3788,11 @@ function buildSignalFromTradeSetup(setup) {
     `Runtime multiplier: x${formatNumber(runtimeMultiplier, 2)}${haircutPct ? `, reducing conviction by ${haircutPct}%` : ""}.`,
     setup.position_size_pct ? `Suggested position size: ${formatNumber(setup.position_size_pct * 100, 1)}%.` : "No position size is assigned until the setup clears trade thresholds.",
     setup.timeframe ? `Expected holding frame: ${setup.timeframe.replace(/_/g, " ")}.` : null,
+    breadth.breadth_gate_pass === false
+      ? `Signal breadth gate: ${breadth.reason || "below trusted minimum"}.`
+      : breadth.usable_signal_items !== undefined
+        ? `Signal breadth gate: ${breadth.usable_signal_items || 0} item(s), ${breadth.source_count || 0} source(s).`
+        : null,
     ...(setup.thesis || []).slice(0, 3).map((item) => `Thesis: ${item}`),
     ...(setup.risk_flags || []).slice(0, 4).map((item) => `Risk: ${item}`),
     ...(runtime.degraded_sources || []).slice(0, 3).map((source) => `Runtime source: ${source.label} is ${prettyLabel(source.status)}.`)
@@ -3796,6 +3822,7 @@ function buildSignalFromTradeSetup(setup) {
       <div class="workspace-stat-card"><span>Raw Edge</span><strong>${formatNumber(rawEdge * 100, 0)}%</strong></div>
       <div class="workspace-stat-card"><span>Runtime Haircut</span><strong>${haircutPct ? `-${haircutPct}%` : "0%"}</strong></div>
       <div class="workspace-stat-card"><span>Position Size</span><strong>${setup.position_size_pct ? `${formatNumber(setup.position_size_pct * 100, 1)}%` : "None"}</strong></div>
+      <div class="workspace-stat-card"><span>Signal Breadth</span><strong>${breadth.breadth_gate_pass === false ? "not trusted" : breadth.usable_signal_items !== undefined ? "pass" : "unknown"}</strong><small>${breadth.usable_signal_items !== undefined ? `${breadth.usable_signal_items || 0} items; ${breadth.source_count || 0} sources` : ""}</small></div>
       <div class="workspace-stat-card"><span>Screen</span><strong>${prettyLabel(setup.fundamentals?.screen_stage || "unknown")}</strong></div>
       <div class="workspace-stat-card"><span>Runtime</span><strong>${prettyLabel(runtime.status || "unknown")}</strong></div>
     `
@@ -3962,12 +3989,18 @@ function buildSignalFromFinalSelection(candidate) {
   const gates = candidate.policy_gates || [];
   const report = candidate.selection_report || null;
   const failedGates = gates.filter((gate) => !gate.pass);
+  const breadth = candidate.evidence_breadth || candidate.setup?.evidence_breadth || {};
   const contextItems = [
     `Deterministic: ${prettyLabel(candidate.deterministic_action)} at ${formatNumber((candidate.deterministic_conviction || 0) * 100, 1)}%.`,
     `LLM lane: ${prettyLabel(candidate.llm_action)}${candidate.llm_confidence !== null && candidate.llm_confidence !== undefined ? ` at ${formatNumber(candidate.llm_confidence * 100, 1)}%` : ""}.`,
     `Agreement: ${prettyLabel(candidate.agreement)}.`,
     `Execution minimum: ${formatNumber((candidate.required_final_conviction || 0) * 100, 1)}%.`,
     candidate.final_conviction_gap ? `Final score is short by ${formatNumber(candidate.final_conviction_gap * 100, 1)}%.` : "",
+    breadth.breadth_gate_pass === false
+      ? `Signal breadth gate: ${breadth.reason || "below trusted minimum"}.`
+      : breadth.usable_signal_items !== undefined
+        ? `Signal breadth gate: ${breadth.usable_signal_items || 0} item(s), ${breadth.source_count || 0} source(s).`
+        : null,
     `Policy size: ${formatNumber((candidate.position_size_pct || 0) * 100, 1)}%.`,
     ...(deterministic.thesis || []).slice(0, 3).map((item) => `Deterministic thesis: ${item}`),
     ...(llm.supporting_factors || []).slice(0, 3).map((item) => `LLM support: ${item}`),
@@ -4004,6 +4037,7 @@ function buildSignalFromFinalSelection(candidate) {
       <div class="workspace-stat-card"><span>Deterministic</span><strong>${prettyLabel(candidate.deterministic_action)}</strong></div>
       <div class="workspace-stat-card"><span>LLM</span><strong>${prettyLabel(candidate.llm_action)}</strong></div>
       <div class="workspace-stat-card"><span>Agreement</span><strong>${prettyLabel(candidate.agreement)}</strong></div>
+      <div class="workspace-stat-card"><span>Signal Breadth</span><strong>${breadth.breadth_gate_pass === false ? "not trusted" : breadth.usable_signal_items !== undefined ? "pass" : "unknown"}</strong><small>${breadth.usable_signal_items !== undefined ? `${breadth.usable_signal_items || 0} items; ${breadth.source_count || 0} sources` : ""}</small></div>
       <div class="workspace-stat-card"><span>Policy Gates</span><strong>${gates.filter((gate) => gate.pass).length}/${gates.length}</strong></div>
     `
   };
@@ -5430,6 +5464,11 @@ function renderMarketsView() {
           <span>Macro Regime</span>
           <strong>${escapeHtml(prettyLabel(macro.regime_label || "unknown"))}</strong>
           <p>${escapeHtml(marketRegimeUserMeaning(macro))}</p>
+          ${
+            macro.breadth
+              ? `<small>${escapeHtml(`Breadth: ${macro.breadth.sector_signal_count || 0} sectors, ${macro.breadth.ticker_signal_count || 0} tickers, ${macro.breadth.recent_event_count || 0} events`)}</small>`
+              : ""
+          }
         </div>
         <div>
           <span>Sector Signal Source</span>
@@ -5516,6 +5555,7 @@ function renderMarketsView() {
             <div class="workspace-stat-card"><span>Confidence</span><strong>${activeSector.score_available ? `${formatNumber((activeStrength.confidence ?? activeSector.weighted_confidence ?? 0) * 100, 0)}%` : "not fresh"}</strong></div>
             <div class="workspace-stat-card"><span>Top 10 Tape</span><strong>${activeTopReturn}</strong><small>${activeStrength.top_constituent_count || 0}/${activeStrength.tracked_constituent_count || activeSector.tracked_names || 0} constituents</small></div>
             <div class="workspace-stat-card"><span>ETF Proxy</span><strong>${activeStrength.etf_proxy || "not loaded"}</strong><small>${activeEtfReturn}</small></div>
+            <div class="workspace-stat-card"><span>Breadth Gate</span><strong>${activeStrength.breadth_gate_pass ? "pass" : "not trusted"}</strong><small>${activeStrength.breadth_reason || `${activeStrength.top_constituent_count || 0} live stocks; ETF ${activeStrength.etf_status || "unknown"}`}</small></div>
             <div class="workspace-stat-card"><span>Data Quality</span><strong>${prettyLabel(activeStrength.data_quality || "unknown")}</strong><small>${activeStrength.rejected_count || 0} held out</small></div>
             <div class="workspace-stat-card"><span>Recent Feed Items</span><strong>${sectorFeed.length}</strong></div>
           </div>

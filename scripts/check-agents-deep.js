@@ -672,14 +672,48 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     }
     const workflow = await app.getTradingWorkflowStatus({ window: options.window, limit: options.limit, minConviction: 0 });
     const macro = app.getMacroRegime({ window: options.window });
+    const watchlist = app.getWatchlistSnapshot(options.window, {});
+    const sectorRows = Array.isArray(watchlist?.sectors) ? watchlist.sectors : [];
+    const scoredSectorRows = sectorRows.filter((sector) => sector.score_available && sector.sector_strength?.score !== null);
+    const breadthGateFailures = scoredSectorRows
+      .filter((sector) => sector.sector_strength?.breadth_gate_pass === false)
+      .map((sector) => ({
+        sector: sector.entity_key,
+        score: sector.sector_strength?.score,
+        top_constituent_count: sector.sector_strength?.top_constituent_count,
+        coverage_ratio: sector.sector_strength?.coverage_ratio,
+        etf_status: sector.sector_strength?.etf_status,
+        breadth_reason: sector.sector_strength?.breadth_reason
+      }));
     agent.output_summary = {
       live_pricing_ready: Boolean(workflow.live_data?.live_pricing_ready),
       market_sources: workflow.live_data?.sources?.filter((source) => ["market_data", "fundamental_market_data", "market_flow"].includes(source.key)),
-      macro_regime: macro?.regime || macro?.label || null,
-      macro_summary: macro?.summary || null
+      scored_sector_count: scoredSectorRows.length,
+      sector_breadth_gate_failures: breadthGateFailures,
+      macro_regime: macro?.regime_label || macro?.regime || macro?.label || null,
+      macro_summary: macro?.summary || null,
+      macro_breadth: macro?.breadth || null
     };
     addCheck(agent, "live_pricing", workflow.live_data?.live_pricing_ready ? "pass" : "fail", workflow.live_data?.live_pricing_ready ? "Live pricing/reference is confirmed." : "Live pricing/reference is not confirmed.");
     addCheck(agent, "market_flow", agent.output_summary.market_sources?.some((source) => source.key === "market_flow" && source.status === "fresh" && !source.fallback_mode) ? "pass" : "warning", "Market flow source status captured.");
+    addCheck(
+      agent,
+      "sector_breadth_gate",
+      breadthGateFailures.length ? "fail" : "pass",
+      breadthGateFailures.length
+        ? `${breadthGateFailures.length} sector score(s) violate minimum evidence breadth.`
+        : "No sector score is promoted without minimum ETF/constituent breadth.",
+      { failures: breadthGateFailures.slice(0, 30) }
+    );
+    addCheck(
+      agent,
+      "macro_breadth_gate",
+      macro && macro.regime_label !== "balanced" && macro.breadth?.breadth_gate_pass === false ? "fail" : "pass",
+      macro && macro.regime_label !== "balanced" && macro.breadth?.breadth_gate_pass === false
+        ? "Macro regime is promoted without enough broad evidence."
+        : "Macro regime promotion is not using thin breadth.",
+      { breadth: macro?.breadth || null, regime_label: macro?.regime_label || null }
+    );
   }
 
   if (agent.key === "signals") {
@@ -769,9 +803,18 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
 
   if (agent.key === "deterministic_selection") {
     const setups = app.getTradeSetups({ window: options.window, limit: options.limit, minConviction: 0 });
+    const thinTradableSetups = (setups.setups || [])
+      .filter((setup) => ["long", "short"].includes(setup.action) && setup.evidence_breadth?.breadth_gate_pass !== true)
+      .map((setup) => ({
+        ticker: setup.ticker,
+        action: setup.action,
+        evidence_breadth: setup.evidence_breadth || null,
+        decision_blockers: setup.decision_blockers || []
+      }));
     agent.output_summary = {
       counts: setupCounts(setups),
       top_tickers: topTickers(setups.setups),
+      thin_tradable_setups: thinTradableSetups,
       top_setups: (setups.setups || []).slice(0, 10).map((setup) => ({
         ticker: setup.ticker,
         action: setup.action,
@@ -783,6 +826,15 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     };
     addCheck(agent, "selector_ran", setupCounts(setups).tracked_tickers > 0 || setupCounts(setups).visible > 0 ? "pass" : "fail", "Deterministic selection output inspected.");
     addCheck(agent, "tradable_setups", setupCounts(setups).long + setupCounts(setups).short > 0 ? "pass" : "warning", `${setupCounts(setups).long}/${setupCounts(setups).short} buy/sell setup(s).`);
+    addCheck(
+      agent,
+      "signal_breadth_gate",
+      thinTradableSetups.length ? "fail" : "pass",
+      thinTradableSetups.length
+        ? `${thinTradableSetups.length} tradable setup(s) lack required signal breadth.`
+        : "No tradable setup is promoted without minimum signal evidence breadth.",
+      { thin_tradable_setups: thinTradableSetups.slice(0, 30) }
+    );
   }
 
   if (agent.key === "llm_selection") {
@@ -812,9 +864,17 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
 
   if (agent.key === "final_selection") {
     const finalSelection = await app.getFinalSelection({ window: options.window, limit: options.limit, minConviction: 0 });
+    const executableWithoutBreadth = (finalSelection.candidates || [])
+      .filter((candidate) => candidate.execution_allowed && candidate.evidence_breadth?.breadth_gate_pass === false)
+      .map((candidate) => ({
+        ticker: candidate.ticker,
+        final_action: candidate.final_action,
+        evidence_breadth: candidate.evidence_breadth || null
+      }));
     agent.output_summary = {
       counts: finalCounts(finalSelection),
       top_tickers: topTickers(finalSelection.candidates),
+      executable_without_signal_breadth: executableWithoutBreadth,
       candidates: (finalSelection.candidates || []).slice(0, 10).map((candidate) => ({
         ticker: candidate.ticker,
         final_action: candidate.final_action,
@@ -827,6 +887,15 @@ async function inspectAgent(app, agent, options, emit, checkpoint) {
     };
     addCheck(agent, "final_candidates", finalCounts(finalSelection).visible > 0 ? "pass" : "warning", `${finalCounts(finalSelection).visible} final candidate(s) visible.`);
     addCheck(agent, "executable_candidates", finalCounts(finalSelection).executable > 0 ? "pass" : "warning", `${finalCounts(finalSelection).executable} executable final candidate(s).`);
+    addCheck(
+      agent,
+      "final_signal_breadth_gate",
+      executableWithoutBreadth.length ? "fail" : "pass",
+      executableWithoutBreadth.length
+        ? `${executableWithoutBreadth.length} executable final candidate(s) lack signal breadth.`
+        : "No executable final candidate lacks signal breadth.",
+      { executable_without_signal_breadth: executableWithoutBreadth.slice(0, 30) }
+    );
   }
 
   if (agent.key === "risk") {

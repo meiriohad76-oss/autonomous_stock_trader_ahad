@@ -44,6 +44,15 @@ const portfolioPolicy = {
   portfolioAllowReductions: true
 };
 
+const trustedEvidenceBreadth = {
+  breadth_gate_pass: true,
+  usable_signal_items: 2,
+  source_count: 2,
+  direct_flow_items: 1,
+  minimum_items: 2,
+  minimum_sources: 2
+};
+
 const tradeSetups = {
   as_of: new Date().toISOString(),
   counts: { long: 3, short: 1, watch: 1 },
@@ -63,6 +72,7 @@ const tradeSetups = {
       thesis: ["short-term sentiment is supportive"],
       risk_flags: [],
       evidence: { positive: ["supportive money-flow signal"], negative: [] },
+      evidence_breadth: trustedEvidenceBreadth,
       fundamentals: { screen_stage: "eligible", direction_label: "bullish_supportive" },
       score_components: { gap: 0.22 },
       runtime_reliability: { status: "healthy", adjustment_multiplier: 1 }
@@ -82,6 +92,7 @@ const tradeSetups = {
       thesis: ["fundamental direction is supportive"],
       risk_flags: [],
       evidence: { positive: ["recent positive alert"], negative: [] },
+      evidence_breadth: trustedEvidenceBreadth,
       fundamentals: { screen_stage: "eligible", direction_label: "bullish_supportive" },
       score_components: { gap: 0.19 },
       runtime_reliability: { status: "healthy", adjustment_multiplier: 1 }
@@ -101,6 +112,13 @@ const tradeSetups = {
       thesis: ["short-term sentiment is supportive"],
       risk_flags: ["earnings_in_window", "supporting evidence quality is thin"],
       evidence: { positive: [], negative: [] },
+      evidence_breadth: {
+        ...trustedEvidenceBreadth,
+        breadth_gate_pass: false,
+        usable_signal_items: 0,
+        source_count: 0,
+        reason: "insufficient signal breadth: 0/2 fresh alert/watch documents and 0/2 independent sources"
+      },
       fundamentals: { screen_stage: "eligible", direction_label: "neutral" },
       score_components: { gap: 0.14 },
       runtime_reliability: { status: "healthy", adjustment_multiplier: 1 }
@@ -118,6 +136,7 @@ const tradeSetups = {
       thesis: ["market regime is supportive"],
       risk_flags: [],
       evidence: { positive: ["supportive money-flow signal"], negative: [] },
+      evidence_breadth: trustedEvidenceBreadth,
       fundamentals: { screen_stage: "eligible", direction_label: "bullish_supportive" },
       score_components: { gap: 0.05 },
       runtime_reliability: { status: "healthy", adjustment_multiplier: 1 }
@@ -228,6 +247,7 @@ const demotionFixture = buildFinalSelectionSnapshot({
         thesis: ["money-flow evidence is skewed to distribution"],
         risk_flags: ["fails the stage-one screener", "runtime reliability reduces conviction by 6%"],
         evidence: { positive: [], negative: ["adverse money-flow signal"] },
+        evidence_breadth: trustedEvidenceBreadth,
         evidence_quality: { average_downstream_weight: 0.76, alert_quality_items: 1, weak_quality_items: 0 },
         fundamentals: {
           screen_stage: "reject",
@@ -251,6 +271,7 @@ const demotionFixture = buildFinalSelectionSnapshot({
         thesis: ["money-flow evidence is skewed to distribution"],
         risk_flags: ["fails the stage-one screener", "runtime reliability reduces conviction by 6%"],
         evidence: { positive: [], negative: ["adverse money-flow signal"] },
+        evidence_breadth: trustedEvidenceBreadth,
         evidence_quality: { average_downstream_weight: 0.5, alert_quality_items: 0, weak_quality_items: 4 },
         fundamentals: {
           screen_stage: "reject",
@@ -332,6 +353,7 @@ const openAiGateFixture = buildFinalSelectionSnapshot({
         thesis: ["external review fixture"],
         risk_flags: [],
         evidence: { positive: [], negative: ["adverse signal"] },
+        evidence_breadth: trustedEvidenceBreadth,
         fundamentals: { screen_stage: "reject", direction_label: "bearish_headwind", composite_fundamental_score: 0.3, final_confidence: 0.9 },
         score_components: { gap: 0.5, raw_short: 0.7, raw_long: 0, short: 0.7, long: 0 },
         runtime_reliability: { status: "healthy", adjustment_multiplier: 1 }
@@ -348,6 +370,7 @@ const openAiGateFixture = buildFinalSelectionSnapshot({
         thesis: ["local review fixture"],
         risk_flags: [],
         evidence: { positive: [], negative: ["adverse signal"] },
+        evidence_breadth: trustedEvidenceBreadth,
         fundamentals: { screen_stage: "reject", direction_label: "bearish_headwind", composite_fundamental_score: 0.3, final_confidence: 0.9 },
         score_components: { gap: 0.5, raw_short: 0.7, raw_long: 0, short: 0.7, long: 0 },
         runtime_reliability: { status: "healthy", adjustment_multiplier: 1 }
@@ -420,6 +443,7 @@ const workflowTestPreviewFixture = buildFinalSelectionSnapshot({
         thesis: ["workflow test fixture"],
         risk_flags: ["workflow test mode lowered selection thresholds for supervised end-to-end testing"],
         evidence: { positive: ["fresh workflow fixture signal"], negative: [] },
+        evidence_breadth: trustedEvidenceBreadth,
         fundamentals: { screen_stage: "eligible", direction_label: "bullish_supportive", composite_fundamental_score: 0.55, final_confidence: 0.9 },
         score_components: { gap: 0.25, raw_long: 0.36, raw_short: 0, long: 0.32, short: 0 },
         runtime_reliability: { status: "healthy", adjustment_multiplier: 1, test_mode: true }

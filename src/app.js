@@ -1739,6 +1739,14 @@ export function createSentimentApp() {
           max_risk_penalty: config.selectionWorkflowTestMaxRiskPenalty,
           allow_llm_demotion_preview: config.selectionWorkflowTestAllowLlmDemotionPreview
         },
+        trust_gates: {
+          selection_min_signal_evidence_items: config.selectionMinSignalEvidenceItems,
+          selection_min_signal_evidence_sources: config.selectionMinSignalEvidenceSources,
+          macro_min_sector_signals: config.macroMinSectorSignals,
+          macro_min_ticker_signals: config.macroMinTickerSignals,
+          macro_min_recent_events: config.macroMinRecentEvents,
+          macro_min_recent_sources: config.macroMinRecentSources
+        },
         llm_selection: {
           enabled: config.llmSelectionEnabled,
           provider: config.llmSelectionProvider,
