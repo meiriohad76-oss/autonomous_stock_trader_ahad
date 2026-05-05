@@ -85,6 +85,14 @@ function row(ticker, sector, percentChange, marketCap, extra = {}) {
   assert.equal(tech.sector_strength.top_constituent_count, 5);
   assert.equal(tech.sector_strength.etf_status, "available", "Technology sector should attach ETF proxy performance when available.");
   assert.equal(tech.sector_strength.etf_provider, "finnhub");
+  assert.ok(
+    tech.sector_strength.components.some((component) => component.key === "sector_etf"),
+    "Sector scoring should include ETF performance whenever the proxy is available, even when stock coverage is usable."
+  );
+  assert.ok(
+    tech.sector_strength.components.some((component) => component.key === "top_stocks"),
+    "Sector scoring should include top-stock tape alongside ETF performance."
+  );
   assert.equal(health.sector_strength.normalized_warning_count, 1, "Provider percent-unit rows should be normalized.");
   assert.equal(health.sector_strength.outlier_count, 1, "Extreme impossible provider returns should be rejected as outliers.");
   assert.ok(health.sector_strength.top_constituent_return < 0, "Health Care tape should keep the valid negative rows.");

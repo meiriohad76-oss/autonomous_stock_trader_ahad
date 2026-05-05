@@ -329,7 +329,7 @@ function buildSectorItem(sector, rows, allRows, sectorState, options = {}) {
             : "unavailable",
       summary: scoreAvailable
         ? `${sector} is ${label}: top-stock tape ${round((topConstituentReturn || 0) * 100, 2)}%, ETF ${
-            etfReturn === null ? "n/a" : `${round(etfReturn * 100, 2)}%`
+            etfReturn === null ? "unavailable" : `${round(etfReturn * 100, 2)}%`
           }, confidence ${round(confidence * 100, 0)}%.`
         : `${sector} has no usable fresh sector tape; ${rejected.length} rows were unavailable, stale, fallback, or outlier-filtered.`
     }
@@ -393,7 +393,7 @@ export function buildSectorStrengthSnapshot(rows = [], options = {}) {
       bearish_sector_count: bearish,
       neutral_sector_count: scored.length - bullish - bearish,
       score_available: scored.length > 0,
-      source_label: "top-stock tape, optional sector ETF proxy, and usable sentiment/flow context",
+      source_label: "sector ETF proxy when available, top-stock tape, and usable sentiment/flow context",
       strongest: strongest?.entity_key || null,
       weakest: weakest?.entity_key || null
     }

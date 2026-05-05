@@ -920,6 +920,16 @@ function marketDataReliabilityLabel() {
   return "source unknown";
 }
 
+function compactRuntimeIssue(value, fallback = "No provider issue reported.") {
+  const text = String(value || fallback)
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .replace("All live market-data providers failed:", "Provider issue:")
+    .replace("All live market data providers failed:", "Provider issue:")
+    .trim();
+  return text.length > 140 ? `${text.slice(0, 137)}...` : text;
+}
+
 function marketSectorScoreText(sector) {
   const score = sector?.sector_strength?.score ?? sector?.weighted_sentiment;
   return sector?.score_available && score !== null && score !== undefined ? formatNumber(score) : "not fresh";
@@ -1018,6 +1028,17 @@ function marketDataTrustLabel() {
   return "Usable";
 }
 
+function marketDataTrustClass() {
+  const label = marketDataTrustLabel();
+  if (label === "Usable") {
+    return "bullish";
+  }
+  if (label === "Lower trust" || label === "Needs review") {
+    return "bearish";
+  }
+  return "neutral";
+}
+
 function marketDataTrustMeaning() {
   const source = liveRuntimeSource("market_data");
   const label = marketDataReliabilityLabel();
@@ -1028,6 +1049,22 @@ function marketDataTrustMeaning() {
     return "Provider errors reduce timing confidence.";
   }
   return `${label} is usable for market context.`;
+}
+
+function marketDataIssueText() {
+  const source = liveRuntimeSource("market_data");
+  if (!source) {
+    return "Issue: market-data source has not reported status yet.";
+  }
+  const issue = source.last_error || source.missing_config_reason || source.disabled_reason || source.message || source.summary;
+  if (marketDataTrustLabel() === "Usable" && !issue) {
+    return "Issue: none reported.";
+  }
+  return `Issue: ${compactRuntimeIssue(issue, "primary price provider is unavailable, so fallback context is being used.")}`;
+}
+
+function marketSectorFormulaText() {
+  return "Score = sector ETF when available + top 10 tracked stocks + fresh sentiment/flow. Tailwind >= +0.12; pressure <= -0.12.";
 }
 
 function marketSectorSummaries(rows = filteredLeaderboard()) {
@@ -2336,7 +2373,7 @@ function buildAgentTestReport(agentKey) {
         `${marketSectors.length} sector context rows`,
         `${scoredMarketSectors.length} sectors with usable fresh score`,
         `${activeRows.length} names with fresh market-signal rows`,
-        "Sector source: biggest tracked stocks first; ETF/sentiment/flow only confirm when fresh",
+        `Sector formula: ${marketSectorFormulaText()}`,
         `Price source: ${marketDataTrustLabel()} - ${marketDataReliabilityLabel()}`
       ],
       selectedTitle: "Market Context Accepted",
@@ -2872,7 +2909,7 @@ function buildAgentProcess(agentKey) {
           : "Strongest sectors: unavailable until fresh sector signals arrive.",
         `Active names: ${topTickersLabel(activeRows, 4)}`,
         `Market bias: ${prettyLabel(state.macroRegime?.bias_label || "balanced")}`,
-        "Sector labels reflect top-stock price tape first. ETF, sentiment, news, and flow are confirmation only when fresh."
+        marketSectorFormulaText()
       ],
       handoff: [
         "Selection Agent receives sector tailwind/headwind context.",
@@ -5337,11 +5374,12 @@ function renderMarketsView() {
   const pressureSectors = sectors
     .filter((sector) => sector.score_available && sectorRegime(sector) === "bearish")
     .slice(0, 3);
+  const activeRowCountLabel = `${activeRows.length}/${rows.length}`;
   const bottomLine = activeRows.length
-    ? `${activeRows.length} stock-level timing signal${activeRows.length === 1 ? "" : "s"} are fresh. Use them together with sector tailwind and risk checks.`
-    : "No stock-level timing signals are fresh in this window. Use Market Agent as sector context only until news, flow, or momentum refreshes.";
+    ? `${activeRowCountLabel} visible stocks have fresh timing evidence. The rest still exist in Universe/Fundamentals, but have no current market-timing signal.`
+    : `0/${rows.length} visible stocks have fresh timing evidence. Use Market Agent as sector context only until news, flow, or momentum refreshes.`;
   const nextStep = activeRows.length
-    ? "Review Stock Timing, then open Selection."
+    ? "Step 1: review the Stock Timing Signals panel below. Step 2: open Selection Agent."
     : marketDataTrustLabel() === "Lower trust" || marketDataTrustLabel() === "Needs review"
       ? "Refresh pricing, then poll flow/news."
       : "Poll flow/news for stock timing, or continue with sector context.";
@@ -5360,6 +5398,16 @@ function renderMarketsView() {
         <div class="market-action-card primary">
           <span>Do This Next</span>
           <strong>${escapeHtml(nextStep)}</strong>
+          <div class="market-step-actions">
+            <button type="button" class="panel-action compact-action" data-market-jump="stock-timing">
+              <span class="material-symbols-outlined">south</span>
+              Stock Timing Panel
+            </button>
+            <button type="button" class="panel-action compact-action" data-agent-view="trading">
+              <span class="material-symbols-outlined">assignment</span>
+              Selection Agent
+            </button>
+          </div>
         </div>
         <div class="market-action-card">
           <span>Best Tailwind</span>
@@ -5373,8 +5421,8 @@ function renderMarketsView() {
         </div>
         <div class="market-action-card">
           <span>Stock Signals</span>
-          <strong>${activeRows.length ? `${activeRows.length} fresh` : "none fresh"}</strong>
-          <small>${activeRows.length ? "Stock-level timing table is active." : "Market comparison is intentionally empty."}</small>
+          <strong>${activeRows.length ? `${activeRowCountLabel} fresh` : "none fresh"}</strong>
+          <small>${activeRows.length ? "Only these rows have current news, flow, sentiment, or momentum timing." : "The stock timing table is intentionally empty."}</small>
         </div>
       </div>
       <div class="market-explain-grid">
@@ -5385,13 +5433,14 @@ function renderMarketsView() {
         </div>
         <div>
           <span>Sector Signal Source</span>
-          <strong>Sector tape</strong>
-          <p>Top stocks first. ETF is only a backup cross-check.</p>
+          <strong>ETF + Top Stocks</strong>
+          <p>${escapeHtml(marketSectorFormulaText())}</p>
         </div>
-        <div>
+        <div class="market-explain-card ${marketDataTrustClass()}">
           <span>Price Data</span>
           <strong>${escapeHtml(marketDataTrustLabel())}</strong>
           <p>${escapeHtml(marketDataTrustMeaning())}</p>
+          <small>${escapeHtml(marketDataIssueText())}</small>
         </div>
         <div>
           <span>Scored Sectors</span>
@@ -5527,7 +5576,7 @@ function renderMarketsView() {
           `
         )
         .join("")
-    : `<div class="workspace-empty market-empty-state"><strong>No stock timing signal right now.</strong><span>No stock has fresh enough market evidence in this window. This table only shows stocks with current news, flow, momentum, or sentiment timing. Fundamentals-only rows stay out so they do not look actionable.</span></div>`;
+    : `<div class="workspace-empty market-empty-state"><strong>No fresh stock timing signal right now.</strong><span>This panel only shows stocks with current news, flow, sentiment, or momentum evidence. Fundamentals-only rows stay in Universe/Fundamentals so they do not look actionable here.</span></div>`;
 
   elements.marketsTableBody.innerHTML = activeRows.length
     ? activeRows
@@ -5547,7 +5596,7 @@ function renderMarketsView() {
           `
         )
         .join("")
-    : `<tr class="empty-row"><td colspan="4">No stock-level timing rows are fresh. Use sector context above, then refresh pricing / poll flow if you need current stock timing.</td></tr>`;
+    : `<tr class="empty-row"><td colspan="4">No fresh stock timing rows. Use sector context above, then refresh pricing / poll flow if you need current stock timing evidence.</td></tr>`;
 
   elements.marketsDetail.innerHTML = state.tickerDetail
     ? `
@@ -5574,6 +5623,13 @@ function renderMarketsView() {
   for (const button of elements.marketsComparisonStrip.querySelectorAll("[data-compare-ticker]")) {
     button.addEventListener("click", async () => {
       await focusTicker(button.dataset.compareTicker);
+    });
+  }
+
+  for (const button of elements.marketsBreadth.querySelectorAll("[data-market-jump]")) {
+    button.addEventListener("click", () => {
+      const target = elements.marketsComparisonStrip?.closest(".workspace-panel") || elements.marketsComparisonStrip;
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
 
@@ -8190,6 +8246,7 @@ function attachEvents() {
     elements.fundamentalsAgentProcess,
     elements.fundamentalsAgentTable,
     elements.universeAgentHandoff,
+    elements.marketsBreadth,
     elements.marketAgentProcess,
     elements.signalsAgentProcess,
     elements.selectionAgentProcess,

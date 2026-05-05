@@ -2036,6 +2036,10 @@ input:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
+#markets-sector-grid.workspace-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
 .market-briefing {
   grid-column: 1 / -1;
   display: grid;
@@ -2062,6 +2066,7 @@ input:focus-visible {
 
 .market-briefing-head p,
 .market-explain-grid p,
+.market-explain-grid small,
 .market-sector-card p,
 .market-empty-state span,
 .agent-diagnostics-details small,
@@ -2115,6 +2120,19 @@ input:focus-visible {
   line-height: 1.35;
 }
 
+.market-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.market-step-actions .panel-action {
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+
 .market-explain-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2133,6 +2151,24 @@ input:focus-visible {
   display: block;
   margin: 5px 0;
   font-size: 1rem;
+}
+
+.market-explain-card.bearish {
+  border-color: rgba(255, 84, 75, 0.35);
+  background: rgba(255, 84, 75, 0.08);
+}
+
+.market-explain-card.bullish {
+  border-color: rgba(19, 255, 67, 0.24);
+  background: rgba(19, 255, 67, 0.07);
+}
+
+.market-explain-card.bearish strong {
+  color: var(--red);
+}
+
+.market-explain-card.bullish strong {
+  color: var(--green);
 }
 
 .market-primary-actions {
@@ -2162,7 +2198,16 @@ input:focus-visible {
 
 .agent-diagnostics-details summary span,
 .market-chart-details summary span {
+  min-width: 0;
   font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.agent-diagnostics-details summary small,
+.market-chart-details summary small {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .agent-diagnostics-details > .agent-process-panel,
@@ -2181,22 +2226,30 @@ input:focus-visible {
 }
 
 .market-sector-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
+  display: grid;
+  gap: 7px;
+  align-items: start;
+}
+
+.market-sector-head span {
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .market-sector-head b {
-  flex: 0 0 auto;
-  max-width: 120px;
+  justify-self: start;
+  max-width: 100%;
   padding: 5px 8px;
   border-radius: 10px;
   color: var(--text);
   background: rgba(255, 255, 255, 0.07);
   font-size: 11px;
   line-height: 1.2;
-  text-align: right;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .market-sector-card.bullish .market-sector-head b {
