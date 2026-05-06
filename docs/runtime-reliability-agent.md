@@ -219,6 +219,7 @@ This returns the full tracked count, live SEC count, remaining pending live-SEC 
 
 Profiles are predefined `.env` operating modes:
 
+- `api_saver_testing`: manual-only testing mode; dashboard stays usable while external API calls happen only after explicit refresh/test actions
 - `emergency`: lowest-load recovery mode
 - `live_news_only`: first live-data step using RSS news only
 - `pi_light`: balanced Pi mode with expensive collectors manual
@@ -240,6 +241,8 @@ The same profiles are available from the terminal:
 
 ```bash
 npm run runtime:profiles
+npm run runtime:profile -- preview api_saver_testing
+npm run runtime:profile -- apply api_saver_testing --yes
 npm run runtime:profile -- preview live_news_only
 npm run runtime:profile -- apply live_news_only --yes
 sudo systemctl restart sentiment-analyst.service

@@ -577,6 +577,7 @@ function normalizeScreenerSettingValue(value, spec) {
 }
 
 const RUNTIME_PROFILE_CONFIG_FIELDS = {
+  API_SAVER_MODE: { key: "apiSaverMode", type: "boolean" },
   PI_PERFORMANCE_MODE: { key: "piPerformanceMode", type: "boolean" },
   DATABASE_ENABLED: { key: "databaseEnabled", type: "boolean" },
   LIGHTWEIGHT_STATE_ENABLED: { key: "lightweightStateEnabled", type: "boolean" },
@@ -584,10 +585,16 @@ const RUNTIME_PROFILE_CONFIG_FIELDS = {
   SQLITE_BACKUP_ON_STARTUP: { key: "sqliteBackupOnStartup", type: "boolean" },
   AGENCY_AUTONOMOUS_DATA_ENABLED: { key: "autonomousDataEnabled", type: "boolean" },
   LIVE_NEWS_ENABLED: { key: "liveNewsEnabled", type: "boolean" },
+  AUTO_START_LIVE_NEWS: { key: "autoStartLiveNews", type: "boolean" },
   LIVE_NEWS_POLL_MS: { key: "liveNewsPollMs", type: "number" },
   LIVE_NEWS_MAX_ITEMS_PER_TICKER: { key: "liveNewsMaxItemsPerTicker", type: "number" },
+  LIVE_NEWS_UNIVERSE_MODE: { key: "liveNewsUniverseMode", type: "string" },
+  LIVE_NEWS_RSS_FALLBACK_MAX_TICKERS: { key: "liveNewsRssFallbackMaxTickers", type: "number" },
+  LIVE_NEWS_API_FALLBACK_MAX_TICKERS: { key: "liveNewsApiFallbackMaxTickers", type: "number" },
   MARKETAUX_ENABLED: { key: "marketauxEnabled", type: "boolean" },
   MARKETAUX_SYMBOLS_PER_REQUEST: { key: "marketauxSymbolsPerRequest", type: "number" },
+  MARKETAUX_MAX_REQUESTS_PER_POLL: { key: "marketauxMaxRequestsPerPoll", type: "number" },
+  MARKETAUX_LIMIT_PER_REQUEST: { key: "marketauxLimitPerRequest", type: "number" },
   MARKET_DATA_PROVIDER: { key: "marketDataProvider", type: "string" },
   ALPACA_MARKET_DATA_ENABLED: { key: "alpacaMarketDataEnabled", type: "boolean" },
   ALPACA_MARKET_DATA_FEED: { key: "alpacaMarketDataFeed", type: "string" },
@@ -595,23 +602,32 @@ const RUNTIME_PROFILE_CONFIG_FIELDS = {
   MARKET_FLOW_ENABLED: { key: "marketFlowEnabled", type: "boolean" },
   AUTO_START_MARKET_FLOW: { key: "autoStartMarketFlow", type: "boolean" },
   MARKET_FLOW_POLL_MS: { key: "marketFlowPollMs", type: "number" },
+  MARKET_FLOW_MAX_TICKERS_PER_POLL: { key: "marketFlowMaxTickersPerPoll", type: "number" },
   EARNINGS_ENABLED: { key: "earningsEnabled", type: "boolean" },
   EARNINGS_PROVIDER: { key: "earningsProvider", type: "string" },
   EARNINGS_MAX_TICKERS_PER_POLL: { key: "earningsMaxTickersPerPoll", type: "number" },
   EARNINGS_POLL_MS: { key: "earningsPollMs", type: "number" },
   STOCKTWITS_ENABLED: { key: "stocktwitsEnabled", type: "boolean" },
   STOCKTWITS_POLL_MS: { key: "stocktwitsPollMs", type: "number" },
+  STOCKTWITS_MAX_TICKERS_PER_POLL: { key: "stocktwitsMaxTickersPerPoll", type: "number" },
   TRADE_PRINTS_ENABLED: { key: "tradePrintsEnabled", type: "boolean" },
   TRADE_PRINTS_PROVIDER: { key: "tradePrintsProvider", type: "string" },
   TRADE_PRINTS_POLL_MS: { key: "tradePrintsPollMs", type: "number" },
+  TRADE_PRINTS_MAX_TICKERS_PER_POLL: { key: "tradePrintsMaxTickersPerPoll", type: "number" },
   FUNDAMENTAL_MARKET_DATA_PROVIDER: { key: "fundamentalMarketDataProvider", type: "string" },
+  AUTO_START_SECTOR_ETF_PROXIES: { key: "autoStartSectorEtfProxies", type: "boolean" },
   AUTO_START_FUNDAMENTAL_MARKET_DATA: { key: "autoStartFundamentalMarketData", type: "boolean" },
+  FUNDAMENTAL_MARKET_DATA_REFRESH_MS: { key: "fundamentalMarketDataRefreshMs", type: "number" },
   FUNDAMENTAL_MARKET_DATA_MAX_COMPANIES_PER_POLL: { key: "fundamentalMarketDataMaxCompaniesPerPoll", type: "number" },
   FUNDAMENTAL_SEC_ENABLED: { key: "fundamentalSecEnabled", type: "boolean" },
   AUTO_START_SEC_FUNDAMENTALS: { key: "autoStartSecFundamentals", type: "boolean" },
+  FUNDAMENTAL_SEC_BASELINE_POLL_MS: { key: "fundamentalSecBaselinePollMs", type: "number" },
   FUNDAMENTAL_SEC_CONCURRENCY: { key: "fundamentalSecConcurrency", type: "number" },
   FUNDAMENTAL_SEC_MAX_COMPANIES_PER_POLL: { key: "fundamentalSecMaxCompaniesPerPoll", type: "number" },
   SEC_FORM4_ENABLED: { key: "secForm4Enabled", type: "boolean" },
+  AUTO_START_SEC_FORM4: { key: "autoStartSecForm4", type: "boolean" },
+  SEC_FORM4_POLL_MS: { key: "secForm4PollMs", type: "number" },
+  SEC_FORM4_MAX_TICKERS_PER_POLL: { key: "secForm4MaxTickersPerPoll", type: "number" },
   SEC_13F_ENABLED: { key: "sec13fEnabled", type: "boolean" },
   AUTO_START_SEC_13F: { key: "autoStartSec13f", type: "boolean" },
   SEC_REQUEST_RETRIES: { key: "secRequestRetries", type: "number" }
@@ -1683,6 +1699,7 @@ export function createSentimentApp() {
         lightweight_state_enabled: config.lightweightStateEnabled,
         lightweight_state_path: config.lightweightStatePath,
         database_backup: databaseBackupConfig(config),
+        api_saver_mode: config.apiSaverMode,
         universe_name: config.universeName,
         default_window: config.defaultWindow,
         windows: ["15m", "1h", "4h", "1d", "7d"],
@@ -1707,6 +1724,7 @@ export function createSentimentApp() {
         seed_data_on_empty: config.seedDataOnEmpty,
         seed_data_in_decisions: config.seedDataInDecisions,
         live_news_enabled: config.liveNewsEnabled,
+        auto_start_live_news: config.autoStartLiveNews,
         live_news_universe_mode: config.liveNewsUniverseMode,
         live_news_rss_fallback_max_tickers: config.liveNewsRssFallbackMaxTickers,
         marketaux_enabled: config.marketauxEnabled,
@@ -1758,6 +1776,7 @@ export function createSentimentApp() {
           cache_ms: config.llmSelectionCacheMs
         },
         fundamental_market_data_provider: config.fundamentalMarketDataProvider,
+        auto_start_sector_etf_proxies: config.autoStartSectorEtfProxies,
         auto_start_fundamental_market_data: config.autoStartFundamentalMarketData,
         fundamental_market_data_max_companies_per_poll: config.fundamentalMarketDataMaxCompaniesPerPoll,
         sector_etf_proxies: SECTOR_ETF_PROXIES,
@@ -1767,6 +1786,7 @@ export function createSentimentApp() {
         fundamental_sec_baseline_poll_ms: config.fundamentalSecBaselinePollMs,
         auto_start_sec_fundamentals: config.autoStartSecFundamentals,
         sec_form4_enabled: config.secForm4Enabled,
+        auto_start_sec_form4: config.autoStartSecForm4,
         sec_form4_max_tickers_per_poll: config.secForm4MaxTickersPerPoll,
         sec_13f_enabled: config.sec13fEnabled,
         auto_start_sec_13f: config.autoStartSec13f,
@@ -2945,10 +2965,16 @@ export function createSentimentApp() {
       launches.push(promise);
     };
 
-    launch("live_news", () => liveNewsCollector.start());
+    if (config.liveNewsEnabled && (config.autoStartLiveNews || autonomous)) {
+      launch("live_news", () => liveNewsCollector.start());
+    }
     launch("market_data", () => marketDataService.start());
-    launch("sector_etf_proxies", () => refreshSectorEtfReferences());
-    launch("sec_form4", () => secInsiderCollector.start());
+    if (config.autoStartSectorEtfProxies || autonomous) {
+      launch("sector_etf_proxies", () => refreshSectorEtfReferences());
+    }
+    if (config.secForm4Enabled && (config.autoStartSecForm4 || autonomous)) {
+      launch("sec_form4", () => secInsiderCollector.start());
+    }
 
     if (config.sec13fEnabled && (config.autoStartSec13f || autonomous)) {
       launch("sec_13f", () => secInstitutionalCollector.start());
