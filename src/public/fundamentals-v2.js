@@ -27,6 +27,7 @@ const elements = {
   changedOnly: document.querySelector("#changed-only"),
   clearFilters: document.querySelector("#clear-filters"),
   refreshButton: document.querySelector("#refresh-button"),
+  dataValidity: document.querySelector("#data-validity-strip"),
   stageTabs: document.querySelector("#stage-tabs"),
   screenerNote: document.querySelector("#screener-note"),
   screenerSummary: document.querySelector("#screener-summary"),
@@ -81,6 +82,108 @@ function relativeTime(value) {
     return `${hours}h ago`;
   }
   return `${Math.round(hours / 24)}d ago`;
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function timestampMs(value) {
+  if (!value) {
+    return null;
+  }
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function latestTimestamp(...values) {
+  return values
+    .flat(Infinity)
+    .filter(Boolean)
+    .map((value) => ({ value, ms: timestampMs(value) }))
+    .filter((item) => item.ms !== null)
+    .sort((a, b) => b.ms - a.ms)[0]?.value || null;
+}
+
+function timestampAgeMs(value) {
+  const ms = timestampMs(value);
+  return ms === null ? null : Math.max(0, Date.now() - ms);
+}
+
+function liveSource(key) {
+  return state.health?.live_sources?.[key] || null;
+}
+
+function sourceTimestamp(source) {
+  if (!source) {
+    return null;
+  }
+  return latestTimestamp(source.last_success_at, source.last_poll_at, source.last_empty_at, source.updated_at);
+}
+
+function validityStatus(source, timestamp, maxAgeMs) {
+  const sourceStatus = String(source?.status || "").toLowerCase();
+  const ageMs = timestampAgeMs(timestamp);
+  const hasTimestamp = ageMs !== null;
+  if (["manual", "disabled"].includes(sourceStatus) || source?.enabled === false) {
+    return "manual";
+  }
+  if (!hasTimestamp) {
+    return "unavailable";
+  }
+  if (sourceStatus === "stale" || (maxAgeMs && ageMs > maxAgeMs)) {
+    return "stale";
+  }
+  if (["degraded", "error", "fallback", "unconfigured"].includes(sourceStatus) || source?.last_error || source?.fallback_mode) {
+    return "degraded";
+  }
+  return "fresh";
+}
+
+function validityLabel(status) {
+  return {
+    fresh: "Fresh",
+    stale: "Stale",
+    manual: "Manual/cached",
+    degraded: "Degraded",
+    unavailable: "Unavailable"
+  }[status] || "Unknown";
+}
+
+function validityCard({ label, source = null, timestamp = null, maxAgeMs, summary }) {
+  const bestTimestamp = latestTimestamp(timestamp, sourceTimestamp(source));
+  const status = validityStatus(source, bestTimestamp, maxAgeMs);
+  const timeLabel = bestTimestamp ? `${relativeTime(bestTimestamp)} - ${formatDateTime(bestTimestamp)}` : "no timestamp";
+  const provider = source?.active_provider || source?.provider || source?.feed || "provider n/a";
+  const defaultSummary = status === "fresh"
+    ? "Usable for this fundamentals workspace."
+    : status === "stale"
+      ? "Older than the expected refresh target."
+      : status === "manual"
+        ? "Manual or cached source; refresh when reviewing this domain."
+        : status === "degraded"
+          ? (source?.last_error || source?.reason || "Provider warning; use with caution.")
+          : "No usable update time was reported.";
+
+  return `
+    <article class="data-validity-card ${status}">
+      <div>
+        <strong>${label}</strong>
+        <span>${validityLabel(status)}</span>
+      </div>
+      <b>${timeLabel}</b>
+      <p>${summary || defaultSummary}</p>
+      <small>${provider} - target <= ${Math.round(maxAgeMs / 3_600_000)}h</small>
+    </article>
+  `;
 }
 
 function sourceLabel(value) {
@@ -386,6 +489,50 @@ function renderSummary() {
     <article class="summary-card"><span>Avg Confidence</span><strong>${pct(summary.average_confidence || 0, 0)}</strong><small>${pct(summary.data_completeness || 0, 0)} complete</small></article>
     <article class="summary-card"><span>SEC Live In View</span><strong>${screener.live_sec_backed_count || 0}</strong><small>current filtered results</small></article>
     <article class="summary-card"><span>Awaiting SEC</span><strong>${screener.pending_live_sec_count || 0}</strong><small>excluded until live</small></article>
+  `;
+}
+
+function renderDataValidity() {
+  if (!elements.dataValidity) {
+    return;
+  }
+  const rows = state.dashboard?.leaderboard || [];
+  const baseRows = getBaseRows();
+  const secSource = liveSource("sec_fundamentals");
+  const marketSource = liveSource("fundamental_market_data");
+  const liveSecRows = rows.filter((item) => item.data_source === "live_sec_filing").length;
+  const cards = [
+    validityCard({
+      label: "Workspace Snapshot",
+      timestamp: state.dashboard?.as_of || state.baseDashboard?.as_of,
+      maxAgeMs: 24 * 3_600_000,
+      summary: "Filtered results, screener summary, and selected-name detail context."
+    }),
+    validityCard({
+      label: "SEC Filings",
+      source: secSource,
+      timestamp: state.baseDashboard?.as_of,
+      maxAgeMs: 7 * 24 * 3_600_000,
+      summary: `${liveSecRows}/${rows.length || 0} visible rows and ${baseRows.length} tracked names in the local universe.`
+    }),
+    validityCard({
+      label: "Market Reference",
+      source: marketSource,
+      timestamp: state.baseDashboard?.as_of,
+      maxAgeMs: 6 * 3_600_000,
+      summary: "Used for valuation and sector-relative fundamental context."
+    })
+  ].join("");
+
+  elements.dataValidity.innerHTML = `
+    <div class="data-validity-panel">
+      <div class="data-validity-head">
+        <span>Data Validity</span>
+        <strong>Fundamentals data check</strong>
+        <small>Last update and trust state for this workspace.</small>
+      </div>
+      <div class="data-validity-list">${cards}</div>
+    </div>
   `;
 }
 
@@ -742,6 +889,7 @@ function renderChanges() {
 
 function render() {
   renderSummary();
+  renderDataValidity();
   renderToolbar();
   renderActiveFilters();
   renderStages();

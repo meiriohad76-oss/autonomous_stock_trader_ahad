@@ -176,6 +176,118 @@ h1 {
   font-size: 2rem;
 }
 
+.data-validity-strip {
+  margin-bottom: 18px;
+}
+
+.data-validity-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.32fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 249, 0.86);
+  box-shadow: var(--shadow);
+}
+
+.data-validity-head,
+.data-validity-card {
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.data-validity-head {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 14px;
+}
+
+.data-validity-head span,
+.data-validity-card small {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.data-validity-head strong {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.1rem;
+}
+
+.data-validity-head small,
+.data-validity-card p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.data-validity-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.data-validity-card {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border-left: 4px solid var(--teal);
+}
+
+.data-validity-card.stale,
+.data-validity-card.manual {
+  border-left-color: var(--warn);
+}
+
+.data-validity-card.degraded,
+.data-validity-card.unavailable {
+  border-left-color: var(--accent);
+}
+
+.data-validity-card > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.data-validity-card strong,
+.data-validity-card b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.data-validity-card span {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--teal);
+  background: var(--teal-soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.data-validity-card.stale span,
+.data-validity-card.manual span {
+  color: #86520f;
+  background: rgba(199, 125, 28, 0.14);
+}
+
+.data-validity-card.degraded span,
+.data-validity-card.unavailable span {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.data-validity-card p {
+  font-size: 13px;
+}
+
 .controls-row {
   align-items: end;
   margin-bottom: 18px;
@@ -733,6 +845,10 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .data-validity-panel {
+    grid-template-columns: 1fr;
+  }
+
   .panel-tall,
   .panel-detail {
     grid-row: auto;
@@ -760,7 +876,8 @@ h1 {
   }
 
   .hero-grid,
-  .detail-summary {
+  .detail-summary,
+  .data-validity-list {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -776,7 +893,8 @@ h1 {
 @media (max-width: 560px) {
   .hero-grid,
   .detail-summary,
-  .detail-grid {
+  .detail-grid,
+  .data-validity-list {
     grid-template-columns: 1fr;
   }
 

@@ -909,6 +909,532 @@ function liveRuntimeSource(key) {
   );
 }
 
+function timestampMs(value) {
+  if (!value) {
+    return null;
+  }
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function latestTimestamp(...values) {
+  const flattened = values.flat(Infinity).filter(Boolean);
+  const valid = flattened
+    .map((value) => ({ value, ms: timestampMs(value) }))
+    .filter((item) => item.ms !== null)
+    .sort((a, b) => b.ms - a.ms);
+  return valid[0]?.value || null;
+}
+
+function timestampAgeMs(value) {
+  const ms = timestampMs(value);
+  return ms === null ? null : Math.max(0, Date.now() - ms);
+}
+
+function dataValidityTargetLabel(maxAgeMs) {
+  if (!maxAgeMs) {
+    return "target not fixed";
+  }
+  const minutes = Math.max(1, Math.round(Number(maxAgeMs || 0) / 60_000));
+  if (minutes < 60) {
+    return `target <= ${minutes} min`;
+  }
+  const hours = minutes / 60;
+  if (hours < 24) {
+    const label = Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+    return `target <= ${label} hr`;
+  }
+  const days = hours / 24;
+  const label = Number.isInteger(days) ? String(days) : days.toFixed(1);
+  return `target <= ${label} day${Number(label) === 1 ? "" : "s"}`;
+}
+
+function currentRuntimeProfileKey() {
+  return state.runtimeReliability?.runtime_profiles?.current || null;
+}
+
+function apiSaverModeActive() {
+  return Boolean(state.config?.api_saver_mode || currentRuntimeProfileKey() === "api_saver_testing");
+}
+
+function runtimeSourceTimestamp(source) {
+  if (!source) {
+    return null;
+  }
+  return latestTimestamp(
+    source.last_success_at,
+    source.last_poll_at,
+    source.last_backup_at,
+    source.last_empty_at,
+    source.updated_at,
+    source.checked_at
+  );
+}
+
+function runtimeSourceProviderText(source) {
+  if (!source) {
+    return "source not reported";
+  }
+  const provider = source.active_provider || source.provider || source.feed || null;
+  const fallback = source.fallback_mode || source.fallback_active ? "fallback active" : null;
+  return [provider ? prettyLabel(provider) : null, fallback].filter(Boolean).join(" - ") || "provider n/a";
+}
+
+function runtimeSourceIsManual(source) {
+  if (!source) {
+    return false;
+  }
+  return (
+    source.enabled === false ||
+    ["manual", "disabled"].includes(String(source.status || "").toLowerCase()) ||
+    ["leave_disabled", "keep_manual"].includes(String(source.action || "").toLowerCase())
+  );
+}
+
+function dataValidityStatus({ source, timestamp, maxAgeMs }) {
+  const sourceStatus = String(source?.status || "").toLowerCase();
+  const ageMs = timestampAgeMs(timestamp);
+  const hasTimestamp = ageMs !== null;
+  const manual = runtimeSourceIsManual(source);
+
+  if (manual) {
+    return "manual";
+  }
+  if (!source && apiSaverModeActive() && hasTimestamp && maxAgeMs && ageMs > maxAgeMs) {
+    return "manual";
+  }
+  if (sourceStatus === "stale" || (!manual && hasTimestamp && maxAgeMs && ageMs > maxAgeMs)) {
+    return "stale";
+  }
+  if (!hasTimestamp && (!source || ["error", "unconfigured"].includes(sourceStatus))) {
+    return "unavailable";
+  }
+  if (["degraded", "error", "fallback", "unconfigured"].includes(sourceStatus) || source?.fallback_mode || source?.fallback_active || source?.last_error) {
+    return hasTimestamp ? "degraded" : "unavailable";
+  }
+  if (!hasTimestamp) {
+    return source ? "unknown" : "unavailable";
+  }
+  return "fresh";
+}
+
+function dataValidityLabel(status) {
+  const labels = {
+    fresh: "Fresh",
+    stale: "Stale",
+    manual: "Manual/cached",
+    degraded: "Degraded",
+    unavailable: "Unavailable",
+    unknown: "Unknown"
+  };
+  return labels[status] || "Unknown";
+}
+
+function dataValidityDefaultSummary(status, source, maxAgeMs) {
+  if (status === "fresh") {
+    return "Usable for this screen.";
+  }
+  if (status === "manual") {
+    return apiSaverModeActive()
+      ? "API-saver mode: cached/manual until you run a one-shot refresh."
+      : "Manual or cached source; refresh when this domain matters.";
+  }
+  if (status === "stale") {
+    return `Older than the ${formatDurationMs(maxAgeMs)} freshness target. Refresh before relying on it.`;
+  }
+  if (status === "degraded") {
+    return compactRuntimeIssue(source?.last_error || source?.reason || source?.notes || source?.message, "Provider warning; use with caution.");
+  }
+  if (status === "unavailable") {
+    return "No usable update time or provider success has been reported.";
+  }
+  return "The dashboard has data, but the source did not report a clear validity state.";
+}
+
+function dataValidityItem({ label, sourceKey = null, sourceLabel = null, timestamp = null, maxAgeMs = null, summary = null, detail = null }) {
+  const source = sourceKey ? liveRuntimeSource(sourceKey) : null;
+  const sourceTimestamp = runtimeSourceTimestamp(source);
+  const payloadTimestamp = latestTimestamp(timestamp);
+  const bestTimestamp = latestTimestamp(sourceTimestamp, payloadTimestamp);
+  const status = dataValidityStatus({ source, timestamp: bestTimestamp, maxAgeMs });
+  const sourceName = source?.label || sourceLabel || (sourceKey ? prettyLabel(sourceKey) : "dashboard payload");
+  const sourceStatus = source?.status ? prettyLabel(source.status) : "payload";
+  const timeLabel = bestTimestamp ? `${relativeTime(bestTimestamp)} - ${formatDateTime(bestTimestamp)}` : "no timestamp";
+
+  return {
+    label,
+    status,
+    statusLabel: dataValidityLabel(status),
+    sourceName,
+    sourceStatus,
+    providerText: runtimeSourceProviderText(source),
+    timestamp: bestTimestamp,
+    timeLabel,
+    targetLabel: dataValidityTargetLabel(maxAgeMs),
+    summary: summary || dataValidityDefaultSummary(status, source, maxAgeMs),
+    detail: detail || `${sourceName}: ${sourceStatus}; ${dataValidityTargetLabel(maxAgeMs)}.`
+  };
+}
+
+function latestExecutionLogTimestamp() {
+  return latestTimestamp((state.executionLog || []).map((item) => item.submitted_at || item.decided_at || item.created_at || item.at));
+}
+
+function buildDataValidityItems(view) {
+  const signalMaxAgeMs = Number(state.config?.signal_freshness_max_hours || 72) * 3_600_000;
+  const liveMaxAgeMs = 45 * 60_000;
+  const dashboardMaxAgeMs = 20 * 60_000;
+  const selectionMaxAgeMs = 45 * 60_000;
+  const brokerMaxAgeMs = 10 * 60_000;
+  const secMaxAgeMs = 7 * 24 * 3_600_000;
+  const snapshotAt = state.snapshot?.as_of || state.health?.last_update;
+  const signalAt = latestSignalTime();
+  const moneyFlowAt = latestTimestamp(collectMoneyFlowSignals().map(signalTimestamp));
+  const portfolioAt = state.positionMonitor?.as_of || state.riskSnapshot?.as_of;
+
+  const commonDashboard = dataValidityItem({
+    label: "Dashboard Snapshot",
+    sourceLabel: "Sentiment snapshot",
+    timestamp: snapshotAt,
+    maxAgeMs: dashboardMaxAgeMs,
+    detail: "Current visible leaderboard, pulse, and dashboard summary payload."
+  });
+
+  const byView = {
+    overview: [
+      commonDashboard,
+      dataValidityItem({
+        label: "Selection Output",
+        sourceLabel: "Selection Agent",
+        timestamp: [state.finalSelection?.as_of, state.tradeSetups?.as_of],
+        maxAgeMs: selectionMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Live Signals",
+        sourceKey: "live_news",
+        sourceLabel: "News and signal collectors",
+        timestamp: signalAt,
+        maxAgeMs: signalMaxAgeMs
+      })
+    ],
+    universe: [
+      dataValidityItem({
+        label: "Universe Membership",
+        sourceLabel: AGENCY_UNIVERSE_LABEL,
+        timestamp: [snapshotAt, state.secQueue?.last_success_at],
+        maxAgeMs: secMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "SEC Fundamentals",
+        sourceKey: "sec_fundamentals",
+        timestamp: state.secQueue?.last_success_at,
+        maxAgeMs: secMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Fundamental Pricing",
+        sourceKey: "fundamental_market_data",
+        timestamp: snapshotAt,
+        maxAgeMs: 6 * 3_600_000
+      })
+    ],
+    markets: [
+      dataValidityItem({
+        label: "Price Data",
+        sourceKey: "market_data",
+        timestamp: snapshotAt,
+        maxAgeMs: liveMaxAgeMs,
+        summary: marketDataTrustMeaning()
+      }),
+      dataValidityItem({
+        label: "Sector ETFs",
+        sourceKey: "sector_etf_proxies",
+        timestamp: state.macroRegime?.as_of,
+        maxAgeMs: liveMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Market Flow",
+        sourceKey: "market_flow",
+        timestamp: moneyFlowAt,
+        maxAgeMs: liveMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Macro Regime",
+        sourceLabel: "Macro Regime Agent",
+        timestamp: state.macroRegime?.as_of || snapshotAt,
+        maxAgeMs: liveMaxAgeMs
+      })
+    ],
+    watch: [
+      commonDashboard,
+      dataValidityItem({
+        label: "Fundamental Gate",
+        sourceKey: "sec_fundamentals",
+        timestamp: [snapshotAt, state.secQueue?.last_success_at],
+        maxAgeMs: secMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Watch Signals",
+        sourceKey: "live_news",
+        sourceLabel: "Watchlist signal feed",
+        timestamp: signalAt,
+        maxAgeMs: signalMaxAgeMs
+      })
+    ],
+    alerts: [
+      dataValidityItem({
+        label: "News Feed",
+        sourceKey: "live_news",
+        sourceLabel: "News collector",
+        timestamp: signalAt,
+        maxAgeMs: signalMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Market Flow",
+        sourceKey: "market_flow",
+        timestamp: moneyFlowAt,
+        maxAgeMs: liveMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "SEC Insider/13F",
+        sourceKey: "sec_form4",
+        sourceLabel: "SEC ownership collectors",
+        timestamp: moneyFlowAt,
+        maxAgeMs: 24 * 3_600_000
+      }),
+      dataValidityItem({
+        label: "Trade Prints",
+        sourceKey: "trade_prints",
+        timestamp: moneyFlowAt,
+        maxAgeMs: liveMaxAgeMs
+      })
+    ],
+    trading: [
+      dataValidityItem({
+        label: "Deterministic Selection",
+        sourceLabel: "Trade Setup Agent",
+        timestamp: state.tradeSetups?.as_of,
+        maxAgeMs: selectionMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "LLM / Final Selection",
+        sourceLabel: state.finalSelection?.llm_agent?.provider || "Final Selection Agent",
+        timestamp: state.finalSelection?.as_of,
+        maxAgeMs: selectionMaxAgeMs,
+        summary: state.finalSelection?.llm_agent?.summary || null
+      }),
+      dataValidityItem({
+        label: "Risk Snapshot",
+        sourceLabel: "Risk Manager",
+        timestamp: state.riskSnapshot?.as_of,
+        maxAgeMs: brokerMaxAgeMs
+      })
+    ],
+    risk: [
+      dataValidityItem({
+        label: "Risk Snapshot",
+        sourceLabel: "Risk Manager",
+        timestamp: state.riskSnapshot?.as_of,
+        maxAgeMs: brokerMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Portfolio / Positions",
+        sourceLabel: "Broker monitor",
+        timestamp: portfolioAt,
+        maxAgeMs: brokerMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Final Candidates",
+        sourceLabel: "Final Selection Agent",
+        timestamp: state.finalSelection?.as_of,
+        maxAgeMs: selectionMaxAgeMs
+      })
+    ],
+    execution: [
+      dataValidityItem({
+        label: "Execution Status",
+        sourceLabel: "Execution Agent",
+        timestamp: state.executionStatus?.as_of || state.health?.last_update,
+        maxAgeMs: brokerMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Broker Monitor",
+        sourceLabel: "Alpaca paper adapter",
+        timestamp: portfolioAt,
+        maxAgeMs: brokerMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Approved Candidates",
+        sourceLabel: "Risk and Selection handoff",
+        timestamp: [state.finalSelection?.as_of, state.riskSnapshot?.as_of],
+        maxAgeMs: selectionMaxAgeMs
+      })
+    ],
+    portfolio: [
+      dataValidityItem({
+        label: "Position Monitor",
+        sourceLabel: "Broker monitor",
+        timestamp: state.positionMonitor?.as_of,
+        maxAgeMs: brokerMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Portfolio Policy",
+        sourceLabel: "Policy Agent",
+        timestamp: state.portfolioPolicy?.as_of || state.portfolioPolicy?.updated_at || state.health?.last_update,
+        maxAgeMs: 24 * 3_600_000
+      }),
+      dataValidityItem({
+        label: "Open Orders",
+        sourceLabel: "Alpaca paper adapter",
+        timestamp: portfolioAt,
+        maxAgeMs: brokerMaxAgeMs
+      })
+    ],
+    learning: [
+      dataValidityItem({
+        label: "Decision Journal",
+        sourceLabel: "Execution log",
+        timestamp: latestExecutionLogTimestamp(),
+        maxAgeMs: 24 * 3_600_000
+      }),
+      dataValidityItem({
+        label: "Paper Outcomes",
+        sourceLabel: "Portfolio monitor",
+        timestamp: state.positionMonitor?.as_of,
+        maxAgeMs: brokerMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Selection Context",
+        sourceLabel: "Final Selection Agent",
+        timestamp: state.finalSelection?.as_of,
+        maxAgeMs: selectionMaxAgeMs
+      })
+    ],
+    system: [
+      dataValidityItem({
+        label: "Runtime Reliability",
+        sourceLabel: "Runtime Reliability Agent",
+        timestamp: state.runtimeReliability?.as_of || state.health?.last_update,
+        maxAgeMs: dashboardMaxAgeMs,
+        summary: state.runtimeReliability?.summary || null
+      }),
+      dataValidityItem({
+        label: "Health Endpoint",
+        sourceLabel: "System health",
+        timestamp: state.health?.last_update,
+        maxAgeMs: dashboardMaxAgeMs
+      }),
+      dataValidityItem({
+        label: "Saved State",
+        sourceKey: "lightweight_state",
+        sourceLabel: "Lightweight state",
+        timestamp: state.health?.database_backup?.last_backup_at,
+        maxAgeMs: 24 * 3_600_000
+      })
+    ]
+  };
+
+  return byView[view] || [commonDashboard];
+}
+
+function dataValidityOverall(items) {
+  const statusRank = { unavailable: 5, degraded: 4, stale: 3, manual: 2, unknown: 1, fresh: 0 };
+  const worst = items
+    .map((item) => item.status)
+    .sort((a, b) => (statusRank[b] || 0) - (statusRank[a] || 0))[0] || "unknown";
+
+  if (worst === "unavailable") {
+    return {
+      className: "unavailable",
+      label: "Data Missing",
+      summary: "At least one source for this screen has no usable update time."
+    };
+  }
+  if (worst === "degraded") {
+    return {
+      className: "degraded",
+      label: "Use With Caution",
+      summary: "A provider warning or fallback is affecting this screen."
+    };
+  }
+  if (worst === "stale") {
+    return {
+      className: "stale",
+      label: "Refresh Recommended",
+      summary: "One or more data domains are older than the screen target."
+    };
+  }
+  if (worst === "manual") {
+    return {
+      className: "manual",
+      label: "Manual/Cached",
+      summary: "Background polling is limited; use one-shot refreshes when testing this screen."
+    };
+  }
+  return {
+    className: "fresh",
+    label: "Usable Now",
+    summary: "The visible data has recent timestamps or healthy source telemetry."
+  };
+}
+
+function ensureDataValiditySlot(view) {
+  const panel = elements.viewPanels.find((item) => item.dataset.viewPanel === view);
+  if (!panel) {
+    return null;
+  }
+  let slot = [...panel.children].find((child) => child.classList?.contains("data-validity-strip"));
+  if (slot) {
+    return slot;
+  }
+  slot = document.createElement("div");
+  slot.className = "data-validity-strip";
+  slot.dataset.validityView = view;
+
+  if (view === "overview" && elements.agencyCommandCenter?.parentElement === panel) {
+    panel.insertBefore(slot, elements.agencyCommandCenter);
+  } else {
+    panel.insertBefore(slot, panel.firstChild);
+  }
+  return slot;
+}
+
+function renderDataValidityStrip(view = state.activeView) {
+  const slot = ensureDataValiditySlot(view);
+  if (!slot) {
+    return;
+  }
+  const items = buildDataValidityItems(view);
+  const overall = dataValidityOverall(items);
+  const profileLabel = apiSaverModeActive() ? "API-saver testing" : currentRuntimeProfileKey() ? prettyLabel(currentRuntimeProfileKey()) : "runtime profile";
+
+  slot.innerHTML = `
+    <section class="data-validity-panel ${overall.className}">
+      <div class="data-validity-head">
+        <span>Data Validity</span>
+        <strong>${escapeHtml(overall.label)}</strong>
+        <small>${escapeHtml(overall.summary)} ${escapeHtml(profileLabel)}.</small>
+      </div>
+      <div class="data-validity-list">
+        ${items
+          .map(
+            (item) => `
+              <article class="data-validity-card ${item.status}">
+                <div class="data-validity-card-top">
+                  <strong>${escapeHtml(item.label)}</strong>
+                  <span>${escapeHtml(item.statusLabel)}</span>
+                </div>
+                <b>${escapeHtml(item.timeLabel)}</b>
+                <p>${escapeHtml(item.summary)}</p>
+                <small>${escapeHtml(item.sourceName)} - ${escapeHtml(item.providerText)} - ${escapeHtml(item.targetLabel)}</small>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
 function marketDataReliabilityLabel() {
   const marketData = liveRuntimeSource("market_data");
   if (marketData?.fallback_active || marketData?.fallback_mode || marketData?.active_provider === "synthetic") {
@@ -7990,6 +8516,8 @@ function renderActiveView() {
   if (!state.snapshot) {
     return;
   }
+
+  renderDataValidityStrip(state.activeView);
 
   if (state.activeView === "overview") {
     renderOverviewView();

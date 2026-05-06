@@ -189,6 +189,118 @@ h3 {
   color: var(--muted);
 }
 
+.data-validity-strip {
+  margin: 0 0 20px;
+}
+
+.data-validity-panel {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.32fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.data-validity-head,
+.data-validity-card {
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+
+.data-validity-head {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 14px;
+}
+
+.data-validity-head span,
+.data-validity-card small {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.data-validity-head strong {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.1rem;
+}
+
+.data-validity-head small,
+.data-validity-card p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.data-validity-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.data-validity-card {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border-left: 4px solid var(--good);
+}
+
+.data-validity-card.stale,
+.data-validity-card.manual {
+  border-left-color: var(--watch);
+}
+
+.data-validity-card.degraded,
+.data-validity-card.unavailable {
+  border-left-color: var(--bad);
+}
+
+.data-validity-card > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.data-validity-card strong,
+.data-validity-card b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.data-validity-card span {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--good);
+  background: rgba(149, 240, 192, 0.09);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.data-validity-card.stale span,
+.data-validity-card.manual span {
+  color: var(--watch);
+  background: rgba(255, 216, 139, 0.1);
+}
+
+.data-validity-card.degraded span,
+.data-validity-card.unavailable span {
+  color: var(--bad);
+  background: rgba(255, 150, 132, 0.1);
+}
+
+.data-validity-card p {
+  font-size: 13px;
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: minmax(260px, 2fr) minmax(220px, 1.2fr) minmax(180px, 1fr) minmax(140px, auto);
@@ -556,7 +668,8 @@ h3 {
 }
 
 @media (max-width: 1080px) {
-  .workspace-grid {
+  .workspace-grid,
+  .data-validity-panel {
     grid-template-columns: 1fr;
   }
 
@@ -570,7 +683,8 @@ h3 {
   .summary-grid,
   .toolbar,
   .detail-grid,
-  .mini-summary-grid {
+  .mini-summary-grid,
+  .data-validity-list {
     grid-template-columns: 1fr;
   }
 
