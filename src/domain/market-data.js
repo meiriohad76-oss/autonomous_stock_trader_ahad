@@ -463,7 +463,7 @@ export function createMarketDataService({ config, store, providerQuota = null })
     return attachProvider(payload, provider, true);
   }
 
-  async function getTickerSeries(ticker, scoredDocs, asOf) {
+  async function getTickerSeries(ticker, scoredDocs, asOf, options = {}) {
     const health = updateHealthFromCache();
     const providerChain = liveMarketProviderChain(config, config.marketDataProvider);
     const liveProviders = providerChain.filter((provider) => provider !== "synthetic");
@@ -473,6 +473,18 @@ export function createMarketDataService({ config, store, providerQuota = null })
 
     if (cached && now - cached.fetchedAt <= config.marketDataCacheMs) {
       return cached.payload;
+    }
+
+    if (config.apiSaverMode && !options.allowLive) {
+      const tickerEntry = lookupUniverseEntry(store.fundamentals?.leaderboard || [], ticker);
+      const payload = attachProvider(
+        buildSyntheticTickerMarketSeries(ticker, scoredDocs, asOf, config.marketDataHistoryPoints, tickerEntry),
+        "synthetic",
+        false
+      );
+      cache.set(cacheKey, { fetchedAt: now, payload });
+      updateHealthFromCache({ activeProvider: "synthetic", fallbackActive: true, failedProviders: [] });
+      return payload;
     }
 
     if (!liveProviders.length) {
@@ -545,8 +557,8 @@ export function createMarketDataService({ config, store, providerQuota = null })
   }
 
   return {
-    async getTickerSeries(ticker, scoredDocs, asOf) {
-      return getTickerSeries(ticker, scoredDocs, asOf);
+    async getTickerSeries(ticker, scoredDocs, asOf, options = {}) {
+      return getTickerSeries(ticker, scoredDocs, asOf, options);
     },
     async start() {
       running = true;

@@ -216,7 +216,7 @@ export function createMarketFlowMonitor({ config, store, pipeline, marketDataSer
 
       for (const entry of batch) {
         const scoredDocs = collectTickerDocs(store, entry.ticker);
-        const marketSeries = await marketDataService.getTickerSeries(entry.ticker, scoredDocs, store.health.lastUpdate || new Date().toISOString());
+        const marketSeries = await marketDataService.getTickerSeries(entry.ticker, scoredDocs, store.health.lastUpdate || new Date().toISOString(), { allowLive: true });
         if (!marketSeries.market_snapshot?.live) {
           syntheticSeriesCount += 1;
           continue;
