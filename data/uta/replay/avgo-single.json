@@ -1,0 +1,279 @@
+{
+  "schema_version": "uta.ticker_result.v1",
+  "mode": "single_ticker",
+  "ticker": "AVGO",
+  "name": "Broadcom Inc.",
+  "exchange": "NASDAQ",
+  "sector": "Information Technology",
+  "profile": {
+    "liquidity_bucket": "mega_cap",
+    "adv_20day": 6500000,
+    "notional_floor": 25000000,
+    "pi_performance_tier": "standard"
+  },
+  "engine_inputs": {
+    "replay_clock": "2026-06-08T14:35:22.000Z",
+    "price_context": {
+      "previous_trade_price": 1513,
+      "last_price": 1517.2,
+      "vwap": 1511.8,
+      "previous_close": 1502.4
+    },
+    "historical_sessions": [
+      { "date": "2026-05-07", "volume": 48000, "notional": 78000000, "focus_notional_share": 0.08, "net_notional_pressure": -0.05, "earnings_session": false },
+      { "date": "2026-05-08", "volume": 52000, "notional": 82000000, "focus_notional_share": 0.11, "net_notional_pressure": 0.04, "earnings_session": false },
+      { "date": "2026-05-11", "volume": 56000, "notional": 91000000, "focus_notional_share": 0.13, "net_notional_pressure": 0.02, "earnings_session": false },
+      { "date": "2026-05-12", "volume": 58000, "notional": 94000000, "focus_notional_share": 0.16, "net_notional_pressure": 0.08, "earnings_session": false },
+      { "date": "2026-05-13", "volume": 60000, "notional": 99000000, "focus_notional_share": 0.17, "net_notional_pressure": 0.1, "earnings_session": false },
+      { "date": "2026-05-14", "volume": 61000, "notional": 101000000, "focus_notional_share": 0.18, "net_notional_pressure": -0.02, "earnings_session": false },
+      { "date": "2026-05-15", "volume": 54000, "notional": 87000000, "focus_notional_share": 0.12, "net_notional_pressure": 0.01, "earnings_session": false },
+      { "date": "2026-05-18", "volume": 57000, "notional": 93000000, "focus_notional_share": 0.14, "net_notional_pressure": 0.03, "earnings_session": false },
+      { "date": "2026-05-19", "volume": 62000, "notional": 104000000, "focus_notional_share": 0.2, "net_notional_pressure": 0.12, "earnings_session": false },
+      { "date": "2026-05-20", "volume": 55000, "notional": 90000000, "focus_notional_share": 0.1, "net_notional_pressure": -0.04, "earnings_session": false },
+      { "date": "2026-05-21", "volume": 59000, "notional": 97000000, "focus_notional_share": 0.15, "net_notional_pressure": 0.05, "earnings_session": false },
+      { "date": "2026-05-22", "volume": 53000, "notional": 86000000, "focus_notional_share": 0.09, "net_notional_pressure": -0.08, "earnings_session": false },
+      { "date": "2026-05-26", "volume": 51000, "notional": 84000000, "focus_notional_share": 0.12, "net_notional_pressure": -0.01, "earnings_session": false },
+      { "date": "2026-05-27", "volume": 63000, "notional": 106000000, "focus_notional_share": 0.19, "net_notional_pressure": 0.09, "earnings_session": false },
+      { "date": "2026-05-28", "volume": 50000, "notional": 81000000, "focus_notional_share": 0.07, "net_notional_pressure": -0.07, "earnings_session": false },
+      { "date": "2026-05-29", "volume": 64000, "notional": 108000000, "focus_notional_share": 0.2, "net_notional_pressure": 0.11, "earnings_session": false },
+      { "date": "2026-06-01", "volume": 49500, "notional": 80000000, "focus_notional_share": 0.09, "net_notional_pressure": -0.03, "earnings_session": false },
+      { "date": "2026-06-02", "volume": 56500, "notional": 92000000, "focus_notional_share": 0.14, "net_notional_pressure": 0.02, "earnings_session": false },
+      { "date": "2026-06-03", "volume": 57500, "notional": 95000000, "focus_notional_share": 0.15, "net_notional_pressure": 0.06, "earnings_session": false },
+      { "date": "2026-06-04", "volume": 58500, "notional": 96000000, "focus_notional_share": 0.16, "net_notional_pressure": 0.07, "earnings_session": false },
+      { "date": "2026-06-05", "volume": 140000, "notional": 230000000, "focus_notional_share": 0.37, "net_notional_pressure": 0.41, "earnings_session": true }
+    ],
+    "prints": [
+      { "id": "avgo-r1", "ts": "2026-06-08T14:31:08.000Z", "venue": "TRF", "price": 1514.2, "size": 102365, "notional": 155000000, "bid": 1514, "ask": 1514.15, "condition_codes": [] },
+      { "id": "avgo-r2", "ts": "2026-06-08T14:32:44.000Z", "venue": "TRF", "price": 1516.1, "size": 79150, "notional": 120000000, "bid": 1515.95, "ask": 1516.05, "condition_codes": ["F"] },
+      { "id": "avgo-r3", "ts": "2026-06-08T14:33:02.000Z", "venue": "XNAS", "price": 1516.5, "size": 72535, "notional": 110000000, "bid": 1516.3, "ask": 1516.45, "condition_codes": [] },
+      { "id": "avgo-r4", "ts": "2026-06-08T14:33:31.000Z", "venue": "TRF", "price": 1516.7, "size": 62636, "notional": 95000000, "bid": 1516.45, "ask": 1516.65, "condition_codes": [] },
+      { "id": "avgo-r5", "ts": "2026-06-08T14:34:10.000Z", "venue": "TRF", "price": 1515.6, "size": 52784, "notional": 80000000, "bid": 1515.7, "ask": 1515.9, "condition_codes": [] },
+      { "id": "avgo-r6", "ts": "2026-06-08T14:34:32.000Z", "venue": "ARCX", "price": 1517, "size": 154912, "notional": 235000000, "bid": 1516.8, "ask": 1516.95, "condition_codes": ["Q"] },
+      { "id": "avgo-r7", "ts": "2026-06-08T14:34:50.000Z", "venue": "TRF", "price": 1516.9, "size": 56035, "notional": 85000000, "bid": 1516.8, "ask": 1517, "condition_codes": ["I"] },
+      { "id": "avgo-x1", "ts": "2026-06-08T14:34:59.000Z", "venue": "TRF", "price": 1516.2, "size": 131909, "notional": 200000000, "bid": 1516.1, "ask": 1516.3, "condition_codes": ["W"] }
+    ]
+  },
+  "generated_at": "2026-06-08T14:35:22.000Z",
+  "data_state": "replay",
+  "cycle_id": "replay-2026-06-08T14-35-22Z",
+  "tier": "A",
+  "direction": "bullish",
+  "signing_confidence": 0.74,
+  "indicators": {
+    "A": null,
+    "B": {
+      "volume_zscore": 3.8,
+      "notional_zscore": 4.1,
+      "focus_notional_share_zscore": 2.9,
+      "net_notional_pressure_zscore": 2.7
+    },
+    "C": {
+      "volume_ratio": 10.2,
+      "notional_ratio": 9.8,
+      "focus_notional_share": 0.5,
+      "focus_trade_count": 4,
+      "largest_print_multiple": 6.2,
+      "net_notional_pressure": 0.72,
+      "net_volume_pressure": 0.68,
+      "total_notional": 880000000,
+      "focus_notional": 440000000,
+      "largest_print_notional": 155000000
+    }
+  },
+  "corroboration": {
+    "price_action_aligned": true,
+    "options_flow_aligned": false,
+    "news_catalyst_present": false,
+    "provider_alert_confirmed": true,
+    "pre_and_regular_both_elevated": true,
+    "macro_regime_supports": false,
+    "independent_confirmation_count": 2
+  },
+  "lane_states": [
+    {
+      "lane_id": "massive_live_trade_slices",
+      "label": "Live Trade Slices",
+      "state": "ready",
+      "required": true,
+      "tier_effect": "none",
+      "coverage": 0.97,
+      "latest_as_of": "2026-06-08T14:35:00.000Z",
+      "freshness_seconds": 22,
+      "freshness_sla_seconds": 300,
+      "operator_copy": "Live trade slices ready.",
+      "next_action": {
+        "label": "Refresh live trade slices",
+        "route": "/api/uta/lanes/massive_live_trade_slices/refresh"
+      }
+    },
+    {
+      "lane_id": "massive_block_trade_feed",
+      "label": "Block/TRF Feed",
+      "state": "ready",
+      "required": true,
+      "tier_effect": "none",
+      "coverage": 0.97,
+      "latest_as_of": "2026-06-08T14:35:00.000Z",
+      "freshness_seconds": 22,
+      "freshness_sla_seconds": 1800,
+      "operator_copy": "Block/TRF feed derived from live slices.",
+      "next_action": {
+        "label": "Refresh block feed",
+        "route": "/api/uta/lanes/massive_block_trade_feed/refresh"
+      }
+    },
+    {
+      "lane_id": "massive_daily_bars",
+      "label": "Daily Bars",
+      "state": "ready",
+      "required": true,
+      "tier_effect": "none",
+      "coverage": 1,
+      "latest_as_of": "2026-06-07T20:00:00.000Z",
+      "freshness_seconds": 66922,
+      "freshness_sla_seconds": 86400,
+      "operator_copy": "Daily bars ready for baseline context.",
+      "next_action": {
+        "label": "Refresh daily bars",
+        "route": "/api/uta/lanes/massive_daily_bars/refresh"
+      }
+    },
+    {
+      "lane_id": "universe_constituents",
+      "label": "Universe Constituents",
+      "state": "ready",
+      "required": true,
+      "tier_effect": "none",
+      "coverage": 1,
+      "latest_as_of": "2026-06-08T00:00:00.000Z",
+      "freshness_seconds": 52522,
+      "freshness_sla_seconds": 1209600,
+      "operator_copy": "Universe constituents ready for replay scope.",
+      "next_action": {
+        "label": "Refresh universe constituents",
+        "route": "/api/uta/lanes/universe_constituents/refresh"
+      }
+    },
+    {
+      "lane_id": "activity_alerts",
+      "label": "Confirmed Alerts",
+      "state": "ready",
+      "required": false,
+      "tier_effect": "none",
+      "coverage": 1,
+      "latest_as_of": "2026-06-08T14:33:00.000Z",
+      "freshness_seconds": 142,
+      "freshness_sla_seconds": 1800,
+      "operator_copy": "Provider alert lane confirmed aligned activity.",
+      "next_action": {
+        "label": "Refresh confirmed alerts",
+        "route": "/api/uta/lanes/activity_alerts/refresh"
+      }
+    },
+    {
+      "lane_id": "options_flow",
+      "label": "Options Flow",
+      "state": "disabled",
+      "required": false,
+      "tier_effect": "none",
+      "coverage": null,
+      "latest_as_of": null,
+      "freshness_seconds": null,
+      "freshness_sla_seconds": 1800,
+      "operator_copy": "Optional options lane is disabled and does not penalize this tier.",
+      "next_action": null
+    }
+  ],
+  "bluf": {
+    "headline": "AVGO - Tier A - Bullish supporting evidence",
+    "what_happened": "Notional activity was 9.8x its recent median. Four TRF/off-exchange focus prints totaled about $440M, or 50% of analyzed notional.",
+    "why_it_matters": "Signed notional pressure leaned buyer-side at +72%, with pre-market and regular-session activity both elevated.",
+    "what_to_check": "Confirm price follow-through, VWAP reclaim, and options confirmation before treating this as conviction.",
+    "limitations": "TRF/off-exchange identifies reporting path, not the named institution or venue. Macro context is risk-off, so bullish evidence needs follow-through."
+  },
+  "evidence_cards": [
+    {
+      "id": "volume_anomaly",
+      "title": "Volume Anomaly",
+      "status": "ready",
+      "headline_metric": "9.8x notional",
+      "summary": "Volume and notional are extreme versus the 20-session baseline."
+    },
+    {
+      "id": "block_trf",
+      "title": "Block/TRF Activity",
+      "status": "ready",
+      "headline_metric": "$440M focus notional",
+      "summary": "Large off-exchange prints concentrated half of analyzed notional."
+    },
+    {
+      "id": "directional_pressure",
+      "title": "Directional Pressure",
+      "status": "ready",
+      "headline_metric": "+72% signed notional pressure",
+      "summary": "Direction is derived from signed flow, not price change."
+    },
+    {
+      "id": "options_flow",
+      "title": "Options Flow",
+      "status": "disabled",
+      "headline_metric": "Optional lane disabled",
+      "summary": "Options flow is absent and does not penalize the tier."
+    }
+  ],
+  "explain_tier": {
+    "mode": "single_ticker",
+    "rule_set": "single_ticker_b_plus_c",
+    "verdict": "Tier A",
+    "rules": [
+      { "id": "b_extreme", "label": "B >= 2.5 sigma on volume or focus notional", "passed": true, "actual": "4.1 sigma notional" },
+      { "id": "direction_consistent", "label": "Directional pressure is consistent", "passed": true, "actual": "+72% signed notional pressure" },
+      { "id": "independent_corroboration", "label": "At least one independent corroboration", "passed": true, "actual": "2 confirmations" },
+      { "id": "lane_ready", "label": "Required lanes ready", "passed": true, "actual": "3 required lanes ready" }
+    ],
+    "gap_to_next_tier": []
+  },
+  "raw_prints": {
+    "ticker": "AVGO",
+    "policy_version": "v1",
+    "truncated": false,
+    "prints": [
+      {
+        "ts": "2026-06-08T14:31:08.000Z",
+        "venue": "TRF",
+        "price": 1514.2,
+        "size": 102365,
+        "notional": 155000000,
+        "signed_side": "buy",
+        "signing_method": "quote_rule",
+        "condition_codes": []
+      },
+      {
+        "ts": "2026-06-08T14:32:44.000Z",
+        "venue": "TRF",
+        "price": 1516.1,
+        "size": 79150,
+        "notional": 120000000,
+        "signed_side": "buy",
+        "signing_method": "quote_rule",
+        "condition_codes": ["F"]
+      }
+    ]
+  },
+  "user_actions": [
+    { "id": "refresh_lane", "label": "Refresh lane", "enabled": true },
+    { "id": "raw_prints", "label": "Raw prints", "enabled": true },
+    { "id": "explain_tier", "label": "Explain tier", "enabled": true },
+    { "id": "watchlist", "label": "Add to watchlist", "enabled": true }
+  ],
+  "calculation_metadata": {
+    "source_mode": "replay",
+    "replay_clock": "2026-06-08T14:35:22.000Z",
+    "direction_source": "signed_flow",
+    "price_is_corroboration_only": true,
+    "condition_code_policy_version": "v1",
+    "baseline_window_days": 20,
+    "baseline_earnings_excluded": 1,
+    "abc_indicators_kept_separate": true
+  }
+}

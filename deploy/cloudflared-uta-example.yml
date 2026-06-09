@@ -1,0 +1,7 @@
+tunnel: autonomous-stock-trader-uta
+credentials-file: /home/ahad/.cloudflared/autonomous-stock-trader-uta.json
+
+ingress:
+  - hostname: uta.example.com
+    service: http://127.0.0.1:3000
+  - service: http_status:404

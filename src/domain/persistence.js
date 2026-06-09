@@ -1792,6 +1792,19 @@ function hydrateStoreFromRows(store, rows) {
     store.executionLog = persistedExecutionLog;
   }
 
+  const persistedUta = runtimeMap.get("uta");
+  if (persistedUta && typeof persistedUta === "object") {
+    store.uta = {
+      ...store.uta,
+      ...persistedUta,
+      signalResults: Array.isArray(persistedUta.signalResults) ? persistedUta.signalResults : [],
+      laneStates: Array.isArray(persistedUta.laneStates) ? persistedUta.laneStates : [],
+      replayRuns: Array.isArray(persistedUta.replayRuns) ? persistedUta.replayRuns : [],
+      alerts: Array.isArray(persistedUta.alerts) ? persistedUta.alerts : [],
+      auditLog: Array.isArray(persistedUta.auditLog) ? persistedUta.auditLog : []
+    };
+  }
+
   store.fundamentalWarehouse = reviveFundamentalWarehouseFromRows(rows.fundamentals);
   const revivedAgents = reviveAgentRows(rows.agents);
   store.macroRegimeHistory = revivedAgents.macroRegimeHistory;
@@ -3139,7 +3152,8 @@ function buildLightweightRows(store, config) {
     runtimeState: [
       { state_key: "health", payload_json: scrubLegacyPlaceholderMetadata(store.health) },
       { state_key: "fundamentals", payload_json: buildRuntimeFundamentals(store) },
-      { state_key: "fundamentalUniverse", payload_json: reviveFundamentalUniverse(store.fundamentalUniverse) }
+      { state_key: "fundamentalUniverse", payload_json: reviveFundamentalUniverse(store.fundamentalUniverse) },
+      { state_key: "uta", payload_json: store.uta || {} }
     ],
     fundamentals: buildFundamentalWarehouseRows(store),
     agents: buildAgentRows(store, config)
@@ -3471,6 +3485,7 @@ function createSqlitePersistence(config) {
         insertRuntime.run("orders", now, JSON.stringify(Array.from(store.orders.entries())));
         insertRuntime.run("executionState", now, JSON.stringify(store.executionState));
         insertRuntime.run("executionLog", now, JSON.stringify(store.executionLog));
+        insertRuntime.run("uta", now, JSON.stringify(store.uta || {}));
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -3738,6 +3753,14 @@ function createPostgresPersistence(config) {
           SET updated_at = EXCLUDED.updated_at,
               payload_json = EXCLUDED.payload_json`,
           ["fundamentalUniverse", now, JSON.stringify(reviveFundamentalUniverse(store.fundamentalUniverse))]
+        );
+        await client.query(
+          `INSERT INTO runtime_state (state_key, updated_at, payload_json)
+           VALUES ($1, $2, $3::jsonb)
+          ON CONFLICT (state_key) DO UPDATE
+          SET updated_at = EXCLUDED.updated_at,
+              payload_json = EXCLUDED.payload_json`,
+          ["uta", now, JSON.stringify(store.uta || {})]
         );
 
         await client.query("COMMIT");

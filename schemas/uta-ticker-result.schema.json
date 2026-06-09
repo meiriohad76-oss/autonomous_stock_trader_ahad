@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UTA Ticker Result",
+  "type": "object",
+  "required": ["schema_version", "mode", "ticker", "generated_at", "data_state", "tier", "direction", "indicators", "lane_states", "bluf", "evidence_cards", "calculation_metadata"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "mode": { "type": "string" },
+    "ticker": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "data_state": { "type": "string" },
+    "tier": { "type": "string" },
+    "direction": { "type": "string" },
+    "signing_confidence": { "type": "number" },
+    "indicators": {
+      "type": "object",
+      "required": ["A", "B", "C"],
+      "properties": {
+        "A": { "type": ["object", "null"] },
+        "B": { "type": "object" },
+        "C": { "type": "object" }
+      }
+    },
+    "corroboration": { "type": "object" },
+    "lane_states": { "type": "array" },
+    "bluf": { "type": "object" },
+    "evidence_cards": { "type": "array" },
+    "explain_tier": { "type": "object" },
+    "raw_prints": { "type": "object" },
+    "calculation_metadata": { "type": "object" }
+  }
+}
+

@@ -8,7 +8,9 @@ const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8"
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml"
 };
 
 function sseWrite(response, event) {
@@ -17,7 +19,12 @@ function sseWrite(response, event) {
 }
 
 async function serveStaticFile(publicDir, response, pathname) {
-  const requested = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+  const requested =
+    pathname === "/"
+      ? "index.html"
+      : pathname === "/uta" || pathname === "/uta/" || (pathname.startsWith("/uta/") && !path.extname(pathname))
+        ? "uta/index.html"
+        : pathname.replace(/^\/+/, "");
   const filePath = path.join(publicDir, requested);
 
   try {
@@ -96,6 +103,140 @@ export async function routeRequest(app, request, response) {
 
   if (pathname === "/api/config" && request.method === "GET") {
     sendJson(response, 200, app.getConfig());
+    return;
+  }
+
+  if (pathname === "/api/uta/single" && request.method === "GET") {
+    const result = app.runUtaCycle({ mode: "single", ticker: query.ticker || "", reason: "api_single" });
+    sendJson(response, result.status, { ...result.payload, runtime_cycle: result.cycle });
+    return;
+  }
+
+  if (pathname === "/api/uta/portfolio" && request.method === "POST") {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const payload = parseJsonBody(body) || {};
+      const result = app.runUtaCycle({ mode: "portfolio", tickers: payload.tickers || ["AVGO"], body: payload, reason: "api_portfolio" });
+      sendJson(response, result.status, { ...result.payload, runtime_cycle: result.cycle });
+    });
+    return;
+  }
+
+  if (pathname === "/api/uta/scan" && request.method === "GET") {
+    const result = app.runUtaCycle({ mode: "scan_pass1", query, reason: "api_scan_pass1" });
+    sendJson(response, result.status, { ...result.payload, runtime_cycle: result.cycle });
+    return;
+  }
+
+  if (pathname === "/api/uta/scan/pass2" && request.method === "POST") {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const payload = parseJsonBody(body) || {};
+      const result = app.runUtaCycle({ mode: "scan_pass2", tickers: payload.shortlist || ["AVGO"], body: payload, reason: "api_scan_pass2" });
+      sendJson(response, result.status, { ...result.payload, runtime_cycle: result.cycle });
+    });
+    return;
+  }
+
+  if (pathname === "/api/uta/universes" && request.method === "GET") {
+    sendJson(response, 200, app.getUtaUniverses());
+    return;
+  }
+
+  if (pathname === "/api/uta/lane-states" && request.method === "GET") {
+    sendJson(response, 200, app.getUtaLaneStates());
+    return;
+  }
+
+  if (pathname === "/api/uta/runtime" && request.method === "GET") {
+    sendJson(response, 200, app.getUtaRuntimeStatus());
+    return;
+  }
+
+  if (pathname === "/api/uta/history" && request.method === "GET") {
+    sendJson(response, 200, app.getUtaHistory({
+      ticker: query.ticker || "",
+      mode: query.mode || "",
+      limit: query.limit ? Number(query.limit) : 50
+    }));
+    return;
+  }
+
+  if (pathname === "/api/uta/scheduler" && request.method === "GET") {
+    sendJson(response, 200, app.getUtaScheduler());
+    return;
+  }
+
+  if (pathname === "/api/uta/scheduler" && request.method === "POST") {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const payload = parseJsonBody(body) || {};
+      sendJson(response, 200, app.updateUtaScheduler(payload));
+    });
+    return;
+  }
+
+  if (pathname === "/api/uta/revalidate" && request.method === "POST") {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const payload = parseJsonBody(body) || {};
+      const result = app.revalidateUta(payload);
+      sendJson(response, result.status, { ...result.payload, runtime_cycle: result.cycle });
+    });
+    return;
+  }
+
+  if (pathname?.startsWith("/api/uta/lanes/") && pathname?.endsWith("/refresh") && request.method === "POST") {
+    const laneId = decodeURIComponent(pathname.slice("/api/uta/lanes/".length, -"/refresh".length));
+    const result = app.refreshUtaLane(laneId);
+    sendJson(response, result.status, result.payload);
+    return;
+  }
+
+  if (pathname?.startsWith("/api/uta/user-state") && request.method === "GET") {
+    const scope = pathname === "/api/uta/user-state" ? "" : decodeURIComponent(pathname.slice("/api/uta/user-state/".length));
+    sendJson(response, 200, app.getUtaUserState(scope));
+    return;
+  }
+
+  if (pathname?.startsWith("/api/uta/user-state") && request.method === "POST") {
+    const scope = pathname === "/api/uta/user-state" ? "" : decodeURIComponent(pathname.slice("/api/uta/user-state/".length));
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const payload = parseJsonBody(body) || {};
+      sendJson(response, 200, app.updateUtaUserState(scope, payload));
+    });
+    return;
+  }
+
+  if (pathname === "/api/uta/stream" && request.method === "GET") {
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-store",
+      Connection: "keep-alive"
+    });
+
+    response.write(": uta connected\n\n");
+    sseWrite(response, {
+      type: "uta_snapshot",
+      runtime: app.getUtaRuntimeStatus(),
+      lane_states: app.getUtaLaneStates()
+    });
+
+    const listener = (event) => {
+      if (String(event.type || "").startsWith("uta_")) {
+        sseWrite(response, event);
+      }
+    };
+    app.store.bus.on("event", listener);
+    request.on("close", () => {
+      app.store.bus.off("event", listener);
+    });
     return;
   }
 
@@ -724,7 +865,11 @@ export async function routeRequest(app, request, response) {
       health: app.getHealth(),
       watchlist: app.getWatchlistSnapshot(app.config.defaultWindow),
       fundamentals: app.getFundamentalsSnapshot(),
-      execution: app.getExecutionState()
+      execution: app.getExecutionState(),
+      uta: {
+        universes: app.getUtaUniverses(),
+        lane_states: app.getUtaLaneStates()
+      }
     });
 
     const listener = (event) => sseWrite(response, event);

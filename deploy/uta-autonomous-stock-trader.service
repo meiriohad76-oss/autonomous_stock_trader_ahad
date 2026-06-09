@@ -1,0 +1,28 @@
+[Unit]
+Description=Autonomous Stock Trader UTA Node service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ahad
+Group=ahad
+WorkingDirectory=/home/ahad/autonomous_stock_trader_ahad
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=DATABASE_ENABLED=true
+Environment=DATABASE_PROVIDER=sqlite
+Environment=DATABASE_PATH=/mnt/uta-ssd/sentiment-analyst.sqlite
+Environment=API_SAVER_MODE=true
+Environment=PI_PERFORMANCE_MODE=true
+Environment=DASHBOARD_MUTATIONS_ENABLED=false
+Environment=SSE_HEARTBEAT_MS=25000
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=8
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

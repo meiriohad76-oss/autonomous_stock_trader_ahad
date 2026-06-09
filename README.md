@@ -14,6 +14,9 @@ This repository contains a buildable MVP of the Sentiment Analyst pipeline descr
 - Replayable sample fundamental coverage in [data/sample-fundamentals.json](/C:/Users/meiri/OneDrive/Documents/trading%20system/data/sample-fundamentals.json)
 - Extension docs in [docs/architecture.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/architecture.md) and [docs/prompt-pack.md](/C:/Users/meiri/OneDrive/Documents/trading%20system/docs/prompt-pack.md)
 - Plain user instructions for operating the 12-agent trading workflow in [docs/user-guide.md](docs/user-guide.md)
+- The canonical Unusual Trading Activity Agent UX source map in [ux design/README.md](ux%20design/README.md)
+- The UTA Node-first runtime policy in [docs/uta-stack-runtime-policy.md](docs/uta-stack-runtime-policy.md)
+- The UTA provider adapter matrix in [docs/uta-provider-adapter-matrix.md](docs/uta-provider-adapter-matrix.md)
 
 ## Commands
 
@@ -23,6 +26,7 @@ Run these from `C:\Users\meiri\OneDrive\Documents\trading system`.
 node scripts/check.js
 node scripts/replay.js
 node scripts/sqlite-backup.js
+npm run build:uta
 node src/server.js
 ```
 
@@ -31,6 +35,27 @@ node src/server.js
 Then open `http://127.0.0.1:3000`.
 
 For the new fundamentals view, open `http://127.0.0.1:3000/fundamentals.html`.
+
+For the Unusual Trading Activity replay slice, open `http://127.0.0.1:3000/uta`.
+
+During UTA frontend work, edit the React/Vite source under `src/uta/`, then run:
+
+```bash
+npm run build:uta
+```
+
+The build writes the Node-served static files to `src/public/uta/`.
+
+UTA verification commands:
+
+```bash
+npm run check:uta-contracts
+npm run check:uta-replay
+npm run check:uta-engine
+npm run check:uta-api
+npm run check:uta-ui
+npm run check:uta-pi-profile
+```
 
 ## Current runtime notes
 

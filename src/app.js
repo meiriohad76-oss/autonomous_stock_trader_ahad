@@ -54,6 +54,7 @@ import { createCorporateEventsCollector } from "./domain/corporate-events.js";
 import { createSocialSentimentCollector } from "./domain/social-sentiment.js";
 import { createTradePrintsCollector } from "./domain/trade-prints.js";
 import { createExecutionAgent as createHumanApprovalAgent } from "./domain/execution.js";
+import { createUtaService } from "./domain/uta.js";
 import { round, scoreToLabel } from "./utils/helpers.js";
 import { SECTOR_ETF_PROXIES, buildSectorStrengthSnapshot, normalizeReferenceReturn } from "./domain/sector-strength.js";
 
@@ -1403,6 +1404,7 @@ export function createSentimentApp() {
   const corporateEventsCollector = createCorporateEventsCollector({ config, store, pipeline, providerQuota, ...trackedUniverse });
   const socialSentimentCollector = createSocialSentimentCollector({ config, store, pipeline, ...trackedUniverse });
   const tradePrintsCollector = createTradePrintsCollector({ config, store, pipeline, providerQuota, ...trackedUniverse });
+  const uta = createUtaService({ config, store });
 
   async function loadFundamentalCoverage({ force = false } = {}) {
     const targetUniverse = await loadFundamentalUniverse({ config });
@@ -1599,6 +1601,9 @@ export function createSentimentApp() {
       riskSnapshot,
       positionMonitor
     });
+    const utaEvidenceByTicker = uta.getSupportingEvidenceForTickers(
+      (tradeSetups.setups || []).map((setup) => setup.ticker)
+    );
 
     const finalSelection = buildFinalSelectionSnapshot({
       config,
@@ -1607,6 +1612,7 @@ export function createSentimentApp() {
       portfolioPolicy,
       riskSnapshot,
       positionMonitor,
+      utaEvidenceByTicker,
       window,
       limit
     });
@@ -1833,6 +1839,11 @@ export function createSentimentApp() {
           pressure: runtimeReliability.pressure,
           source_counts: runtimeReliability.source_counts,
           collector_plan: runtimeReliability.collector_plan
+        },
+        uta: {
+          status: "replay_ready",
+          provider_status: uta.getProviderStatus(),
+          runtime: uta.getRuntimeStatus()
         }
       };
     },
@@ -1881,7 +1892,8 @@ export function createSentimentApp() {
         sec_fundamentals: !config.fundamentalSecEnabled,
         lightweight_state: config.databaseEnabled || !config.lightweightStateEnabled,
         database_backup: !config.databaseEnabled || config.databaseProvider !== "sqlite" || !config.sqliteBackupEnabled,
-        sector_etf_proxies: false
+        sector_etf_proxies: false,
+        uta: false
       };
 
       function assertSourceEnabled(key) {
@@ -1989,9 +2001,27 @@ export function createSentimentApp() {
           result = await refreshSectorEtfReferences();
         } else if (canonicalSource === "fundamental_universe") {
           result = await ensureFundamentalCoverage({ force: true });
+        } else if (canonicalSource === "uta") {
+          result = uta.runCycle({
+            mode: payload.mode || "single",
+            tickers: payload.tickers || [payload.ticker || "AVGO"],
+            query: payload.query || {},
+            body: payload.body || payload,
+            reason: "runtime_reliability_manual"
+          });
         } else {
           throw new Error(`Unsupported runtime source: ${source}`);
         }
+      } else if (action === "uta_cycle") {
+        result = uta.runCycle({
+          mode: payload.mode || "single",
+          tickers: payload.tickers || [payload.ticker || "AVGO"],
+          query: payload.query || {},
+          body: payload.body || payload,
+          reason: "runtime_reliability_manual"
+        });
+      } else if (action === "uta_revalidate") {
+        result = uta.revalidate(payload);
       } else {
         throw new Error(`Unsupported runtime action: ${action}`);
       }
@@ -2025,6 +2055,63 @@ export function createSentimentApp() {
     },
     async getTickerDetail(ticker) {
       return buildTickerDetail(store, marketDataService, ticker);
+    },
+    runUtaCycle(payload = {}) {
+      return uta.runCycle({
+        mode: payload.mode || "single",
+        tickers: payload.tickers || [payload.ticker || "AVGO"],
+        query: payload.query || {},
+        body: payload.body || payload,
+        reason: payload.reason || "api_manual"
+      });
+    },
+    revalidateUta(payload = {}) {
+      return uta.revalidate(payload);
+    },
+    getUtaSingle(ticker) {
+      return uta.getSingleAnalysis(ticker);
+    },
+    getUtaPortfolio(payload = {}) {
+      return uta.getPortfolioAnalysis(payload);
+    },
+    getUtaScan(query = {}) {
+      return uta.getScan(query);
+    },
+    runUtaScanPass2(payload = {}) {
+      return uta.runScanPass2(payload);
+    },
+    getUtaUniverses() {
+      return uta.getUniverses();
+    },
+    getUtaLaneStates() {
+      return uta.getLaneStates();
+    },
+    refreshUtaLane(laneId) {
+      return uta.refreshLane(laneId);
+    },
+    getUtaUserState(scope = "") {
+      return uta.getUserState(scope);
+    },
+    updateUtaUserState(scope = "", updates = {}) {
+      return uta.updateUserState(scope, updates);
+    },
+    getUtaHistory(options = {}) {
+      return uta.getHistory(options);
+    },
+    getUtaRuntimeStatus() {
+      return uta.getRuntimeStatus();
+    },
+    getUtaScheduler() {
+      return uta.getScheduler();
+    },
+    updateUtaScheduler(updates = {}) {
+      return uta.updateScheduler(updates);
+    },
+    getUtaProviderStatus() {
+      return uta.getProviderStatus();
+    },
+    getUtaSupportingEvidenceForTickers(tickers = []) {
+      return uta.getSupportingEvidenceForTickers(tickers);
     },
     getMarketFlowSettings() {
       return readMarketFlowSettings(config);

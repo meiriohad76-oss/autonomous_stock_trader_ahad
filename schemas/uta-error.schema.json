@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UTA Error",
+  "type": "object",
+  "required": ["ok", "error"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "error": { "type": "string" },
+    "detail": { "type": "string" },
+    "lane": { "type": "string" }
+  }
+}
+

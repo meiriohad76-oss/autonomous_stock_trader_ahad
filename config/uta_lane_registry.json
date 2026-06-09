@@ -1,0 +1,87 @@
+{
+  "schema_version": "uta_lane_registry.v1",
+  "lanes": [
+    {
+      "lane_id": "massive_live_trade_slices",
+      "label": "Live Trade Slices",
+      "required": true,
+      "blocking": true,
+      "freshness_sla_seconds": 300,
+      "refresh_route": "/api/uta/lanes/massive_live_trade_slices/refresh",
+      "tier_effect_when_missing": "suppress_to_d"
+    },
+    {
+      "lane_id": "massive_premarket_trade_slices",
+      "label": "Pre-Market Slices",
+      "required": false,
+      "blocking": false,
+      "freshness_sla_seconds": 1800,
+      "refresh_route": "/api/uta/lanes/massive_premarket_trade_slices/refresh",
+      "tier_effect_when_missing": "none"
+    },
+    {
+      "lane_id": "massive_daily_bars",
+      "label": "Daily Bars",
+      "required": true,
+      "blocking": true,
+      "freshness_sla_seconds": 86400,
+      "refresh_route": "/api/uta/lanes/massive_daily_bars/refresh",
+      "tier_effect_when_missing": "suppress_to_d"
+    },
+    {
+      "lane_id": "massive_block_trade_feed",
+      "label": "Block/TRF Feed",
+      "required": true,
+      "blocking": true,
+      "freshness_sla_seconds": 1800,
+      "refresh_route": "/api/uta/lanes/massive_block_trade_feed/refresh",
+      "tier_effect_when_missing": "cap_at_c"
+    },
+    {
+      "lane_id": "fred_macro_context",
+      "label": "Macro Context",
+      "required": false,
+      "blocking": false,
+      "freshness_sla_seconds": 86400,
+      "refresh_route": "/api/uta/lanes/fred_macro_context/refresh",
+      "tier_effect_when_missing": "context_only"
+    },
+    {
+      "lane_id": "activity_alerts",
+      "label": "Confirmed Alerts",
+      "required": false,
+      "blocking": false,
+      "freshness_sla_seconds": 1800,
+      "refresh_route": "/api/uta/lanes/activity_alerts/refresh",
+      "tier_effect_when_missing": "none"
+    },
+    {
+      "lane_id": "options_flow",
+      "label": "Options Flow",
+      "required": false,
+      "blocking": false,
+      "freshness_sla_seconds": 1800,
+      "refresh_route": "/api/uta/lanes/options_flow/refresh",
+      "tier_effect_when_missing": "none"
+    },
+    {
+      "lane_id": "earnings_calendar",
+      "label": "Earnings Calendar",
+      "required": false,
+      "blocking": false,
+      "freshness_sla_seconds": 86400,
+      "refresh_route": "/api/uta/lanes/earnings_calendar/refresh",
+      "tier_effect_when_missing": "context_only"
+    },
+    {
+      "lane_id": "universe_constituents",
+      "label": "Universe Constituents",
+      "required": true,
+      "blocking": false,
+      "freshness_sla_seconds": 1209600,
+      "refresh_route": "/api/uta/lanes/universe_constituents/refresh",
+      "tier_effect_when_missing": "cap_at_c"
+    }
+  ]
+}
+

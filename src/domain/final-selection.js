@@ -463,6 +463,58 @@ function buildDeterministicExplanation(setup) {
   };
 }
 
+function summarizeUtaEvidence(evidence = null) {
+  if (!evidence || evidence.tier === "D") {
+    return null;
+  }
+  return {
+    source: "uta",
+    role: "supporting_evidence_only",
+    ticker: evidence.ticker,
+    tier: evidence.tier,
+    direction: evidence.direction,
+    generated_at: evidence.generated_at || null,
+    headline: evidence.bluf?.headline || null,
+    direction_source: evidence.calculation_metadata?.direction_source || null,
+    price_is_corroboration_only: Boolean(evidence.calculation_metadata?.price_is_corroboration_only),
+    indicators: {
+      A: evidence.indicators?.A ?? null,
+      B: evidence.indicators?.B || {},
+      C: evidence.indicators?.C || {}
+    },
+    explain_tier: evidence.explain_tier || null,
+    trading_effect: "none"
+  };
+}
+
+function applyUtaSupportingEvidence(candidate, utaEvidenceByTicker = {}) {
+  const evidence = summarizeUtaEvidence(utaEvidenceByTicker?.[candidate.ticker]);
+  if (!evidence) {
+    return candidate;
+  }
+  const selectionReport = candidate.selection_report || {};
+  const evidenceSummary = selectionReport.evidence_summary || {};
+  return {
+    ...candidate,
+    uta_supporting_evidence: evidence,
+    selection_report: {
+      ...selectionReport,
+      evidence_summary: {
+        ...evidenceSummary,
+        uta_supporting_evidence: evidence
+      }
+    },
+    final_score_components: {
+      ...candidate.final_score_components,
+      uta_supporting_evidence: {
+        role: "supporting_evidence_only",
+        trading_effect: "none"
+      }
+    },
+    reason_codes: [...new Set([...(candidate.reason_codes || []), "uta_supporting_evidence_only"])]
+  };
+}
+
 function existingPositionSymbols(positionMonitor = {}) {
   return new Set((positionMonitor.positions || []).map((position) => normalizeTicker(position.symbol)));
 }
@@ -660,6 +712,7 @@ export function buildFinalSelectionSnapshot({
   portfolioPolicy,
   riskSnapshot = null,
   positionMonitor = null,
+  utaEvidenceByTicker = {},
   window = "1h",
   limit = 12
 } = {}) {
@@ -677,7 +730,7 @@ export function buildFinalSelectionSnapshot({
     riskSnapshot,
     positionMonitor,
     config
-  }).slice(0, limit);
+  }).map((candidate) => applyUtaSupportingEvidence(candidate, utaEvidenceByTicker)).slice(0, limit);
   const llmAgent = {
     enabled: Boolean(llmSelection?.enabled),
     configured: Boolean(llmSelection?.configured),

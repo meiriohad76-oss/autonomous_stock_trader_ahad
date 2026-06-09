@@ -46,6 +46,16 @@ export function createStore(config) {
     riskSnapshotHistory: [],
     positionMonitorHistory: [],
     executionIntentHistory: [],
+    uta: {
+      userState: null,
+      signalResults: [],
+      laneStates: [],
+      replayRuns: [],
+      alerts: [],
+      auditLog: [],
+      scheduler: null,
+      lastCycle: null
+    },
     executionState: {
       enabled: false,
       killSwitch: false,
@@ -113,6 +123,16 @@ export function resetStore(store) {
   store.riskSnapshotHistory = [];
   store.positionMonitorHistory = [];
   store.executionIntentHistory = [];
+  store.uta = {
+    userState: null,
+    signalResults: [],
+    laneStates: [],
+    replayRuns: [],
+    alerts: [],
+    auditLog: [],
+    scheduler: null,
+    lastCycle: null
+  };
   store.executionState = {
     enabled: false,
     killSwitch: false,

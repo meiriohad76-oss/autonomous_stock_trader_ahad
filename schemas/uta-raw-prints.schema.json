@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UTA Raw Prints",
+  "type": "object",
+  "required": ["ticker", "policy_version", "prints"],
+  "properties": {
+    "ticker": { "type": "string" },
+    "policy_version": { "type": "string" },
+    "prints": { "type": "array" },
+    "truncated": { "type": "boolean" }
+  }
+}
+

@@ -1,0 +1,27 @@
+{
+  "version": "v1",
+  "effective_date": "2026-06-08",
+  "hard_exclude": [
+    { "code": "E", "description": "Corrected Consolidated Close" },
+    { "code": "Cancel/Error", "description": "Cancel, correction, or error print" },
+    { "code": "W", "description": "Average Price Trade" },
+    { "code": "6", "description": "Derivatively Priced" },
+    { "code": "4", "description": "Derivatively Priced alternate" },
+    { "code": "P", "description": "Prior Reference Price" }
+  ],
+  "session_bucket": [
+    { "code": "T", "description": "Form T extended-hours trade", "bucket": "extended_hours" },
+    { "code": "U", "description": "FINRA extended-hours trade", "bucket": "extended_hours" }
+  ],
+  "flag_only": [
+    { "code": "O", "description": "Opening Trade", "flag": "opening_print", "exclude_from": ["block_detection", "directional_scoring"] },
+    { "code": "M", "description": "Close Trade", "flag": "closing_print", "exclude_from": ["block_detection", "directional_scoring"] },
+    { "code": "Q", "description": "Official Open", "flag": "opening_print", "exclude_from": ["block_detection"] },
+    { "code": "I", "description": "Odd Lot", "flag": "odd_lot", "exclude_from": ["block_detection"] }
+  ],
+  "separate_analysis": [
+    { "code": "F", "description": "Intermarket Sweep", "flag": "iso_sweep", "included_in": ["volume_count"], "excluded_from": ["focus_block_classification"] }
+  ],
+  "no_code": "eligible"
+}
+

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UTA Scan Result",
+  "type": "object",
+  "required": ["schema_version", "mode", "universe", "direction_filter", "pass", "generated_at", "results"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "mode": { "type": "string" },
+    "universe": { "type": "string" },
+    "universe_label": { "type": "string" },
+    "direction_filter": { "type": "string" },
+    "pass": { "type": "number" },
+    "performance_tier": { "type": "string" },
+    "results": { "type": "array" }
+  }
+}
+

@@ -1,0 +1,144 @@
+{
+  "schema_version": "uta.historical_replay_fixture.v1",
+  "description": "Small deterministic UTA historical replay fixture for validation harness checks. Returns are fixture evidence only, not live trading advice.",
+  "generated_at": "2026-06-09T00:00:00.000Z",
+  "rank_metric": "C.notional_ratio",
+  "rows": [
+    {
+      "id": "hist-avgo-2026-05-20",
+      "ticker": "AVGO",
+      "signal_at": "2026-05-20T14:35:00.000Z",
+      "tier": "A",
+      "direction": "bullish",
+      "liquidity_bucket": "mega_cap",
+      "baseline_window_end": "2026-05-19",
+      "baseline_session_count": 20,
+      "lane_sla_met": true,
+      "indicator_snapshot": {
+        "A": null,
+        "B": { "notional_zscore": 4.1, "volume_zscore": 3.7 },
+        "C": { "notional_ratio": 9.8, "net_notional_pressure": 0.72 }
+      },
+      "forward_returns": { "30m": 0.006, "1h": 0.009, "1d": 0.021, "5d": 0.048 }
+    },
+    {
+      "id": "hist-nvda-2026-05-21",
+      "ticker": "NVDA",
+      "signal_at": "2026-05-21T15:10:00.000Z",
+      "tier": "A",
+      "direction": "bullish",
+      "liquidity_bucket": "mega_cap",
+      "baseline_window_end": "2026-05-20",
+      "baseline_session_count": 20,
+      "lane_sla_met": true,
+      "indicator_snapshot": {
+        "A": null,
+        "B": { "notional_zscore": 3.8, "volume_zscore": 3.2 },
+        "C": { "notional_ratio": 8.6, "net_notional_pressure": 0.64 }
+      },
+      "forward_returns": { "30m": 0.004, "1h": 0.007, "1d": 0.018, "5d": 0.031 }
+    },
+    {
+      "id": "hist-smci-2026-05-22",
+      "ticker": "SMCI",
+      "signal_at": "2026-05-22T14:48:00.000Z",
+      "tier": "A",
+      "direction": "bullish",
+      "liquidity_bucket": "liquid_growth",
+      "baseline_window_end": "2026-05-21",
+      "baseline_session_count": 20,
+      "lane_sla_met": true,
+      "indicator_snapshot": {
+        "A": null,
+        "B": { "notional_zscore": 3.1, "volume_zscore": 2.8 },
+        "C": { "notional_ratio": 7.9, "net_notional_pressure": 0.55 }
+      },
+      "forward_returns": { "30m": 0.003, "1h": 0.004, "1d": 0.011, "5d": 0.026 }
+    },
+    {
+      "id": "hist-tsla-2026-05-23",
+      "ticker": "TSLA",
+      "signal_at": "2026-05-23T16:05:00.000Z",
+      "tier": "B",
+      "direction": "bearish",
+      "liquidity_bucket": "mega_cap",
+      "baseline_window_end": "2026-05-22",
+      "baseline_session_count": 20,
+      "lane_sla_met": true,
+      "indicator_snapshot": {
+        "A": null,
+        "B": { "notional_zscore": 2.9, "volume_zscore": 2.4 },
+        "C": { "notional_ratio": 5.4, "net_notional_pressure": -0.47 }
+      },
+      "forward_returns": { "30m": -0.003, "1h": -0.005, "1d": -0.012, "5d": -0.019 }
+    },
+    {
+      "id": "hist-aapl-2026-05-24",
+      "ticker": "AAPL",
+      "signal_at": "2026-05-24T14:55:00.000Z",
+      "tier": "B",
+      "direction": "bearish",
+      "liquidity_bucket": "mega_cap",
+      "baseline_window_end": "2026-05-23",
+      "baseline_session_count": 20,
+      "lane_sla_met": true,
+      "indicator_snapshot": {
+        "A": null,
+        "B": { "notional_zscore": 2.7, "volume_zscore": 2.2 },
+        "C": { "notional_ratio": 4.9, "net_notional_pressure": -0.38 }
+      },
+      "forward_returns": { "30m": 0.001, "1h": 0.002, "1d": 0.006, "5d": 0.009 }
+    },
+    {
+      "id": "hist-msft-2026-05-27",
+      "ticker": "MSFT",
+      "signal_at": "2026-05-27T15:30:00.000Z",
+      "tier": "C",
+      "direction": "bullish",
+      "liquidity_bucket": "mega_cap",
+      "baseline_window_end": "2026-05-24",
+      "baseline_session_count": 20,
+      "lane_sla_met": true,
+      "indicator_snapshot": {
+        "A": null,
+        "B": { "notional_zscore": 1.8, "volume_zscore": 1.6 },
+        "C": { "notional_ratio": 3.3, "net_notional_pressure": 0.29 }
+      },
+      "forward_returns": { "30m": 0.001, "1h": 0.001, "1d": 0.004, "5d": 0.007 }
+    },
+    {
+      "id": "hist-amd-2026-05-28",
+      "ticker": "AMD",
+      "signal_at": "2026-05-28T17:20:00.000Z",
+      "tier": "C",
+      "direction": "bullish",
+      "liquidity_bucket": "liquid_growth",
+      "baseline_window_end": "2026-05-27",
+      "baseline_session_count": 20,
+      "lane_sla_met": false,
+      "indicator_snapshot": {
+        "A": null,
+        "B": { "notional_zscore": 1.7, "volume_zscore": 1.4 },
+        "C": { "notional_ratio": 3.1, "net_notional_pressure": 0.27 }
+      },
+      "forward_returns": { "30m": -0.001, "1h": -0.002, "1d": -0.006, "5d": -0.011 }
+    },
+    {
+      "id": "hist-qqq-2026-05-29",
+      "ticker": "QQQ",
+      "signal_at": "2026-05-29T18:05:00.000Z",
+      "tier": "D",
+      "direction": "neutral",
+      "liquidity_bucket": "etf",
+      "baseline_window_end": "2026-05-28",
+      "baseline_session_count": 20,
+      "lane_sla_met": true,
+      "indicator_snapshot": {
+        "A": null,
+        "B": {},
+        "C": {}
+      },
+      "forward_returns": { "30m": 0, "1h": 0.001, "1d": -0.001, "5d": 0.002 }
+    }
+  ]
+}

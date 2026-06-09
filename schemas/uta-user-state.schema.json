@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UTA User State",
+  "type": "object",
+  "required": ["schema_version", "watchlist", "reviewed", "ignored", "rules", "saved_scans", "settings"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "watchlist": { "type": "array" },
+    "reviewed": { "type": "object" },
+    "ignored": { "type": "object" },
+    "rules": { "type": "array" },
+    "saved_scans": { "type": "array" },
+    "settings": { "type": "object" }
+  }
+}
+

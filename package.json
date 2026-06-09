@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "dev:uta": "vite --config vite.uta.config.js --host 127.0.0.1",
+    "build:uta": "vite build --config vite.uta.config.js",
     "replay": "node scripts/replay.js",
     "check": "node scripts/check.js",
     "check:evidence-quality": "node scripts/check-evidence-quality.js",
@@ -32,6 +34,15 @@
     "check:agents": "node scripts/check-agents-deep.js",
     "check:no-bootstrap-data": "node scripts/check-no-bootstrap-data.js",
     "check:agent-ux-workflow": "node scripts/check-agent-ux-workflow.js",
+    "check:uta-contracts": "node scripts/check-uta-contracts.js",
+    "check:uta-engine": "node scripts/check-uta-engine.js",
+    "check:uta-api": "node scripts/check-uta-api.js",
+    "check:uta-ui": "node scripts/check-uta-ui.js",
+    "check:uta-replay": "node scripts/check-uta-replay.js",
+    "check:uta-historical-replay": "node scripts/check-uta-historical-replay.js",
+    "check:uta-calibration": "node scripts/check-uta-calibration.js",
+    "check:uta-trading-integration": "node scripts/check-uta-trading-integration.js",
+    "check:uta-pi-profile": "node scripts/check-uta-pi-profile.js",
     "ux:smoke": "node scripts/ux-smoke.js",
     "sqlite:backup": "node scripts/sqlite-backup.js",
     "sqlite:health": "node scripts/sqlite-health.js",
@@ -43,9 +54,14 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "playwright": "^1.59.1"
+    "@vitejs/plugin-react": "^6.0.2",
+    "playwright": "^1.59.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
   }
 }

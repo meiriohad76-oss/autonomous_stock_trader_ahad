@@ -1,0 +1,16 @@
+{
+  "universe_id": "sp500",
+  "name": "sp500",
+  "label": "S&P 500 sample",
+  "category": "index",
+  "source": "replay_fixture",
+  "last_updated": "2026-06-08T00:00:00.000Z",
+  "performance_tier": "standard",
+  "estimated_time_seconds": 180,
+  "tickers": [
+    { "symbol": "AVGO", "name": "Broadcom Inc.", "sector": "Information Technology", "exchange": "NASDAQ" },
+    { "symbol": "NVDA", "name": "NVIDIA Corp.", "sector": "Information Technology", "exchange": "NASDAQ" },
+    { "symbol": "MSFT", "name": "Microsoft Corp.", "sector": "Information Technology", "exchange": "NASDAQ" }
+  ]
+}
+

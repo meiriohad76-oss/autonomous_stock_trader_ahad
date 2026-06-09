@@ -535,6 +535,19 @@ function sourceSpecs(config) {
       notes: `Classifies delayed block prints from ${config.tradePrintsProvider}.`
     },
     {
+      key: "uta",
+      label: "Unusual Trading Activity",
+      category: "money_flow",
+      provider: "replay_first_node",
+      enabled: true,
+      autoStart: false,
+      intervalMs: null,
+      staleAfterHours: 1,
+      criticality: "medium",
+      configured: true,
+      notes: "Runs replay-first UTA cycles and reports lane pressure without enabling paper-trading effects."
+    },
+    {
       key: "fundamental_market_data",
       label: "Fundamental Market Reference",
       category: "fundamentals",
@@ -898,6 +911,14 @@ function buildAvailableActions(sources, config) {
       safe: true,
       enabled: sourceCanRun("trade_prints"),
       description: "Fetch one delayed trade-prints batch without starting a timer."
+    },
+    {
+      action: "poll_once",
+      label: "Run UTA Cycle Once",
+      source: "uta",
+      safe: true,
+      enabled: sourceCanRun("uta"),
+      description: "Run one replay-backed UTA cycle without starting a timer."
     },
     {
       action: "poll_once",

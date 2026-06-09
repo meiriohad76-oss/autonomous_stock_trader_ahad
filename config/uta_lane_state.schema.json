@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UTA Lane State",
+  "type": "object",
+  "required": ["lane_id", "label", "state", "required", "tier_effect", "operator_copy"],
+  "properties": {
+    "lane_id": { "type": "string" },
+    "label": { "type": "string" },
+    "state": {
+      "type": "string",
+      "enum": ["ready", "loading", "partial", "stale", "unavailable", "disabled", "insufficient_history", "blocked", "error"]
+    },
+    "required": { "type": "boolean" },
+    "tier_effect": { "type": "string", "enum": ["none", "context_only", "cap_at_c", "suppress_to_d"] },
+    "coverage": { "type": ["number", "null"] },
+    "latest_as_of": { "type": ["string", "null"] },
+    "freshness_seconds": { "type": ["number", "null"] },
+    "freshness_sla_seconds": { "type": ["number", "null"] },
+    "operator_copy": { "type": "string" },
+    "next_action": { "type": ["object", "null"] }
+  }
+}
+

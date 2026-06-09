@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UTA Condition Code Policy",
+  "type": "object",
+  "required": ["version", "effective_date", "hard_exclude", "session_bucket", "flag_only", "separate_analysis", "no_code"],
+  "properties": {
+    "version": { "type": "string" },
+    "effective_date": { "type": "string" },
+    "hard_exclude": { "type": "array", "items": { "$ref": "#/$defs/codeRow" } },
+    "session_bucket": { "type": "array", "items": { "$ref": "#/$defs/codeRow" } },
+    "flag_only": { "type": "array", "items": { "$ref": "#/$defs/codeRow" } },
+    "separate_analysis": { "type": "array", "items": { "$ref": "#/$defs/codeRow" } },
+    "no_code": { "type": "string" }
+  },
+  "$defs": {
+    "codeRow": {
+      "type": "object",
+      "required": ["code", "description"],
+      "properties": {
+        "code": { "type": "string" },
+        "description": { "type": "string" },
+        "bucket": { "type": "string" },
+        "flag": { "type": "string" },
+        "exclude_from": { "type": "array", "items": { "type": "string" } },
+        "included_in": { "type": "array", "items": { "type": "string" } },
+        "excluded_from": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
+
